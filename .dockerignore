@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+.env
+*.log
+qlcl-server.pid
+data/*.db
+data/*.db-*
+data/report-exports
+data/evaluation-attachments
+logs
+uploads
