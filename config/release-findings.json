@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "findings": [
+    {
+      "id": "RUN23-SEC-001",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "title": "Denied report-template deep link still loads protected data",
+      "owner": "Security + Frontend/Authz",
+      "expiry": null,
+      "evidence": {
+        "uat_run_id": "a593b028-0391-4143-8b59-0d4c82900a6b",
+        "request_id": "4b16def1-51e5-470a-9431-4e5294f257cb",
+        "route": "/admin/report-templates",
+        "endpoint": "/qlcl/api/report-templates/definitions",
+        "http_status": 200
+      },
+      "release_effect": "NO-GO"
+    }
+  ]
+}

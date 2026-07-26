@@ -1,0 +1,47 @@
+const WORKFLOW_STATUSES = Object.freeze({
+  DRAFT: 'Khởi tạo',
+  IN_PROGRESS: 'Đang xử lý',
+  WAITING_LEAD: 'Chờ duyệt (Lead)',
+  WAITING_TBP: 'Chờ duyệt (TBP)',
+  WAITING_GDK: 'Chờ duyệt (GĐK)',
+  WAITING_CORRECTION: 'Chờ khắc phục',
+  ROUND_2: 'Đang đánh giá lần 2',
+  EXTENDED: 'Gia hạn',
+  SUSPENDED: 'Tạm ngừng',
+  COMPLETED: 'Hoàn thành',
+  CANCELLED: 'Hủy',
+});
+
+const KEY_WORKFLOW_TRANSITIONS = Object.freeze({
+  TICKET_CREATE: { from: null, to: WORKFLOW_STATUSES.DRAFT },
+  SUBMIT_TO_LEAD: { from: WORKFLOW_STATUSES.IN_PROGRESS, to: WORKFLOW_STATUSES.WAITING_LEAD },
+  LEAD_APPROVE: { from: WORKFLOW_STATUSES.WAITING_LEAD, to: WORKFLOW_STATUSES.WAITING_TBP },
+  LEAD_REJECT: { from: WORKFLOW_STATUSES.WAITING_LEAD, to: WORKFLOW_STATUSES.IN_PROGRESS },
+  TBP_REJECT: { from: WORKFLOW_STATUSES.WAITING_TBP, to: WORKFLOW_STATUSES.WAITING_LEAD },
+  TBP_SEND_GDK: { from: WORKFLOW_STATUSES.WAITING_TBP, to: WORKFLOW_STATUSES.WAITING_GDK },
+  GDK_REJECT: { from: WORKFLOW_STATUSES.WAITING_GDK, to: WORKFLOW_STATUSES.WAITING_TBP },
+  ROUND_1_APPROVE_WITH_CORRECTION: { from: WORKFLOW_STATUSES.WAITING_TBP, to: WORKFLOW_STATUSES.WAITING_CORRECTION },
+  ROUND_2_OPEN: { from: WORKFLOW_STATUSES.WAITING_CORRECTION, to: WORKFLOW_STATUSES.ROUND_2 },
+  FINAL_APPROVE: { from: WORKFLOW_STATUSES.WAITING_TBP, to: WORKFLOW_STATUSES.COMPLETED },
+  EXTENSION_APPROVE: { from: WORKFLOW_STATUSES.WAITING_TBP, to: WORKFLOW_STATUSES.EXTENDED },
+  SUSPENSION_APPROVE: { from: WORKFLOW_STATUSES.WAITING_TBP, to: WORKFLOW_STATUSES.SUSPENDED },
+  CANCEL_APPROVE: { from: WORKFLOW_STATUSES.WAITING_TBP, to: WORKFLOW_STATUSES.CANCELLED },
+});
+
+function isReturnTransition(action, fromStatus, toStatus) {
+  return String(action || '').includes('REJECT') ||
+    (String(fromStatus || '').includes('Chờ duyệt') && toStatus === WORKFLOW_STATUSES.IN_PROGRESS);
+}
+
+function assertTransition(action, fromStatus, toStatus) {
+  const transition = KEY_WORKFLOW_TRANSITIONS[action];
+  if (!transition) return true;
+  return transition.from === fromStatus && transition.to === toStatus;
+}
+
+module.exports = {
+  KEY_WORKFLOW_TRANSITIONS,
+  WORKFLOW_STATUSES,
+  assertTransition,
+  isReturnTransition,
+};

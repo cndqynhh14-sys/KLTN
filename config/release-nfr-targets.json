@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "set_at": "2026-07-15T00:00:00.000Z",
+  "targets": [
+    { "id": "authz_resolution", "metric": "p95_ms", "operator": "<=", "value": 10 },
+    { "id": "audit_pagination", "metric": "p95_ms_at_5000_rows", "operator": "<=", "value": 100 },
+    { "id": "questions_1000", "metric": "load_ms", "operator": "<=", "value": 250 },
+    { "id": "workbook_import", "metric": "parse_1000_rows_ms", "operator": "<=", "value": 2000 },
+    { "id": "preview_export_concurrency", "metric": "five_format_sets_ms", "operator": "<=", "value": 5000 },
+    { "id": "job_recovery", "metric": "recover_100_jobs_ms", "operator": "<=", "value": 500 },
+    { "id": "sqlite_contention", "metric": "blocked_writer_recovery_ms", "operator": "<=", "value": 1500 },
+    { "id": "logging_evidence_overhead", "metric": "redact_1000_records_ms", "operator": "<=", "value": 250 }
+  ]
+}
+

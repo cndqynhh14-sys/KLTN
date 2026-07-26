@@ -1,0 +1,234 @@
+// Email delivery for OTP and workflow notifications.
+// Graph mode keeps the existing app-permission flow; SMTP mode lets a configured
+// mailbox send mail directly when SMTP AUTH is available.
+
+const https = require('https');
+const nodemailer = require('nodemailer');
+const { DefaultAzureCredential } = require('@azure/identity');
+const { SecretClient } = require('@azure/keyvault-secrets');
+const logger = require('../logger');
+
+const DEFAULT_SENDER = 'iso-app@masangroup.onmicrosoft.com';
+
+let credentials = null;
+let accessToken = null;
+let tokenExpiry = 0;
+let smtpTransporter = null;
+
+function boolEnv(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value == null || value === '') return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
+function hasGraphCredentials() {
+  return !!(
+    process.env.USE_AZURE_KEYVAULT === 'true' ||
+    (process.env.GRAPH_CLIENT_ID && process.env.GRAPH_CLIENT_SECRET && process.env.GRAPH_TENANT_ID)
+  );
+}
+
+function hasSmtpCredentials() {
+  return !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+function selectedProvider() {
+  const configured = String(process.env.EMAIL_PROVIDER || '').trim().toLowerCase();
+  if (configured) return configured;
+  if (hasSmtpCredentials()) return 'smtp';
+  if (hasGraphCredentials()) return 'graph';
+  return 'fallback';
+}
+
+function formatAddress(address, name) {
+  if (!name) return address;
+  return '"' + String(name).replace(/"/g, '\\"') + '" <' + address + '>';
+}
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getSmtpTransporter() {
+  if (smtpTransporter) return smtpTransporter;
+
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const secure = boolEnv('SMTP_SECURE', port === 465);
+  const options = process.env.SMTP_SERVICE
+    ? { service: process.env.SMTP_SERVICE }
+    : { host: process.env.SMTP_HOST || 'smtp.office365.com', port, secure };
+
+  smtpTransporter = nodemailer.createTransport({
+    ...options,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    requireTLS: boolEnv('SMTP_REQUIRE_TLS', !secure),
+    connectionTimeout: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '10000', 10),
+    greetingTimeout: parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '10000', 10),
+    socketTimeout: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '20000', 10),
+  });
+  return smtpTransporter;
+}
+
+async function sendSmtpEmail({ to, subject, htmlContent }) {
+  if (!hasSmtpCredentials()) {
+    throw new Error('SMTP_USER and SMTP_PASS must be configured for EMAIL_PROVIDER=smtp');
+  }
+
+  const fromAddress = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER;
+  const fromName = process.env.SMTP_FROM_NAME || process.env.EMAIL_FROM_NAME || 'QLCL';
+  const info = await getSmtpTransporter().sendMail({
+    from: formatAddress(fromAddress, fromName),
+    replyTo: process.env.SMTP_REPLY_TO || process.env.SMTP_USER,
+    to,
+    subject,
+    html: htmlContent,
+  });
+
+  logger.info('[email:smtp] sent', { to, from: fromAddress, messageId: info.messageId });
+  return true;
+}
+
+async function loadCredentials() {
+  if (credentials) return credentials;
+
+  if (process.env.USE_AZURE_KEYVAULT === 'true') {
+    const vaultName = process.env.KEY_VAULT_NAME;
+    if (!vaultName) throw new Error('KEY_VAULT_NAME not set');
+    const sc = new SecretClient('https://' + vaultName + '.vault.azure.net', new DefaultAzureCredential());
+    const [clientId, clientSecret, tenantId] = await Promise.all([
+      sc.getSecret('ms-graph-client-id').then((s) => s.value),
+      sc.getSecret('ms-graph-client-secret').then((s) => s.value),
+      sc.getSecret('ms-graph-tenant-id').then((s) => s.value),
+    ]);
+    credentials = { clientId, clientSecret, tenantId, sender: process.env.GRAPH_SENDER || DEFAULT_SENDER };
+  } else {
+    credentials = {
+      clientId: process.env.GRAPH_CLIENT_ID,
+      clientSecret: process.env.GRAPH_CLIENT_SECRET,
+      tenantId: process.env.GRAPH_TENANT_ID,
+      sender: process.env.GRAPH_SENDER || DEFAULT_SENDER,
+    };
+  }
+  logger.info('[email] Credentials loaded, sender:', credentials.sender);
+  return credentials;
+}
+
+function httpsPost(host, pathUrl, headers, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ host, path: pathUrl, method: 'POST', headers }, (res) => {
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => resolve({ status: res.statusCode, data }));
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+async function getAccessToken() {
+  if (accessToken && Date.now() < tokenExpiry - 60000) return accessToken;
+  const c = await loadCredentials();
+  const form =
+    'grant_type=client_credentials' +
+    '&client_id=' + encodeURIComponent(c.clientId) +
+    '&client_secret=' + encodeURIComponent(c.clientSecret) +
+    '&scope=' + encodeURIComponent('https://graph.microsoft.com/.default');
+
+  const res = await httpsPost(
+    'login.microsoftonline.com',
+    '/' + c.tenantId + '/oauth2/v2.0/token',
+    { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) },
+    form
+  );
+  if (res.status !== 200) throw new Error('Token fetch failed: ' + res.data);
+  const parsed = JSON.parse(res.data);
+  accessToken = parsed.access_token;
+  tokenExpiry = Date.now() + parsed.expires_in * 1000;
+  return accessToken;
+}
+
+async function sendEmail({ to, subject, htmlContent }) {
+  if (process.env.EMAIL_MODE === 'console' || process.env.DEV_EMAIL_CONSOLE === 'true') {
+    logger.info('[email:console]', { to, subject });
+    return true;
+  }
+
+  const provider = selectedProvider();
+  if (provider === 'smtp') {
+    return sendSmtpEmail({ to, subject, htmlContent });
+  }
+  if (provider !== 'graph') {
+    logger.info('[email:dev-fallback]', { to, subject });
+    return true;
+  }
+  if (!hasGraphCredentials()) {
+    throw new Error('Graph credentials must be configured for EMAIL_PROVIDER=graph');
+  }
+
+  const token = await getAccessToken();
+  const c = await loadCredentials();
+  const body = JSON.stringify({
+    message: {
+      subject,
+      body: { contentType: 'HTML', content: htmlContent },
+      toRecipients: [{ emailAddress: { address: to } }],
+    },
+    saveToSentItems: false,
+  });
+
+  const res = await httpsPost(
+    'graph.microsoft.com',
+    '/v1.0/users/' + encodeURIComponent(c.sender) + '/sendMail',
+    {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    },
+    body
+  );
+  if (res.status !== 202) throw new Error('sendMail failed: ' + res.status + ' ' + res.data);
+  return true;
+}
+
+function buildWorkflowEmail({ title, ticketCode, supplierName, status, comment }) {
+  return {
+    subject: `QLCL - ${title}: ${ticketCode}`,
+    htmlContent: `
+      <div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:640px;margin:0 auto;padding:24px">
+        <h2 style="color:#1a2232;margin:0 0 12px">${escapeHtml(title)}</h2>
+        <p><b>Phi&#7871;u:</b> ${escapeHtml(ticketCode)}</p>
+        <p><b>NCC:</b> ${escapeHtml(supplierName)}</p>
+        <p><b>Tr&#7841;ng th&#225;i:</b> ${escapeHtml(status)}</p>
+        ${comment ? `<p><b>Ghi ch&#250;:</b> ${escapeHtml(comment)}</p>` : ''}
+        <p style="font-size:12px;color:#6b7280">Email &#273;&#432;&#7907;c g&#7917;i t&#7921; &#273;&#7897;ng t&#7915; h&#7879; th&#7889;ng QLCL.</p>
+      </div>
+    `,
+  };
+}
+
+function buildOtpEmail(code) {
+  return {
+    subject: 'QLCL - M\u00e3 x\u00e1c th\u1ef1c \u0111\u0103ng nh\u1eadp: ' + code,
+    htmlContent: `
+      <div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:480px;margin:0 auto;padding:32px 20px">
+        <h2 style="color:#1a2232;margin-bottom:8px">M&#227; x&#225;c th&#7921;c QLCL Dashboard</h2>
+        <p style="color:#4b5563">Nh&#7853;p m&#227; sau v&#224;o m&#224;n h&#236;nh &#273;&#259;ng nh&#7853;p:</p>
+        <div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#c8102e;background:#fff0f1;padding:16px 24px;text-align:center;border-radius:8px;margin:20px 0">
+          ${escapeHtml(code)}
+        </div>
+        <p style="color:#6b7280;font-size:13px">M&#227; c&#243; hi&#7879;u l&#7921;c trong 5 ph&#250;t. N&#7871;u b&#7841;n kh&#244;ng y&#234;u c&#7847;u m&#227; n&#224;y, vui l&#242;ng b&#7887; qua email.</p>
+      </div>
+    `,
+  };
+}
+
+module.exports = { sendEmail, buildOtpEmail, buildWorkflowEmail };

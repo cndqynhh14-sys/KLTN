@@ -1,0 +1,460 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const express = require('express');
+const Database = require('better-sqlite3');
+const { migrateDatabase } = require('../server/database/migrationRunner');
+const { AuditEventService } = require('../server/services/AuditEventService');
+const { AuthorizationService } = require('../server/services/AuthorizationService');
+const { ApprovalAssignmentService } = require('../server/services/ApprovalAssignmentService');
+const {
+  AuthorizationAdminError,
+  AuthorizationAdminService,
+  requiredConfirmation,
+} = require('../server/services/AuthorizationAdminService');
+const { createAuthorizationAdminRouter } = require('../server/routes/authorizationAdmin');
+const { PERMISSIONS, ROLE_CODES } = require('../server/authorization/permissionCatalog');
+const { ROLES } = require('../server/domain/roles');
+
+const migrationsDir = path.resolve(__dirname, '..', 'migrations');
+const ACTOR = 'run10-admin@example.invalid';
+const TARGET = 'run10-designer@example.invalid';
+
+function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
+  db.prepare(`INSERT INTO users
+    (email, is_admin, role, is_active, display_name, created_at, created_by)
+    VALUES (?, ?, ?, 1, 'SYNTHETIC RUN-10 USER', datetime('now'), 'fixture')`
+  ).run(email, isAdmin ? 1 : 0, role);
+}
+
+function fixture() {
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  migrateDatabase(db, { migrationsDir, appVersion: 'run-10-test' });
+  addUser(db, ACTOR, ROLES.ADMIN, true);
+  addUser(db, TARGET);
+  const audit = new AuditEventService(db);
+  const authz = new AuthorizationService(db, { auditEventService: audit });
+  const approvals = new ApprovalAssignmentService(db, authz);
+  authz.syncLegacyUser(ACTOR);
+  authz.syncLegacyUser(TARGET);
+  const service = new AuthorizationAdminService(db, authz, approvals, audit);
+  return { db, audit, authz, approvals, service };
+}
+
+function context(actor = ACTOR) {
+  return {
+    actor,
+    requestId: 'request-run10-0001',
+    correlationId: 'correlation-run10-0001',
+  };
+}
+
+function close(db) {
+  assert.equal(db.pragma('foreign_key_check').length, 0);
+  db.close();
+}
+
+async function withServer(app, callback) {
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((resolve, reject) => {
+    server.once('listening', resolve);
+    server.once('error', reject);
+  });
+  const { port } = server.address();
+  try {
+    return await callback(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+test('custom report designer can be created, configured and assigned without code changes', () => {
+  const { db, authz, service } = fixture();
+  try {
+    service.createRole({
+      roleCode: 'REPORT_DESIGNER',
+      displayLabel: 'Thiết kế báo cáo',
+      cloneFrom: ROLE_CODES.READ_ONLY_VIEWER,
+      reason: 'Create the approved synthetic report designer role',
+    }, context());
+    service.setRolePermissions('REPORT_DESIGNER', {
+      permissions: [
+        { permissionCode: PERMISSIONS.REPORT_READ, effect: 'ALLOW' },
+        { permissionCode: PERMISSIONS.REPORT_EXPORT, effect: 'ALLOW' },
+        { permissionCode: PERMISSIONS.REPORT_TEMPLATE_MANAGE, effect: 'ALLOW' },
+      ],
+      reason: 'Publish approved report design and export permissions',
+      confirmation: requiredConfirmation('PUBLISH_ROLE', 'REPORT_DESIGNER'),
+    }, context());
+    service.setUserRoles(TARGET, {
+      roles: [{ roleCode: 'REPORT_DESIGNER', validFrom: null, validUntil: null }],
+      reason: 'Assign the synthetic report designer role to the test account',
+      confirmation: requiredConfirmation('ASSIGN_ROLES', TARGET),
+    }, context());
+
+    const catalogRole = service.catalog().roles.find((role) => role.roleCode === 'REPORT_DESIGNER');
+    assert.equal(catalogRole.kind, 'custom');
+    assert.equal(catalogRole.userCount, 1);
+    assert.equal(catalogRole.permissionCount, 3);
+    assert.equal(authz.can(TARGET, PERMISSIONS.REPORT_TEMPLATE_MANAGE), true);
+    assert.equal(authz.can(TARGET, PERMISSIONS.REPORT_EXPORT), true);
+
+    const changes = db.prepare(`SELECT reason, before_json, after_json, request_id,
+      correlation_id, authz_version FROM authz_change_log
+      WHERE actor_user_id = ? ORDER BY id`).all(ACTOR);
+    assert.ok(changes.length >= 3);
+    assert.ok(changes.every((row) => row.reason && row.request_id && row.correlation_id));
+    assert.ok(changes.some((row) => row.before_json && row.after_json && row.authz_version >= 1));
+    assert.ok(db.prepare(`SELECT 1 FROM audit_events
+      WHERE event_name = 'role.permissions.changed' AND correlation_id = ?`).get('correlation-run10-0001'));
+  } finally { close(db); }
+});
+
+test('role label rename preserves immutable code and approval workflow resolution', () => {
+  const { db, approvals, service } = fixture();
+  try {
+    addUser(db, 'run10-lead@example.invalid', ROLES.LEAD);
+    service.authorizationService.syncLegacyUser('run10-lead@example.invalid');
+    service.updateRole(ROLE_CODES.REGIONAL_LEAD_APPROVER, {
+      displayLabel: 'Lead vùng — nhãn mới',
+      active: true,
+      reason: 'Rename the display label while preserving the workflow key',
+    }, context());
+    const renamed = service.catalog().roles.find((role) => role.roleCode === ROLE_CODES.REGIONAL_LEAD_APPROVER);
+    assert.equal(renamed.displayLabel, 'Lead vùng — nhãn mới');
+    assert.equal(renamed.approvalCount, 1);
+    assert.equal(renamed.inUse, true);
+    assert.equal(approvals.resolve('EVALUATION', 'LEAD', {}).roleCode, ROLE_CODES.REGIONAL_LEAD_APPROVER);
+    assert.throws(() => db.prepare(`UPDATE roles SET role_code = 'BROKEN'
+      WHERE role_code = ?`).run(ROLE_CODES.REGIONAL_LEAD_APPROVER), /role_code_immutable/);
+    assert.throws(() => service.deleteRole(ROLE_CODES.SYS_ADMIN, {
+      reason: 'Attempt to delete a protected system role in a synthetic test',
+      confirmation: requiredConfirmation('DELETE_ROLE', ROLE_CODES.SYS_ADMIN),
+    }, context()), (error) => error.code === 'system_role_delete_forbidden');
+  } finally { close(db); }
+});
+
+test('role catalog keeps inactive historical assignments in the deletion guard', () => {
+  const { db, service } = fixture();
+  try {
+    service.createRole({
+      roleCode: 'RUN10_ARCHIVED_ASSIGNMENT',
+      displayLabel: 'Synthetic archived assignment role',
+      reason: 'Create a role used only by an inactive historical assignment',
+    }, context());
+    const role = db.prepare('SELECT id FROM roles WHERE role_code = ?').get('RUN10_ARCHIVED_ASSIGNMENT');
+    db.prepare(`INSERT INTO user_roles (user_id, role_id, active, source, created_by)
+      VALUES (?, ?, 0, 'MANUAL', ?)`).run(TARGET, role.id, ACTOR);
+
+    const catalogRole = service.catalog().roles.find((item) => item.roleCode === 'RUN10_ARCHIVED_ASSIGNMENT');
+    assert.equal(catalogRole.userCount, 0);
+    assert.equal(catalogRole.assignmentCount, 1);
+    assert.equal(catalogRole.approvalCount, 0);
+    assert.equal(catalogRole.inUse, true);
+    assert.throws(() => service.deleteRole('RUN10_ARCHIVED_ASSIGNMENT', {
+      reason: 'Reject deletion while a historical assignment still references the role',
+      confirmation: requiredConfirmation('DELETE_ROLE', 'RUN10_ARCHIVED_ASSIGNMENT'),
+    }, context()), (error) => error.code === 'role_in_use');
+  } finally { close(db); }
+});
+
+test('effective-rights preview explains expiry, permission deny and scope conflict', () => {
+  const { db, service } = fixture();
+  try {
+    service.createRole({
+      roleCode: 'RUN10_CONFLICT_ROLE', displayLabel: 'Synthetic conflict role',
+      reason: 'Create a synthetic conflict role for deterministic tests',
+    }, context());
+    service.setRolePermissions('RUN10_CONFLICT_ROLE', {
+      permissions: [
+        { permissionCode: PERMISSIONS.REPORT_READ, effect: 'ALLOW' },
+        { permissionCode: PERMISSIONS.REPORT_EXPORT, effect: 'DENY' },
+      ],
+      reason: 'Publish an explicit report export deny for conflict testing',
+      confirmation: requiredConfirmation('PUBLISH_ROLE', 'RUN10_CONFLICT_ROLE'),
+    }, context());
+    service.setUserRoles(TARGET, {
+      roles: [
+        { roleCode: 'RUN10_CONFLICT_ROLE', validFrom: null, validUntil: null },
+        { roleCode: ROLE_CODES.AUDITOR, validFrom: '2020-01-01T00:00:00Z', validUntil: '2020-01-02T00:00:00Z' },
+      ],
+      reason: 'Assign active and expired synthetic roles for preview testing',
+      confirmation: requiredConfirmation('ASSIGN_ROLES', TARGET),
+    }, context());
+    service.setUserScopes(TARGET, {
+      scopes: [
+        { roleCode: 'RUN10_CONFLICT_ROLE', scopeType: 'MCH2', scopeValue: '203', effect: 'ALLOW' },
+        { roleCode: null, scopeType: 'MCH2', scopeValue: '203', effect: 'DENY' },
+      ],
+      reason: 'Create deterministic allow and deny scope overlap for preview',
+    }, context());
+
+    const detail = service.userDetail(TARGET);
+    assert.ok(detail.effective.deniedPermissions.includes(PERMISSIONS.REPORT_EXPORT));
+    assert.ok(detail.effective.explanations.some((item) => item.type === 'permission_conflict'));
+    assert.ok(detail.effective.explanations.some((item) => item.type === 'expired_role'));
+    assert.ok(detail.effective.explanations.some((item) => item.type === 'scope_conflict'));
+  } finally { close(db); }
+});
+
+test('self escalation and last SYS_ADMIN removal fail closed', () => {
+  const { db, service } = fixture();
+  try {
+    addUser(db, 'run10-manager@example.invalid');
+    service.authorizationService.syncLegacyUser('run10-manager@example.invalid');
+    db.prepare(`INSERT INTO roles (role_code, display_label, role_kind)
+      VALUES ('RUN10_MANAGER', 'Synthetic authorization manager', 'FUNCTIONAL')`).run();
+    db.prepare(`INSERT INTO role_permissions (role_id, permission_code, effect)
+      SELECT id, ?, 'ALLOW' FROM roles WHERE role_code = 'RUN10_MANAGER'`).run(PERMISSIONS.USER_MANAGE);
+    db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
+      SELECT ?, id, 'MANUAL' FROM roles WHERE role_code = 'RUN10_MANAGER'`).run('run10-manager@example.invalid');
+
+    assert.throws(() => service.setUserRoles('run10-manager@example.invalid', {
+      roles: [{ roleCode: ROLE_CODES.SYS_ADMIN }],
+      reason: 'Attempt a prohibited self assignment to system administrator',
+      confirmation: requiredConfirmation('ASSIGN_ROLES', 'run10-manager@example.invalid'),
+    }, context('run10-manager@example.invalid')), (error) =>
+      error instanceof AuthorizationAdminError && error.code === 'cannot_self_escalate');
+
+    assert.throws(() => service.updateRole(ROLE_CODES.SYS_ADMIN, {
+      displayLabel: 'System administrator', active: false,
+      reason: 'Attempt to disable the final active system administrator role',
+      confirmation: requiredConfirmation('PUBLISH_ROLE', ROLE_CODES.SYS_ADMIN),
+    }, context()), /last_super_admin_required/);
+  } finally { close(db); }
+});
+
+test('approval preview and publish reject missing or conflicting approvers', () => {
+  const { db, service } = fixture();
+  try {
+    addUser(db, 'run10-no-scope@example.invalid', ROLES.TBP);
+    service.authorizationService.syncLegacyUser('run10-no-scope@example.invalid');
+    db.prepare(`UPDATE user_scope_assignments SET active = 0
+      WHERE user_id = 'run10-no-scope@example.invalid'`).run();
+    const input = {
+      workflowType: 'EVALUATION', stageCode: 'TBP', assignedUserId: 'run10-no-scope@example.invalid',
+      scopeType: 'GLOBAL', scopeValue: null, priority: 10,
+      fixture: { regionId: 'REGION_SYNTHETIC', mch2Id: '203' },
+    };
+    assert.deepEqual(service.previewApprovalAssignment(input).candidates, []);
+    assert.throws(() => service.publishApprovalAssignment({
+      ...input,
+      reason: 'Publish should fail because the explicit approver has no active scope',
+      confirmation: requiredConfirmation('PUBLISH_APPROVER', 'EVALUATION:TBP'),
+    }, context()), (error) => error.code === 'approval_candidate_missing');
+
+    assert.throws(() => service.publishApprovalAssignment({
+      workflowType: 'EVALUATION', stageCode: 'LEAD', roleCode: ROLE_CODES.REGIONAL_LEAD_APPROVER,
+      scopeType: 'GLOBAL', scopeValue: null, priority: 100, fixture: {},
+      reason: 'Publish should fail because the same stage priority already exists',
+      confirmation: requiredConfirmation('PUBLISH_APPROVER', 'EVALUATION:LEAD'),
+    }, context()), (error) => error.code === 'approval_assignment_conflict');
+
+    const seededLead = service.listApprovalAssignments().find((item) =>
+      item.workflowType === 'EVALUATION' && item.stageCode === 'LEAD');
+    assert.throws(() => service.publishApprovalAssignment({
+      ...seededLead,
+      roleCode: seededLead.roleCode,
+      active: false,
+      fixture: {},
+      reason: 'Attempt to remove the final configured approver for a required stage',
+      confirmation: requiredConfirmation('PUBLISH_APPROVER', 'EVALUATION:LEAD'),
+    }, context()), (error) => error.code === 'approval_stage_missing');
+  } finally { close(db); }
+});
+
+test('valid approval assignment publishes its fixture preview and audit record', () => {
+  const { db, service } = fixture();
+  try {
+    const input = {
+      workflowType: 'EVALUATION', stageCode: 'LEAD', assignedUserId: ACTOR,
+      scopeType: 'GLOBAL', scopeValue: null, priority: 50, fixture: {},
+    };
+    assert.deepEqual(service.previewApprovalAssignment(input).candidates, [ACTOR]);
+
+    const published = service.publishApprovalAssignment({
+      ...input,
+      reason: 'Publish a deterministic explicit approver for the RUN-10 fixture',
+      confirmation: requiredConfirmation('PUBLISH_APPROVER', 'EVALUATION:LEAD'),
+    }, context());
+
+    assert.equal(published.item.assignedUserId, ACTOR);
+    assert.deepEqual(published.preview.candidates, [ACTOR]);
+    assert.ok(db.prepare(`SELECT 1 FROM audit_events
+      WHERE event_name = 'approval.assignment.changed' AND correlation_id = ?`)
+      .get('correlation-run10-0001'));
+  } finally { close(db); }
+});
+
+test('authorization management API denies unauthorized reads and self-escalation', async () => {
+  const { db, service } = fixture();
+  try {
+    const deniedApp = express();
+    deniedApp.use(express.json());
+    deniedApp.use('/admin/authorization', createAuthorizationAdminRouter({
+      service,
+      authenticate: (req, res, next) => { req.user = { email: TARGET }; next(); },
+      authorize: (req, res) => res.status(403).json({ error: 'forbidden_permission' }),
+    }));
+    await withServer(deniedApp, async (baseUrl) => {
+      const denied = await fetch(`${baseUrl}/admin/authorization/catalog`);
+      assert.equal(denied.status, 403);
+      assert.equal((await denied.json()).error, 'forbidden_permission');
+    });
+
+    const managerApp = express();
+    managerApp.use(express.json());
+    managerApp.use((req, res, next) => {
+      req.requestId = 'request-run10-http-0001';
+      req.correlationId = 'correlation-run10-http-0001';
+      next();
+    });
+    managerApp.use('/admin/authorization', createAuthorizationAdminRouter({
+      service,
+      authenticate: (req, res, next) => { req.user = { email: TARGET }; next(); },
+      authorize: (req, res, next) => next(),
+    }));
+    await withServer(managerApp, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/admin/authorization/users/${encodeURIComponent(TARGET)}/roles`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          roles: [{ roleCode: ROLE_CODES.SYS_ADMIN }],
+          reason: 'Attempt prohibited self escalation over the direct HTTP API',
+          confirmation: requiredConfirmation('ASSIGN_ROLES', TARGET),
+        }),
+      });
+      assert.equal(response.status, 409);
+      assert.equal((await response.json()).error, 'cannot_self_escalate');
+    });
+  } finally { close(db); }
+});
+
+test('authorization admin UI exposes IA, master-detail, safety and responsive states', () => {
+  const root = path.resolve(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'src', 'tailwind.css'), 'utf8');
+  for (const label of ['Người dùng', 'Vai trò', 'Ma trận quyền', 'Phạm vi dữ liệu', 'Phân công phê duyệt', 'Lịch sử thay đổi']) {
+    assert.match(html, new RegExp(label));
+  }
+  assert.match(html, /data-testid="authorization-admin"/);
+  assert.match(html, /authz-master-detail/);
+  assert.match(html, /authz-sticky-save/);
+  assert.match(html, /authz-admin-state/);
+  assert.match(html, /aria-live="polite"/);
+  assert.match(app, /beforeunload/);
+  assert.match(app, /authzUnsaved/);
+  assert.match(app, /requiredConfirmation/);
+  assert.match(css, /authz-master-detail/);
+  assert.match(css, /@media[^{}]*max-width[^{}]*\{[\s\S]*authz-master-detail/);
+});
+
+test('authorization workspace exposes user filters, effective-rights sources and permission preview controls', () => {
+  const root = path.resolve(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'src', 'tailwind.css'), 'utf8');
+
+  for (const id of [
+    'authz-user-search',
+    'authz-user-active-filter',
+    'authz-user-role-filter',
+    'authz-user-health-filter',
+    'authz-user-filter-summary',
+    'authz-permission-search',
+    'authz-permission-effect-filter',
+    'authz-permission-preview',
+  ]) assert.match(html, new RegExp(`id="${id}"`));
+
+  assert.match(app, /authzUserDetails/);
+  assert.match(app, /permission_conflict/);
+  assert.match(app, /expired_role/);
+  assert.match(app, /deniedPermissions/);
+  assert.match(app, /effective\.sources/);
+  assert.match(app, /DENY_WINS/);
+  assert.match(app, /confirmAuthzRouteLeave/);
+  assert.match(css, /authz-filter-bar/);
+  assert.match(css, /authz-effective-columns/);
+  assert.match(css, /\.authz-filter-bar\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.authz-choice-row\s*>\s*\.authz-role-meta\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.authz-summary-chip\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  assert.match(css, /\.authz-source-row\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(css, /#authz-user-detail-title,\s*#authz-user-detail-sub\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+});
+
+test('authorization UI preserves dual permission effects and guards mutations with reasons', () => {
+  const root = path.resolve(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+
+  assert.match(html, /id="authz-permission-effect-filter"[\s\S]*?<option value="ALLOW_DENY">ALLOW \+ DENY<\/option>/);
+  assert.match(html, /id="new-user-reason"[^>]*minlength="8"[^>]*maxlength="500"/);
+  assert.match(html, /id="confirm-reason-field"[\s\S]*?id="confirm-reason"[^>]*minlength="8"[^>]*maxlength="500"[\s\S]*?id="confirm-reason-error"/);
+
+  assert.match(app, /function permissionEffectsForValue\(value\)/);
+  assert.match(app, /value === 'ALLOW_DENY'[\s\S]*?'ALLOW'[\s\S]*?'DENY'/);
+  assert.match(app, /permissionEffectsForValue\(select\?\.value\)\.includes\(effect\)/);
+  assert.match(app, /reasonRequired/);
+  assert.match(app, /body:\s*\{\s*reason:\s*confirmed\s*\}/);
+  assert.match(app, /reason:\s*\$\('new-user-reason'\)\.value\.trim\(\)/);
+  assert.match(app, /authzRoleDetail\.assignmentCount \?\? authzRoleDetail\.userCount/);
+});
+
+test('authorization draft guard runs before navigation and logout mutations and stale loads are ignored', () => {
+  const root = path.resolve(__dirname, '..');
+  const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const navigateSource = app.slice(app.indexOf('async function navigateToTab'), app.indexOf('function closeMobileFilters'));
+  const logoutSource = app.slice(app.indexOf("$('btn-logout').addEventListener"), app.indexOf('// Route buttons are rendered'));
+
+  assert.ok(navigateSource.includes('await confirmAuthzRouteLeave'), 'navigateToTab must await the authorization draft guard');
+  assert.ok(navigateSource.indexOf('await confirmAuthzRouteLeave') < navigateSource.indexOf('activateRouteResolution'), 'navigation guard must run before route state/hash mutation');
+  assert.ok(logoutSource.includes('await confirmAuthzRouteLeave'), 'logout must await the authorization draft guard');
+  assert.ok(logoutSource.indexOf('await confirmAuthzRouteLeave') < logoutSource.indexOf("api('/auth/logout'"), 'logout guard must run before the logout request');
+
+  assert.match(app, /let authzRoleRequestSequence = 0;/);
+  assert.match(app, /let authzUserRequestSequence = 0;/);
+  assert.match(app, /const requestSequence = \+\+authzRoleRequestSequence;[\s\S]*?requestSequence !== authzRoleRequestSequence/);
+  assert.match(app, /const requestSequence = \+\+authzUserRequestSequence;[\s\S]*?requestSequence !== authzUserRequestSequence/);
+});
+
+test('authorization setup navigation and audit history expose a scannable responsive public seam', () => {
+  const root = path.resolve(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'src', 'tailwind.css'), 'utf8');
+
+  for (const [tab, pane, step] of [
+    ['users', 'authz-pane-users', '01'],
+    ['roles', 'authz-pane-roles', '02'],
+    ['permissions', 'authz-pane-permissions', '03'],
+    ['scopes', 'authz-pane-scopes', '04'],
+    ['approvals', 'authz-pane-approvals', '05'],
+    ['history', 'authz-pane-history', '06'],
+  ]) {
+    assert.match(html, new RegExp(`<button(?=[^>]*data-authz-tab="${tab}")(?=[^>]*aria-controls="${pane}")[^>]*>[\\s\\S]{0,120}authz-tab-step[^>]*>${step}<`));
+  }
+
+  for (const id of [
+    'authz-history-total',
+    'authz-history-system',
+    'authz-history-manual',
+    'authz-history-missing-reason',
+    'authz-history-search',
+    'authz-history-actor-filter',
+    'authz-history-change-filter',
+    'authz-history-result-count',
+  ]) assert.match(html, new RegExp(`id="${id}"`));
+
+  assert.match(html, /class="data-table authz-history-table"[\s\S]*?<th>Thời điểm &amp; người thực hiện<\/th>[\s\S]*?<th>Truy vết<\/th>/);
+  assert.match(app, /let authzHistoryRows = \[\];/);
+  assert.match(app, /function renderAuthzHistory\(\)/);
+  assert.match(app, /function authzHistoryCell\(label, options = \{\}\)/);
+  assert.match(css, /\.authz-tab-step\s*\{/);
+  assert.match(css, /\.authz-history-overview\s*\{/);
+  assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*\.authz-history-table\s+thead\s*\{[^}]*position:\s*absolute;/);
+});

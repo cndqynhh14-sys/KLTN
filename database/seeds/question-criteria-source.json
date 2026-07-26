@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "mode": "INSERT_ONLY_EMPTY_DATABASE",
+  "source": "document/Bộ điều khoản đánh giá NCC.xlsx",
+  "sha256": "06570c5f8e86f8eb945eb80c770a183591bf87d33df53961cda366a23c3e20e4"
+}

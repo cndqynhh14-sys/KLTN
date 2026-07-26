@@ -1,0 +1,2 @@
+-- Evaluation-only baseline currently has no application-level default rows.
+-- Historical schema and data remain governed by immutable migrations 0001–0018.
