@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - codex-update-qlcl
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EVIDENCE_SECRET_MARKERS: ci-test-placeholder-only
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with evidence
+        id: evidence_test
+        run: npm run evidence:test -- --work-item "CI test"
+        env:
+          JWT_SECRET: ci-test-placeholder-only
+          EMAIL_MODE: console
+          USE_IN_MEMORY_OTP: "true"
+
+      - name: Verify test evidence
+        id: verify_test_evidence
+        if: always() && steps.evidence_test.outputs.run_id != ''
+        run: npm run evidence:verify -- --run-id "${{ steps.evidence_test.outputs.run_id }}"
+
+      - name: Bundle test evidence
+        if: always() && steps.verify_test_evidence.outcome == 'success'
+        run: npm run evidence:bundle -- --run-id "${{ steps.evidence_test.outputs.run_id }}"
+
+      - name: Upload test evidence
+        if: always() && steps.verify_test_evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-evidence-test-${{ steps.evidence_test.outputs.run_id }}
+          path: |
+            artifacts/dev-runs/${{ steps.evidence_test.outputs.run_id }}/
+            artifacts/dev-runs/bundles/${{ steps.evidence_test.outputs.run_id }}.tar.gz
+            artifacts/dev-runs/bundles/${{ steps.evidence_test.outputs.run_id }}.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Build assets with evidence
+        id: evidence_build
+        run: npm run evidence:run -- --work-item "CI build" -- npm run build
+
+      - name: Verify build evidence
+        id: verify_build_evidence
+        if: always() && steps.evidence_build.outputs.run_id != ''
+        run: npm run evidence:verify -- --run-id "${{ steps.evidence_build.outputs.run_id }}"
+
+      - name: Bundle build evidence
+        if: always() && steps.verify_build_evidence.outcome == 'success'
+        run: npm run evidence:bundle -- --run-id "${{ steps.evidence_build.outputs.run_id }}"
+
+      - name: Upload build evidence
+        if: always() && steps.verify_build_evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-evidence-build-${{ steps.evidence_build.outputs.run_id }}
+          path: |
+            artifacts/dev-runs/${{ steps.evidence_build.outputs.run_id }}/
+            artifacts/dev-runs/bundles/${{ steps.evidence_build.outputs.run_id }}.tar.gz
+            artifacts/dev-runs/bundles/${{ steps.evidence_build.outputs.run_id }}.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error

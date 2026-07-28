@@ -1,0 +1,18 @@
+[Unit]
+Description=WCM QLCL quality-control dashboard
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=adminuser
+WorkingDirectory=/home/adminuser/qlcl
+ExecStart=/home/adminuser/.nvm/versions/node/v20.19.5/bin/node server/index.js
+EnvironmentFile=/home/adminuser/qlcl/.env
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/adminuser/qlcl/logs/app.log
+StandardError=append:/home/adminuser/qlcl/logs/error.log
+
+[Install]
+WantedBy=multi-user.target
