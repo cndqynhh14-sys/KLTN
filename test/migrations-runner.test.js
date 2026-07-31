@@ -61,7 +61,7 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
     const first = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'test-version' });
     assert.deepEqual(first.results.map((row) => row.id), projectMigrationIds);
     assert.ok(first.results.every((row) => row.state === 'applied' && row.executionMode === 'applied'));
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 62);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 63);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(
         db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),
@@ -226,7 +226,7 @@ test('backup and restored fixture retain ledger, row counts and foreign-key inte
   }
 });
 
-test('0019 upgrades a populated 0018 database and preserves retained supplier-evaluation rows', () => {
+test('0019 through 0025 upgrade a populated 0018 database and preserve retained supplier-evaluation rows', () => {
   const directory = tempDir('scope-upgrade');
   const historicalMigrations = path.join(directory, 'migrations-through-0018');
   fs.mkdirSync(historicalMigrations);
@@ -261,7 +261,8 @@ test('0019 upgrades a populated 0018 database and preserves retained supplier-ev
 
     const result = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'commit-2' });
 
-    assert.equal(result.results.at(-1).id, '0019');
+    assert.equal(result.results.find((row) => row.id === '0019').executionMode, 'applied');
+    assert.equal(result.results.at(-1).id, '0025');
     assert.equal(result.results.at(-1).executionMode, 'applied');
     assert.equal(db.prepare("SELECT supplier_name FROM supplier_master WHERE supplier_code='SYN-SCOPE-001'").pluck().get(), 'SYNTHETIC RETAINED NCC');
     assert.equal(db.prepare("SELECT COUNT(*) FROM notifications WHERE unique_key='scope-retained'").pluck().get(), 1);

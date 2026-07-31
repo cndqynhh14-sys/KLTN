@@ -160,6 +160,16 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     assert.equal(row.business_license_file, 'license.pdf');
     assert.equal(row.attp_certificate_file, 'attp.pdf');
     assert.equal(row.qa_support_ids, JSON.stringify(['support-a@masangroup.com']));
+    assert.ok(row.snapshot_locked_at);
+    assert.equal(
+      row.snapshot_locked_at,
+      db.prepare('SELECT started_at FROM evaluation_rounds WHERE ticket_id=? AND round_no=1').pluck().get(row.id),
+    );
+    assert.equal(db.prepare(`SELECT COUNT(*) FROM evaluation_participants
+      WHERE ticket_id=? AND participant_role IN ('OWNER','QA_LEAD','QA_SUPPORT','EVALUATOR')`).pluck().get(row.id), 4);
+    assert.equal(db.prepare(`SELECT COUNT(*) FROM evaluation_participants
+      WHERE round_id=(SELECT id FROM evaluation_rounds WHERE ticket_id=? AND round_no=1)
+        AND participant_role='EVALUATOR'`).pluck().get(row.id), 1);
 
     const beforeUpdateCount = db.prepare('SELECT COUNT(*) AS n FROM evaluation_tickets').get().n;
     const updateRes = await fetch(`${appInfo.baseUrl}/evaluations/${encodeURIComponent(json.ticket.ticket_code)}`, {
@@ -279,6 +289,9 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
       db.prepare('SELECT attendees_json FROM evaluation_rounds WHERE ticket_id = ? AND round_no = 1').get(ticketInfo.lastInsertRowid).attendees_json,
       JSON.stringify(saveJson.round.attendees)
     );
+    assert.equal(db.prepare(`SELECT COUNT(*) FROM evaluation_participants
+      WHERE round_id=(SELECT id FROM evaluation_rounds WHERE ticket_id=? AND round_no=1)
+        AND participant_role='ATTENDEE'`).pluck().get(ticketInfo.lastInsertRowid), 2);
     assert.equal(db.prepare('SELECT current_status FROM evaluation_tickets WHERE ticket_code = ?').get('TICKET-DRAFT').current_status, processingStatus);
     assert.equal(db.prepare('SELECT status FROM evaluation_rounds WHERE ticket_id = ? AND round_no = 1').get(ticketInfo.lastInsertRowid).status, processingStatus);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM workflow_history WHERE ticket_id = ? AND action = ?').get(ticketInfo.lastInsertRowid, 'SCORING_DRAFT_SAVE').count, 1);
@@ -567,6 +580,10 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     assert.equal(createJson.nonconformities[0].nonconformity, 'Label evidence is incomplete');
     assert.equal(createJson.nonconformities[0].due_date, '2026-07-08');
     assert.equal(createJson.nonconformities[0].status, 'OPEN');
+    const canonicalCreated = db.prepare(`SELECT evaluation_answer_id, nonconformity_content
+      FROM evaluation_nonconformities WHERE id=?`).get(createJson.nonconformities[0].id);
+    assert.ok(canonicalCreated.evaluation_answer_id > 0);
+    assert.equal(canonicalCreated.nonconformity_content, 'Label evidence is incomplete');
 
     const ncId = createJson.nonconformities[0].id;
     const invalidUpdateRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC/nonconformities/${ncId}`, {
@@ -596,6 +613,8 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     assert.equal(updateJson.item.remediation, 'Bổ sung hồ sơ');
     assert.equal(updateJson.item.due_date, '2026-08-01');
     assert.equal(updateJson.item.status, 'IN_PROGRESS');
+    assert.equal(db.prepare(`SELECT remediation_content FROM evaluation_nonconformities WHERE id=?`)
+      .pluck().get(ncId), 'Bổ sung hồ sơ');
 
     const resaveRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC/rounds/1/answers`, {
       method: 'PUT',
@@ -610,6 +629,8 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     const resaveJson = await resaveRes.json();
     assert.equal(resaveRes.status, 200, JSON.stringify(resaveJson));
     assert.equal(resaveJson.nonconformities[0].due_date, '2026-08-01');
+    assert.equal(db.prepare(`SELECT nonconformity_content FROM evaluation_nonconformities WHERE id=?`)
+      .pluck().get(ncId), 'Updated nonconformity description');
 
     const detailRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC`, {
       headers: { Cookie: `qlcl_token=${token}` },

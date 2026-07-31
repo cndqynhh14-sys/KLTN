@@ -818,11 +818,13 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
   const insert = db.prepare(`
     INSERT INTO evaluation_nonconformities (
       ticket_id, round_id, question_id, clause_code, category, nonconformity,
-      remediation, due_date, severity, status, corrective_action_id, created_by, updated_by
+      remediation, due_date, severity, status, corrective_action_id, created_by, updated_by,
+      evaluation_answer_id, nonconformity_content, remediation_content
     )
     VALUES (
       @ticket_id, @round_id, @question_id, @clause_code, @category, @nonconformity,
-      @remediation, @due_date, @severity, @status, @corrective_action_id, @created_by, @updated_by
+      @remediation, @due_date, @severity, @status, @corrective_action_id, @created_by, @updated_by,
+      @evaluation_answer_id, @nonconformity_content, @remediation_content
     )
   `);
   const update = db.prepare(`
@@ -830,6 +832,9 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
     SET clause_code=@clause_code,
         category=@category,
         nonconformity=@nonconformity,
+        nonconformity_content=@nonconformity_content,
+        evaluation_answer_id=COALESCE(evaluation_answer_id, @evaluation_answer_id),
+        remediation_content=COALESCE(remediation_content, remediation, @remediation_content),
         severity=@severity,
         due_date=COALESCE(due_date, @due_date),
         updated_at=datetime('now'),
@@ -852,7 +857,10 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
       clause_code: question.question_code,
       category: question.section_name,
       nonconformity: String(answer.comment || answer.note || question.text || '').trim(),
+      nonconformity_content: String(answer.comment || answer.note || question.text || '').trim(),
+      evaluation_answer_id: answer.answer_id || null,
       remediation: existing?.remediation || null,
+      remediation_content: existing?.remediation_content || existing?.remediation || null,
       due_date: existing?.due_date || defaultDueDate,
       severity: answer.score,
       status: existing?.status || 'OPEN',
@@ -1017,6 +1025,7 @@ evaluationScoringService = new EvaluationScoringService({
 evaluationTicketService = new EvaluationTicketService({
   db,
   ticketRepository,
+  roundRepository,
   logWorkflow,
   attachLegalFiles,
   policyService,
