@@ -74,7 +74,7 @@ test('legacy synthetic fixture upgrades through controlled forward-repair and pr
     const db = mod.db;
 
     const ledger = db.prepare('SELECT * FROM schema_migrations ORDER BY migration_id').all();
-    assert.equal(ledger.length, 19);
+    assert.equal(ledger.length, 25);
     assert.equal(ledger[0].migration_id, '0001');
     assert.equal(ledger[0].execution_mode, 'forward-repair');
     assert.match(ledger[0].checksum, /^[a-f0-9]{64}$/);
@@ -105,6 +105,9 @@ test('legacy synthetic fixture upgrades through controlled forward-repair and pr
     assert.equal(ledger[17].execution_mode, 'applied');
     assert.equal(ledger[18].migration_id, '0019');
     assert.equal(ledger[18].execution_mode, 'applied');
+    assert.deepEqual(ledger.slice(19).map((row) => row.migration_id),
+      ['0020', '0021', '0022', '0023', '0024', '0025']);
+    assert.ok(ledger.slice(19).every((row) => row.execution_mode === 'applied'));
     assert.equal(ledger[7].execution_mode, 'applied');
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
     assert.deepEqual(snapshotCounts(db, CORE_TABLES), before);
@@ -160,14 +163,14 @@ test('fresh database survives two consecutive normal startups without recreating
 
   try {
     let mod = freshDbModule(dbPath);
-    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 19);
+    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 25);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(mod.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), undefined, table);
     }
     closeTempDb(mod.db);
 
     mod = freshDbModule(dbPath);
-    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 19);
+    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 25);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(mod.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), undefined, table);
     }

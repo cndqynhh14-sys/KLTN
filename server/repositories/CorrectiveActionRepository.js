@@ -30,6 +30,7 @@ class CorrectiveActionRepository {
       updateNonconformityProposal: db.prepare(`
         UPDATE evaluation_nonconformities
         SET remediation=@remediation,
+            remediation_content=@remediation,
             due_date=@due_date,
             status=@status,
             corrective_action_id=@corrective_action_id,

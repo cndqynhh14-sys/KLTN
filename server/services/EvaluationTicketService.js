@@ -99,9 +99,10 @@ function assertValidSupplierMasterData(fields) {
 }
 
 class EvaluationTicketService {
-  constructor({ db, ticketRepository, logWorkflow, attachLegalFiles, detailProviders = {}, policyService }) {
+  constructor({ db, ticketRepository, roundRepository, logWorkflow, attachLegalFiles, detailProviders = {}, policyService }) {
     this.db = db;
     this.ticketRepository = ticketRepository;
+    this.roundRepository = roundRepository;
     this.logWorkflow = logWorkflow;
     this.attachLegalFiles = attachLegalFiles;
     this.detailProviders = detailProviders;
@@ -113,10 +114,12 @@ class EvaluationTicketService {
       insertTemplate: db.prepare('INSERT INTO question_templates (template_code, template_name, active) VALUES (?, ?, 1)'),
       getSupplierById: db.prepare('SELECT * FROM supplier_master WHERE id = ?'),
       getSupplierByCode: db.prepare('SELECT * FROM supplier_master WHERE supplier_code = ?'),
-      insertRound1: db.prepare(`
-        INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, evaluator_id, status)
-        VALUES (?, 1, ?, ?, ?, ?)
-      `),
+      lockSnapshot: db.prepare(`UPDATE evaluation_tickets
+        SET snapshot_locked_at = COALESCE(snapshot_locked_at, (
+          SELECT started_at FROM evaluation_rounds
+          WHERE ticket_id = evaluation_tickets.id AND round_no = 1
+        ))
+        WHERE id = ?`),
     };
   }
 
@@ -314,7 +317,16 @@ class EvaluationTicketService {
       const scoringVersion = this.scoringPolicyRepository.pinTicket(info.lastInsertRowid);
       this.ticketRepository.updateCreateExtras({ ...payload, id: info.lastInsertRowid });
       this.updateLegalFiles(info.lastInsertRowid, files, user.email);
-      this.statements.insertRound1.run(info.lastInsertRowid, `${ticketCode}-R1`, null, user.email, DRAFT_STATUS);
+      this.roundRepository.insert({
+        ticket_id: info.lastInsertRowid,
+        round_no: 1,
+        source_round_id: null,
+        assessment_code: `${ticketCode}-R1`,
+        assessment_date: null,
+        evaluator_id: user.email,
+        status: DRAFT_STATUS,
+      });
+      this.statements.lockSnapshot.run(info.lastInsertRowid);
       this.logWorkflow(info.lastInsertRowid, user, 'TICKET_CREATE', null, DRAFT_STATUS, JSON.stringify({
         ticket_code: ticketCode,
         scoring_policy_version_id: scoringVersion.id,

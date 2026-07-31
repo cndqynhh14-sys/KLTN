@@ -1,6 +1,9 @@
+const EvaluationParticipantRepository = require('./EvaluationParticipantRepository');
+
 class EvaluationRoundRepository {
   constructor(db) {
     this.db = db;
+    this.participantRepository = new EvaluationParticipantRepository(db);
     this.statements = {
       getByTicketAndRound: db.prepare(`
         SELECT r.*, source.assessment_code AS source_assessment_code, source.round_no AS source_round_no
@@ -65,7 +68,9 @@ class EvaluationRoundRepository {
   }
 
   insert(payload) {
-    return this.statements.insert.run(payload);
+    const info = this.statements.insert.run(payload);
+    this.participantRepository.syncRound(info.lastInsertRowid, payload.evaluator_id);
+    return info;
   }
 
   markProcessingIfDraft({ roundId, processingStatus, draftStatus }) {
@@ -73,14 +78,18 @@ class EvaluationRoundRepository {
   }
 
   complete(payload) {
-    return this.statements.complete.run(payload);
+    const info = this.statements.complete.run(payload);
+    this.participantRepository.syncRound(payload.id, payload.locked_by);
+    return info;
   }
 
   updateAttendees(roundId, attendees) {
-    return this.statements.updateAttendees.run({
+    const info = this.statements.updateAttendees.run({
       id: roundId,
       attendees_json: JSON.stringify(attendees || []),
     });
+    this.participantRepository.syncRound(roundId);
+    return info;
   }
 
   setCorrectionLock({ ticketId, roundNo, locked }) {

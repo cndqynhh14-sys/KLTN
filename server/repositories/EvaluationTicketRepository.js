@@ -1,8 +1,10 @@
 const { WORKFLOW_STATUSES } = require('../domain/workflowHistory');
+const EvaluationParticipantRepository = require('./EvaluationParticipantRepository');
 
 class EvaluationTicketRepository {
   constructor(db) {
     this.db = db;
+    this.participantRepository = new EvaluationParticipantRepository(db);
     this.listStatementCache = new Map();
     this.previousDefaultsStatementCache = new Map();
     this.statements = {
@@ -242,11 +244,15 @@ class EvaluationTicketRepository {
   }
 
   insert(payload) {
-    return this.statements.insert.run({ current_status: WORKFLOW_STATUSES.DRAFT, ...payload });
+    const info = this.statements.insert.run({ current_status: WORKFLOW_STATUSES.DRAFT, ...payload });
+    this.participantRepository.syncTicket(info.lastInsertRowid, payload.created_by || payload.updated_by);
+    return info;
   }
 
   updateCreateExtras(payload) {
-    return this.statements.updateCreateExtras.run(payload);
+    const info = this.statements.updateCreateExtras.run(payload);
+    this.participantRepository.syncTicket(payload.id, payload.updated_by || payload.created_by);
+    return info;
   }
 
   updateLegalFileNames(payload) {
@@ -254,7 +260,10 @@ class EvaluationTicketRepository {
   }
 
   updateByCode(payload) {
-    return this.statements.updateByCode.run(payload);
+    const info = this.statements.updateByCode.run(payload);
+    const ticket = this.statements.getByCode.get(payload.ticket_code);
+    if (ticket) this.participantRepository.syncTicket(ticket.id, payload.updated_by);
+    return info;
   }
 
   softDelete(payload) {
