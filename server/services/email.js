@@ -9,6 +9,8 @@ const { SecretClient } = require('@azure/keyvault-secrets');
 const logger = require('../logger');
 
 const DEFAULT_SENDER = 'iso-app@masangroup.onmicrosoft.com';
+const EMAIL_PATTERN = /^[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+$/;
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 let credentials = null;
 let accessToken = null;
@@ -19,6 +21,42 @@ function boolEnv(name, defaultValue = false) {
   const value = process.env[name];
   if (value == null || value === '') return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
+function boolValue(value, defaultValue = false) {
+  if (value == null || value === '') return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
+function boundedInteger(value, fallback, { minimum = 1, maximum = 300000 } = {}) {
+  const parsed = Number.parseInt(String(value == null ? '' : value), 10);
+  return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+}
+
+function validateHeaderText(value, code, maximum = 200) {
+  const normalized = String(value == null ? '' : value).trim();
+  if (!normalized || normalized.length > maximum || CONTROL_CHARACTERS.test(normalized)) {
+    throw new Error(code);
+  }
+  return normalized;
+}
+
+function validateMailbox(value, code = 'email_recipient_invalid') {
+  const normalized = String(value == null ? '' : value).trim().toLowerCase();
+  if (normalized.length > 320 || CONTROL_CHARACTERS.test(normalized) || !EMAIL_PATTERN.test(normalized)) {
+    throw new Error(code);
+  }
+  return normalized;
+}
+
+function validateEmailMessage({ to, subject, htmlContent }) {
+  const html = String(htmlContent == null ? '' : htmlContent);
+  if (Buffer.byteLength(html, 'utf8') > 256 * 1024) throw new Error('email_content_too_large');
+  return {
+    to: validateMailbox(to),
+    subject: validateHeaderText(subject, 'email_subject_invalid'),
+    htmlContent: html,
+  };
 }
 
 function hasGraphCredentials() {
@@ -42,7 +80,8 @@ function selectedProvider() {
 
 function formatAddress(address, name) {
   if (!name) return address;
-  return '"' + String(name).replace(/"/g, '\\"') + '" <' + address + '>';
+  const safeName = validateHeaderText(name, 'email_from_name_invalid', 160);
+  return '"' + safeName.replace(/"/g, '\\"') + '" <' + address + '>';
 }
 
 function escapeHtml(value) {
@@ -54,26 +93,36 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function getSmtpTransporter() {
-  if (smtpTransporter) return smtpTransporter;
-
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const secure = boolEnv('SMTP_SECURE', port === 465);
-  const options = process.env.SMTP_SERVICE
-    ? { service: process.env.SMTP_SERVICE }
-    : { host: process.env.SMTP_HOST || 'smtp.office365.com', port, secure };
-
-  smtpTransporter = nodemailer.createTransport({
+function buildSmtpTransportOptions(env = process.env) {
+  const port = boundedInteger(env.SMTP_PORT, 587, { maximum: 65535 });
+  const secure = boolValue(env.SMTP_SECURE, port === 465);
+  const service = String(env.SMTP_SERVICE || '').trim();
+  if (service && CONTROL_CHARACTERS.test(service)) throw new Error('smtp_service_invalid');
+  const host = String(env.SMTP_HOST || 'smtp.office365.com').trim();
+  if (!service && (!host || CONTROL_CHARACTERS.test(host))) throw new Error('smtp_host_invalid');
+  const options = service ? { service } : { host, port, secure };
+  return {
     ...options,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
     },
-    requireTLS: boolEnv('SMTP_REQUIRE_TLS', !secure),
-    connectionTimeout: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '10000', 10),
-    greetingTimeout: parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '10000', 10),
-    socketTimeout: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '20000', 10),
-  });
+    requireTLS: boolValue(env.SMTP_REQUIRE_TLS, !secure),
+    connectionTimeout: boundedInteger(env.SMTP_CONNECTION_TIMEOUT_MS, 10000),
+    greetingTimeout: boundedInteger(env.SMTP_GREETING_TIMEOUT_MS, 10000),
+    socketTimeout: boundedInteger(env.SMTP_SOCKET_TIMEOUT_MS, 20000),
+    disableFileAccess: true,
+    disableUrlAccess: true,
+    tls: {
+      rejectUnauthorized: true,
+      minVersion: 'TLSv1.2',
+    },
+  };
+}
+
+function getSmtpTransporter() {
+  if (smtpTransporter) return smtpTransporter;
+  smtpTransporter = nodemailer.createTransport(buildSmtpTransportOptions());
   return smtpTransporter;
 }
 
@@ -82,17 +131,24 @@ async function sendSmtpEmail({ to, subject, htmlContent }) {
     throw new Error('SMTP_USER and SMTP_PASS must be configured for EMAIL_PROVIDER=smtp');
   }
 
-  const fromAddress = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER;
+  const fromAddress = validateMailbox(
+    process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER,
+    'email_from_invalid',
+  );
   const fromName = process.env.SMTP_FROM_NAME || process.env.EMAIL_FROM_NAME || 'QLCL';
+  const replyTo = validateMailbox(
+    process.env.SMTP_REPLY_TO || process.env.SMTP_USER,
+    'email_reply_to_invalid',
+  );
   const info = await getSmtpTransporter().sendMail({
     from: formatAddress(fromAddress, fromName),
-    replyTo: process.env.SMTP_REPLY_TO || process.env.SMTP_USER,
+    replyTo,
     to,
     subject,
     html: htmlContent,
   });
 
-  logger.info('[email:smtp] sent', { to, from: fromAddress, messageId: info.messageId });
+  logger.info('[email:smtp] sent', { messageId: info.messageId });
   return true;
 }
 
@@ -117,7 +173,7 @@ async function loadCredentials() {
       sender: process.env.GRAPH_SENDER || DEFAULT_SENDER,
     };
   }
-  logger.info('[email] Credentials loaded, sender:', credentials.sender);
+  logger.info('[email] Credentials loaded');
   return credentials;
 }
 
@@ -149,7 +205,7 @@ async function getAccessToken() {
     { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) },
     form
   );
-  if (res.status !== 200) throw new Error('Token fetch failed: ' + res.data);
+  if (res.status !== 200) throw new Error('Token fetch failed: ' + res.status);
   const parsed = JSON.parse(res.data);
   accessToken = parsed.access_token;
   tokenExpiry = Date.now() + parsed.expires_in * 1000;
@@ -157,17 +213,18 @@ async function getAccessToken() {
 }
 
 async function sendEmail({ to, subject, htmlContent }) {
+  const message = validateEmailMessage({ to, subject, htmlContent });
   if (process.env.EMAIL_MODE === 'console' || process.env.DEV_EMAIL_CONSOLE === 'true') {
-    logger.info('[email:console]', { to, subject });
+    logger.info('[email:console] accepted');
     return true;
   }
 
   const provider = selectedProvider();
   if (provider === 'smtp') {
-    return sendSmtpEmail({ to, subject, htmlContent });
+    return sendSmtpEmail(message);
   }
   if (provider !== 'graph') {
-    logger.info('[email:dev-fallback]', { to, subject });
+    logger.info('[email:dev-fallback] accepted');
     return true;
   }
   if (!hasGraphCredentials()) {
@@ -178,9 +235,9 @@ async function sendEmail({ to, subject, htmlContent }) {
   const c = await loadCredentials();
   const body = JSON.stringify({
     message: {
-      subject,
-      body: { contentType: 'HTML', content: htmlContent },
-      toRecipients: [{ emailAddress: { address: to } }],
+      subject: message.subject,
+      body: { contentType: 'HTML', content: message.htmlContent },
+      toRecipients: [{ emailAddress: { address: message.to } }],
     },
     saveToSentItems: false,
   });
@@ -195,7 +252,7 @@ async function sendEmail({ to, subject, htmlContent }) {
     },
     body
   );
-  if (res.status !== 202) throw new Error('sendMail failed: ' + res.status + ' ' + res.data);
+  if (res.status !== 202) throw new Error('sendMail failed: ' + res.status);
   return true;
 }
 
@@ -231,4 +288,10 @@ function buildOtpEmail(code) {
   };
 }
 
-module.exports = { sendEmail, buildOtpEmail, buildWorkflowEmail };
+module.exports = {
+  buildOtpEmail,
+  buildSmtpTransportOptions,
+  buildWorkflowEmail,
+  sendEmail,
+  validateEmailMessage,
+};
