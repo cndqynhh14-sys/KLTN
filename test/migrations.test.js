@@ -42,6 +42,17 @@ function assertHasColumns(db, table, columns) {
   for (const column of columns) assert.ok(existing.includes(column), `${table}.${column}`);
 }
 
+function assertRetiredParticipantColumnsAbsent(db) {
+  const ticketColumns = tableColumns(db, 'evaluation_tickets');
+  const roundColumns = tableColumns(db, 'evaluation_rounds');
+  for (const column of ['evaluator_name', 'qa_lead_id', 'qa_support_ids']) {
+    assert.ok(!ticketColumns.includes(column), `evaluation_tickets.${column}`);
+  }
+  for (const column of ['evaluator_id', 'attendees_json']) {
+    assert.ok(!roundColumns.includes(column), `evaluation_rounds.${column}`);
+  }
+}
+
 function closeTempDb(db) {
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
   try { db.pragma('journal_mode = DELETE'); } catch {}
@@ -75,7 +86,7 @@ test('legacy synthetic fixture upgrades through controlled forward-repair and pr
     const db = mod.db;
 
     const ledger = db.prepare('SELECT * FROM schema_migrations ORDER BY migration_id').all();
-    assert.equal(ledger.length, 26);
+    assert.equal(ledger.length, 27);
     assert.equal(ledger[0].migration_id, '0001');
     assert.equal(ledger[0].execution_mode, 'forward-repair');
     assert.match(ledger[0].checksum, /^[a-f0-9]{64}$/);
@@ -107,7 +118,7 @@ test('legacy synthetic fixture upgrades through controlled forward-repair and pr
     assert.equal(ledger[18].migration_id, '0019');
     assert.equal(ledger[18].execution_mode, 'applied');
     assert.deepEqual(ledger.slice(19).map((row) => row.migration_id),
-      ['0020', '0021', '0022', '0023', '0024', '0025', '0026']);
+      ['0020', '0021', '0022', '0023', '0024', '0025', '0026', '0027']);
     assert.ok(ledger.slice(19).every((row) => row.execution_mode === 'applied'));
     assert.equal(ledger[7].execution_mode, 'applied');
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
@@ -128,11 +139,11 @@ test('legacy synthetic fixture upgrades through controlled forward-repair and pr
       'province', 'business_type', 'cmc_owner', 'attp_certificate_file',
     ]);
     assertHasColumns(db, 'evaluation_tickets', [
-      'production_address', 'evaluation_address', 'qa_lead_id', 'qa_support_ids',
+      'production_address', 'evaluation_address', 'evaluation_department',
       'corrected_score_percent', 'next_evaluation_date', 'final_conclusion', 'is_deleted',
     ]);
     assertHasColumns(db, 'evaluation_rounds', [
-      'assessment_code', 'assessment_date', 'evaluator_id', 'attendees_json', 'source_round_id',
+      'assessment_code', 'assessment_date', 'source_round_id',
     ]);
     assertHasColumns(db, 'report_exports', ['round_id', 'file_format', 'export_scope']);
     assertHasColumns(db, 'users', ['authz_version']);
@@ -164,17 +175,19 @@ test('fresh database survives two consecutive normal startups without recreating
 
   try {
     let mod = freshDbModule(dbPath);
-    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 26);
+    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 27);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(mod.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), undefined, table);
     }
+    assertRetiredParticipantColumnsAbsent(mod.db);
     closeTempDb(mod.db);
 
     mod = freshDbModule(dbPath);
-    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 26);
+    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 27);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(mod.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), undefined, table);
     }
+    assertRetiredParticipantColumnsAbsent(mod.db);
     assert.equal(mod.db.pragma('integrity_check', { simple: true }), 'ok');
     assert.equal(mod.db.pragma('foreign_key_check').length, 0);
     closeTempDb(mod.db);

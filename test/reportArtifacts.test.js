@@ -47,10 +47,10 @@ function createFixture(db) {
   `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actor);
   db.prepare(`
     INSERT INTO evaluation_rounds (
-      ticket_id, round_no, assessment_code, assessment_date, evaluator_id,
+      ticket_id, round_no, assessment_code, assessment_date,
       status, completed_at, total_score, final_result, classification
-    ) VALUES (?, 1, 'RUN18-EXPORT-001-R1', '2026-07-14', ?, 'Completed', '2026-07-14', 100, 'Pass', 'A')
-  `).run(ticketInfo.lastInsertRowid, actor);
+    ) VALUES (?, 1, 'RUN18-EXPORT-001-R1', '2026-07-14', 'Completed', '2026-07-14', 100, 'Pass', 'A')
+  `).run(ticketInfo.lastInsertRowid);
   return {
     actor,
     ticket: db.prepare('SELECT * FROM evaluation_tickets WHERE id=?').get(ticketInfo.lastInsertRowid),

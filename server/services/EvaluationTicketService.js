@@ -69,6 +69,21 @@ function hasOwnField(body, field) {
   return Object.prototype.hasOwnProperty.call(body || {}, field);
 }
 
+function participantPayload(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function participantIdentity(row) {
+  return String(row?.user_id || row?.display_name || '').trim();
+}
+
 function supplierSnapshotField(body, supplier, existing, field) {
   if (hasOwnField(body, field)) return body[field];
   if (hasOwnField(existing, field)) return existing[field];
@@ -497,6 +512,33 @@ class EvaluationTicketService {
     const actualEvaluationDate = assertValidDateField(body.actual_evaluation_date || existing.actual_evaluation_date, 'actual_evaluation_date_invalid');
     const supplierFields = standardSupplierFields(body, supplier, existing);
     if (hasExplicitStandardSupplierField(body)) assertValidSupplierMasterData(supplierFields);
+    const existingAssignments = existing.id
+      ? this.ticketRepository.participantAssignments(existing.id)
+      : { evaluator: '', qaLead: '', qaSupport: [] };
+    const canonicalParticipants = participantPayload(body.participants);
+    const hasCanonicalParticipants = hasOwnField(body, 'participants');
+    const identitiesForRole = (role) => canonicalParticipants
+      .filter((row) => row?.participant_role === role)
+      .map(participantIdentity)
+      .filter(Boolean);
+    const evaluator = hasCanonicalParticipants
+      ? identitiesForRole('EVALUATOR')[0] || ''
+      : String(body.evaluator_name || body.assignee || existingAssignments.evaluator || userEmail).trim();
+    const qaLead = hasCanonicalParticipants
+      ? identitiesForRole('QA_LEAD')[0] || ''
+      : hasOwnField(body, 'qa_lead_id')
+        ? String(body.qa_lead_id || '').trim()
+        : existingAssignments.qaLead;
+    let qaSupport = existingAssignments.qaSupport;
+    if (hasCanonicalParticipants) qaSupport = identitiesForRole('QA_SUPPORT');
+    else if (hasOwnField(body, 'qa_support_ids')) {
+      qaSupport = Array.isArray(body.qa_support_ids)
+        ? body.qa_support_ids
+        : participantPayload(body.qa_support_ids);
+    }
+    const owner = String(
+      body.assigned_specialist_id || existing.assigned_specialist_id || userEmail,
+    ).trim();
     return {
       supplier_id: supplier.id,
       supplier_code: supplier.supplier_code,
@@ -530,15 +572,16 @@ class EvaluationTicketService {
       facility_type: facilityType,
       supplier_scale: supplierScale,
       evaluation_method: String(body.method || body.evaluation_method || existing.evaluation_method || '').trim() || null,
-      evaluator_name: String(body.evaluator_name || body.assignee || existing.evaluator_name || userEmail).trim(),
-      qa_lead_id: String(body.qa_lead_id || existing.qa_lead_id || '').trim() || null,
-      qa_support_ids: Array.isArray(body.qa_support_ids)
-        ? JSON.stringify(body.qa_support_ids.map((v) => String(v).trim()).filter(Boolean))
-        : String(body.qa_support_ids || existing.qa_support_ids || '').trim() || null,
+      participant_assignments: {
+        owner,
+        evaluator,
+        qaLead,
+        qaSupport: qaSupport.map((value) => String(value || '').trim()).filter(Boolean),
+      },
       evaluation_department: String(body.evaluation_department || existing.evaluation_department || '').trim() || null,
       planned_date: plannedDate,
       actual_evaluation_date: actualEvaluationDate,
-      assigned_specialist_id: String(body.assigned_specialist_id || existing.assigned_specialist_id || userEmail).trim(),
+      assigned_specialist_id: owner,
       updated_by: userEmail,
     };
   }

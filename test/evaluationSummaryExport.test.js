@@ -161,7 +161,7 @@ test('evaluation summary route exports filtered rows using template columns and 
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_address, linked_facility_address,
         region, province, business_type, cmc_owner, cmc_head, contact_name, contact_email, contact_phone,
         mch2, mch3, product_group, product_name, evaluation_type, template_id, facility_type, supplier_scale,
-        evaluation_method, evaluator_name, qa_lead_id, qa_support_ids, evaluation_department,
+        evaluation_method, evaluation_department,
         planned_date, actual_evaluation_date, current_status, current_round_no, completed_round,
         score_percent, grade_code, result_label, corrected_score_percent, corrected_grade_code,
         corrected_result_label, correction_date, next_evaluation_date, final_conclusion, specialist_proposal,
@@ -171,7 +171,7 @@ test('evaluation summary route exports filtered rows using template columns and 
         'TICKET-SUM', @supplier_id, 'NCC-SUM', 'Summary Supplier', 'Ticket Audit Site', 'Ticket Linked Site',
         'MN', 'TPHCM', 'Sản xuất', 'CMC Owner', 'CMC Head', 'Supplier Contact', 'contact@example.com', '0900000000',
         'Thực phẩm tươi sống, chế biến', 'Rau củ', 'Rau', 'Cà rốt', 'Đánh giá định kỳ', @template_id, 'CHUNG', 'LARGE',
-        'Onsite', 'Evaluator A', 'qa.lead@masangroup.com', @qa_support_ids, 'QA NCC',
+        'Onsite', 'QA NCC',
         '2026-04-19', '2026-04-20', 'Hoàn thành', 2, 2,
         72.5, 'C', 'Đạt mức cơ bản và tái đánh giá sau 6 tháng', 87.5, 'B',
         'Đạt mức trung bình và tái đánh giá sau 1 năm', '2026-05-01', '2027-04-20', 'Đạt', 'Approve supplier',
@@ -180,8 +180,13 @@ test('evaluation summary route exports filtered rows using template columns and 
     `).run({
       supplier_id: supplier.lastInsertRowid,
       template_id: template.lastInsertRowid,
-      qa_support_ids: JSON.stringify(['qa.support@masangroup.com']),
     });
+    const insertTicketParticipant = db.prepare(`INSERT INTO evaluation_participants
+      (ticket_id, user_id, display_name, participant_role, assigned_by)
+      VALUES (?, ?, ?, ?, 'qa.lead@masangroup.com')`);
+    insertTicketParticipant.run(ticket.lastInsertRowid, null, 'Evaluator A', 'EVALUATOR');
+    insertTicketParticipant.run(ticket.lastInsertRowid, 'qa.lead@masangroup.com', 'QA Lead', 'QA_LEAD');
+    insertTicketParticipant.run(ticket.lastInsertRowid, null, 'qa.support@masangroup.com', 'QA_SUPPORT');
     const otherTicket = db.prepare(`
       INSERT INTO evaluation_tickets (
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id,
@@ -268,7 +273,7 @@ test('evaluation summary route exports filtered rows using template columns and 
     assert.equal(worksheet.N4.v, 'Ticket Audit Site');
     assert.equal(worksheet.O4.v, 'Ticket Linked Site');
     assert.equal(worksheet.S4.v, 'Cà rốt');
-    assert.equal(worksheet.T4.v, 'qa.lead@masangroup.com');
+    assert.equal(worksheet.T4.v, 'QA Lead');
     assert.equal(worksheet.U4.v, 'qa.support@masangroup.com');
     assert.equal(worksheet.X4.v, 0.725);
     assert.equal(worksheet.Y4.v, 'Đạt mức cơ bản và tái đánh giá sau 6 tháng');

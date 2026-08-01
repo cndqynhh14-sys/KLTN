@@ -1,6 +1,7 @@
 'use strict';
 
-function parseJsonArray(value) {
+function parseIdentityList(value) {
+  if (Array.isArray(value)) return value;
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
@@ -22,8 +23,8 @@ class EvaluationParticipantRepository {
   constructor(db) {
     this.db = db;
     this.statements = {
-      ticket: db.prepare('SELECT * FROM evaluation_tickets WHERE id = ?'),
-      round: db.prepare('SELECT * FROM evaluation_rounds WHERE id = ?'),
+      ticket: db.prepare('SELECT id, created_at, created_by, updated_by FROM evaluation_tickets WHERE id = ?'),
+      round: db.prepare('SELECT id, started_at, locked_by FROM evaluation_rounds WHERE id = ?'),
       ticketParticipants: db.prepare(`SELECT * FROM evaluation_participants
         WHERE ticket_id = ? AND active = 1
         ORDER BY participant_role, id`),
@@ -34,9 +35,11 @@ class EvaluationParticipantRepository {
         WHERE lower(email) = lower(?) ORDER BY email`),
       deleteTicketProjection: db.prepare(`DELETE FROM evaluation_participants
         WHERE ticket_id = ? AND participant_role IN ('OWNER', 'QA_LEAD', 'QA_SUPPORT', 'EVALUATOR')`),
-      deleteRoundProjection: db.prepare(`DELETE FROM evaluation_participants
-        WHERE round_id = ? AND participant_role IN ('EVALUATOR', 'ATTENDEE')`),
-      insert: db.prepare(`INSERT OR IGNORE INTO evaluation_participants (
+      deleteRoundEvaluator: db.prepare(`DELETE FROM evaluation_participants
+        WHERE round_id = ? AND participant_role = 'EVALUATOR'`),
+      deleteRoundAttendees: db.prepare(`DELETE FROM evaluation_participants
+        WHERE round_id = ? AND participant_role = 'ATTENDEE'`),
+      insert: db.prepare(`INSERT INTO evaluation_participants (
         ticket_id, round_id, user_id, display_name, participant_role,
         opening_meeting, closing_meeting, assigned_at, assigned_by
       ) VALUES (
@@ -70,138 +73,35 @@ class EvaluationParticipantRepository {
     }));
   }
 
-  legacyParticipant({ ticketId = null, roundId = null, identity, displayName = null,
-    role, opening = false, closing = false }) {
-    const normalized = String(identity || displayName || '').trim();
-    if (!normalized) return null;
-    const user = this.user(identity);
-    return {
-      id: null,
-      ticket_id: ticketId,
-      round_id: roundId,
-      user_id: user?.email || null,
-      display_name: String(displayName || user?.display_name || user?.email || normalized).trim(),
-      participant_role: role,
-      opening_meeting: !!opening,
-      closing_meeting: !!closing,
-      active: true,
-      assigned_at: null,
-      assigned_by: null,
-      source: 'LEGACY',
-    };
-  }
-
-  legacyTicketParticipants(ticket) {
-    if (!ticket) return [];
-    const participants = [
-      this.legacyParticipant({ ticketId: ticket.id, identity: ticket.assigned_specialist_id, role: 'OWNER' }),
-      this.legacyParticipant({ ticketId: ticket.id, identity: ticket.qa_lead_id, role: 'QA_LEAD' }),
-      this.legacyParticipant({
-        ticketId: ticket.id,
-        identity: ticket.evaluator_name,
-        displayName: ticket.evaluator_name,
-        role: 'EVALUATOR',
-      }),
-    ];
-    for (const support of parseJsonArray(ticket.qa_support_ids)) {
-      if (typeof support !== 'string') continue;
-      participants.push(this.legacyParticipant({
-        ticketId: ticket.id,
-        identity: support,
-        displayName: support,
-        role: 'QA_SUPPORT',
-      }));
-    }
-    return participants.filter(Boolean);
-  }
-
-  legacyRoundParticipants(round) {
-    if (!round) return [];
-    const participants = [this.legacyParticipant({
-      roundId: round.id,
-      identity: round.evaluator_id,
-      role: 'EVALUATOR',
-    })];
-    for (const raw of parseJsonArray(round.attendees_json)) {
-      const attendee = normalizedAttendee(raw);
-      if (!attendee.name) continue;
-      participants.push(this.legacyParticipant({
-        roundId: round.id,
-        identity: attendee.name,
-        displayName: attendee.name,
-        role: 'ATTENDEE',
-        opening: attendee.opening,
-        closing: attendee.closing,
-      }));
-    }
-    return participants.filter(Boolean);
-  }
-
-  resolveParticipants(canonical, legacy) {
-    const canonicalByRole = new Map();
-    const legacyByRole = new Map();
-    for (const participant of canonical) {
-      const rows = canonicalByRole.get(participant.participant_role) || [];
-      rows.push(participant);
-      canonicalByRole.set(participant.participant_role, rows);
-    }
-    for (const participant of legacy) {
-      const rows = legacyByRole.get(participant.participant_role) || [];
-      rows.push(participant);
-      legacyByRole.set(participant.participant_role, rows);
-    }
-
-    const identity = (participant) => String(
-      participant.user_id || participant.display_name || '',
-    ).trim().toLocaleLowerCase('en-US');
-    const roles = new Set([...canonicalByRole.keys(), ...legacyByRole.keys()]);
-    const participants = [];
-    let fallbackCount = 0;
-    let mismatchCount = 0;
-    for (const role of roles) {
-      const canonicalRows = canonicalByRole.get(role) || [];
-      const legacyRows = legacyByRole.get(role) || [];
-      if (canonicalRows.length) {
-        participants.push(...canonicalRows);
-        if (legacyRows.length) {
-          const canonicalIdentities = canonicalRows.map(identity).sort().join('|');
-          const legacyIdentities = legacyRows.map(identity).sort().join('|');
-          if (canonicalIdentities !== legacyIdentities) mismatchCount += 1;
-        }
-      } else {
-        participants.push(...legacyRows);
-        fallbackCount += legacyRows.length;
-      }
-    }
-    const canonicalCount = participants.filter((row) => row.source === 'CANONICAL').length;
-    const source = canonicalCount && fallbackCount
-      ? 'MIXED'
-      : canonicalCount
-        ? 'CANONICAL'
-        : fallbackCount
-          ? 'LEGACY'
-          : 'NONE';
+  canonicalResolution(scope, id) {
+    const participants = this.canonicalParticipants(scope, id);
     return {
       participants,
-      source,
-      mismatch: mismatchCount > 0,
-      mismatch_count: mismatchCount,
-      fallback_count: fallbackCount,
+      source: participants.length ? 'CANONICAL' : 'NONE',
+      mismatch: false,
+      mismatch_count: 0,
+      fallback_count: 0,
     };
   }
 
   resolveTicketParticipants(ticketId) {
-    return this.resolveParticipants(
-      this.canonicalParticipants('ticket', ticketId),
-      this.legacyTicketParticipants(this.statements.ticket.get(ticketId)),
-    );
+    return this.canonicalResolution('ticket', ticketId);
   }
 
   resolveRoundParticipants(roundId) {
-    return this.resolveParticipants(
-      this.canonicalParticipants('round', roundId),
-      this.legacyRoundParticipants(this.statements.round.get(roundId)),
-    );
+    return this.canonicalResolution('round', roundId);
+  }
+
+  ticketAssignments(ticketId) {
+    const rows = this.canonicalParticipants('ticket', ticketId);
+    const identities = (role) => rows
+      .filter((row) => row.participant_role === role)
+      .map((row) => row.user_id || row.display_name);
+    return {
+      evaluator: identities('EVALUATOR')[0] || '',
+      qaLead: identities('QA_LEAD')[0] || '',
+      qaSupport: identities('QA_SUPPORT'),
+    };
   }
 
   insertParticipant({ ticketId = null, roundId = null, identity = null, displayName = null,
@@ -222,7 +122,7 @@ class EvaluationParticipantRepository {
     });
   }
 
-  syncTicket(ticketId, actor = null) {
+  replaceTicketAssignments(ticketId, assignments = {}, actor = null) {
     const ticket = this.statements.ticket.get(ticketId);
     if (!ticket) return;
     this.statements.deleteTicketProjection.run(ticket.id);
@@ -231,48 +131,61 @@ class EvaluationParticipantRepository {
       assignedAt: ticket.created_at,
       assignedBy: actor || ticket.updated_by || ticket.created_by,
     };
-    this.insertParticipant({ ...common, identity: ticket.assigned_specialist_id, role: 'OWNER' });
-    this.insertParticipant({ ...common, identity: ticket.qa_lead_id, role: 'QA_LEAD' });
-    for (const support of parseJsonArray(ticket.qa_support_ids)) {
-      if (typeof support !== 'string') continue;
-      this.insertParticipant({ ...common, identity: support, displayName: support, role: 'QA_SUPPORT' });
+    this.insertParticipant({ ...common, identity: assignments.owner, role: 'OWNER' });
+    this.insertParticipant({ ...common, identity: assignments.qaLead, role: 'QA_LEAD' });
+    const supports = new Map();
+    for (const value of parseIdentityList(assignments.qaSupport)) {
+      const identity = String(value || '').trim();
+      if (identity) supports.set(identity.toLocaleLowerCase('en-US'), identity);
+    }
+    for (const identity of supports.values()) {
+      this.insertParticipant({ ...common, identity, displayName: identity, role: 'QA_SUPPORT' });
     }
     this.insertParticipant({
       ...common,
-      identity: ticket.evaluator_name,
-      displayName: ticket.evaluator_name,
+      identity: assignments.evaluator,
+      displayName: assignments.evaluator,
       role: 'EVALUATOR',
     });
   }
 
-  syncRound(roundId, actor = null) {
+  setRoundEvaluator(roundId, evaluator, actor = null) {
     const round = this.statements.round.get(roundId);
     if (!round) return;
-    this.statements.deleteRoundProjection.run(round.id);
-    const common = {
+    this.statements.deleteRoundEvaluator.run(round.id);
+    this.insertParticipant({
       roundId: round.id,
+      identity: evaluator,
+      role: 'EVALUATOR',
       assignedAt: round.started_at,
-      assignedBy: actor || round.evaluator_id || round.locked_by,
-    };
-    this.insertParticipant({ ...common, identity: round.evaluator_id, role: 'EVALUATOR' });
-    const attendees = new Map();
-    for (const raw of parseJsonArray(round.attendees_json)) {
+      assignedBy: actor || evaluator || round.locked_by,
+    });
+  }
+
+  setRoundAttendees(roundId, attendees, actor = null) {
+    const round = this.statements.round.get(roundId);
+    if (!round) return;
+    this.statements.deleteRoundAttendees.run(round.id);
+    const normalized = new Map();
+    for (const raw of Array.isArray(attendees) ? attendees : []) {
       const attendee = normalizedAttendee(raw);
       if (!attendee.name) continue;
       const key = attendee.name.toLocaleLowerCase('en-US');
-      const existing = attendees.get(key) || { ...attendee, opening: false, closing: false };
+      const existing = normalized.get(key) || { ...attendee, opening: false, closing: false };
       existing.opening = existing.opening || attendee.opening;
       existing.closing = existing.closing || attendee.closing;
-      attendees.set(key, existing);
+      normalized.set(key, existing);
     }
-    for (const attendee of attendees.values()) {
+    for (const attendee of normalized.values()) {
       this.insertParticipant({
-        ...common,
+        roundId: round.id,
         identity: attendee.name,
         displayName: attendee.name,
         role: 'ATTENDEE',
         opening: attendee.opening,
         closing: attendee.closing,
+        assignedAt: round.started_at,
+        assignedBy: actor || round.locked_by,
       });
     }
   }

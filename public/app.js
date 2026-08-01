@@ -282,20 +282,11 @@ import { state } from './js/state.js';
     return displayName || value || '';
   }
   function qaSupportDisplay(ticket) {
-    const canonical = (ticket.participants || [])
+    return (ticket.participants || [])
       .filter((participant) => participant.participant_role === 'QA_SUPPORT')
       .map((participant) => participant.display_name || participant.user_id)
-      .filter(Boolean);
-    if (canonical.length) return canonical.join(', ');
-    if (Array.isArray(ticket.qa_support_display_names) && ticket.qa_support_display_names.length) {
-      return ticket.qa_support_display_names.join(', ');
-    }
-    try {
-      const parsed = JSON.parse(ticket.qa_support_ids || '[]');
-      return Array.isArray(parsed) ? parsed.join(', ') : (ticket.qa_support_ids || '');
-    } catch {
-      return ticket.qa_support_ids || '';
-    }
+      .filter(Boolean)
+      .join(', ');
   }
   function mapTicketFromApi(ticket) {
     const displayScore = ticket.display_score_percent ?? ticket.score_percent;
@@ -338,11 +329,10 @@ import { state } from './js/state.js';
       supplier_scale: ticket.supplier_scale || '',
       evaluation_method: ticket.evaluation_method || '',
       participants,
-      participant_source: ticket.participant_source || 'LEGACY',
+      participant_source: ticket.participant_source || 'NONE',
       participant_mismatch: !!ticket.participant_mismatch,
-      evaluator_name: evaluator?.display_name || evaluator?.user_id || ticket.evaluator_name || '',
-      qa_lead: qaLead?.display_name || qaLead?.user_id
-        || userDisplayValue(ticket.qa_lead_id, ticket.qa_lead_display_name),
+      evaluator_name: evaluator?.display_name || evaluator?.user_id || '',
+      qa_lead: qaLead?.display_name || qaLead?.user_id || '',
       qa_support: qaSupportDisplay(ticket),
       evaluation_department: ticket.evaluation_department || '',
       template_code: ticket.template_code || '',

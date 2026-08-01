@@ -79,17 +79,24 @@ function createTicket(db, suffix = 'PRIMARY', { withRound = true } = {}) {
   if (withRound) {
     roundId = Number(db.prepare(`
       INSERT INTO evaluation_rounds (
-        ticket_id, round_no, assessment_code, assessment_date, evaluator_id,
+        ticket_id, round_no, assessment_code, assessment_date,
         status, completed_at, locked_at, total_score, final_result, classification,
-        attendees_json
-      ) VALUES (?, 1, ?, '2026-07-15', ?, 'Completed', '2026-07-15',
-        '2026-07-15', 100, 'Pass', 'A', ?)
+        scoring_result_checksum
+      ) VALUES (?, 1, ?, '2026-07-15', 'Completed', '2026-07-15',
+        '2026-07-15', 100, 'Pass', 'A', NULL)
     `).run(
       ticketInfo.lastInsertRowid,
       `RUN21-${suffix}-R1`,
-      actor,
-      JSON.stringify([{ name: 'RUN-21 Synthetic QA', opening: true, closing: true }])
     ).lastInsertRowid);
+    db.prepare(`INSERT INTO evaluation_participants
+      (round_id, user_id, display_name, participant_role, opening_meeting,
+       closing_meeting, assigned_by)
+      VALUES (?, ?, 'RUN-21 Synthetic QA', 'ATTENDEE', 1, 1, ?)`)
+      .run(roundId, actor, actor);
+    db.prepare(`INSERT INTO evaluation_participants
+      (round_id, user_id, display_name, participant_role, assigned_by)
+      VALUES (?, ?, 'RUN-21 Synthetic QA', 'EVALUATOR', ?)`)
+      .run(roundId, actor, actor);
   }
   return {
     actor,

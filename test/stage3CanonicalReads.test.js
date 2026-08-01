@@ -32,18 +32,16 @@ function fixture() {
     VALUES ('STAGE3-TEMPLATE', 'Stage 3 Template', 1)`).run().lastInsertRowid;
   const ticketId = db.prepare(`INSERT INTO evaluation_tickets
     (ticket_code, supplier_id, evaluation_type, template_id, facility_type, supplier_scale,
-     current_status, assigned_specialist_id, qa_lead_id, qa_support_ids, evaluator_name, created_by)
+     current_status, assigned_specialist_id, created_by)
     VALUES ('STAGE3-TICKET', ?, 'Periodic', ?, 'CHUNG', 'LARGE', 'Khởi tạo',
-      'lead@example.invalid', 'lead@example.invalid', ?, 'Legacy evaluator', 'owner@example.invalid')`).run(
+      'lead@example.invalid', 'owner@example.invalid')`).run(
     supplierId,
     templateId,
-    JSON.stringify(['legacy-support@example.invalid']),
   ).lastInsertRowid;
   const roundId = db.prepare(`INSERT INTO evaluation_rounds
-    (ticket_id, round_no, evaluator_id, attendees_json, status)
-    VALUES (?, 1, 'legacy-round@example.invalid', ?, 'Khởi tạo')`).run(
+    (ticket_id, round_no, status)
+    VALUES (?, 1, 'Khởi tạo')`).run(
     ticketId,
-    JSON.stringify([{ name: 'Legacy attendee', opening: true, closing: false }]),
   ).lastInsertRowid;
   db.prepare(`INSERT INTO evaluation_participants
     (ticket_id, user_id, display_name, participant_role)
@@ -51,26 +49,38 @@ function fixture() {
   db.prepare(`INSERT INTO evaluation_participants
     (round_id, user_id, display_name, participant_role)
     VALUES (?, 'round@example.invalid', 'Canonical Evaluator', 'EVALUATOR')`).run(roundId);
+  db.prepare(`INSERT INTO evaluation_participants
+    (ticket_id, user_id, display_name, participant_role)
+    VALUES (?, 'lead@example.invalid', 'Canonical Lead', 'QA_LEAD')`).run(ticketId);
+  db.prepare(`INSERT INTO evaluation_participants
+    (ticket_id, display_name, participant_role)
+    VALUES (?, 'Canonical Support', 'QA_SUPPORT')`).run(ticketId);
+  db.prepare(`INSERT INTO evaluation_participants
+    (ticket_id, display_name, participant_role)
+    VALUES (?, 'Canonical Ticket Evaluator', 'EVALUATOR')`).run(ticketId);
+  db.prepare(`INSERT INTO evaluation_participants
+    (round_id, display_name, participant_role, opening_meeting, closing_meeting)
+    VALUES (?, 'Canonical Attendee', 'ATTENDEE', 1, 0)`).run(roundId);
   return { db, roundId, ticketId };
 }
 
-test('participant reads prefer canonical rows and fall back per missing role without mutating data', () => {
+test('participant reads use canonical rows exclusively without fallback mutation', () => {
   const { db, roundId, ticketId } = fixture();
   try {
     const repository = new EvaluationParticipantRepository(db);
     const ticket = repository.resolveTicketParticipants(ticketId);
-    assert.equal(ticket.source, 'MIXED');
-    assert.equal(ticket.mismatch, true);
+    assert.equal(ticket.source, 'CANONICAL');
+    assert.equal(ticket.mismatch, false);
     assert.equal(ticket.participants.find((row) => row.participant_role === 'OWNER').user_id, 'owner@example.invalid');
     assert.equal(ticket.participants.find((row) => row.participant_role === 'QA_LEAD').user_id, 'lead@example.invalid');
-    assert.equal(ticket.participants.find((row) => row.participant_role === 'QA_SUPPORT').display_name, 'legacy-support@example.invalid');
-    assert.equal(ticket.participants.find((row) => row.participant_role === 'EVALUATOR').display_name, 'Legacy evaluator');
+    assert.equal(ticket.participants.find((row) => row.participant_role === 'QA_SUPPORT').display_name, 'Canonical Support');
+    assert.equal(ticket.participants.find((row) => row.participant_role === 'EVALUATOR').display_name, 'Canonical Ticket Evaluator');
 
     const round = repository.resolveRoundParticipants(roundId);
-    assert.equal(round.source, 'MIXED');
+    assert.equal(round.source, 'CANONICAL');
     assert.equal(round.participants.find((row) => row.participant_role === 'EVALUATOR').user_id, 'round@example.invalid');
-    assert.equal(round.participants.find((row) => row.participant_role === 'ATTENDEE').display_name, 'Legacy attendee');
-    assert.equal(db.prepare('SELECT COUNT(*) FROM evaluation_participants').pluck().get(), 2, 'read must not backfill');
+    assert.equal(round.participants.find((row) => row.participant_role === 'ATTENDEE').display_name, 'Canonical Attendee');
+    assert.equal(db.prepare('SELECT COUNT(*) FROM evaluation_participants').pluck().get(), 6, 'read must not mutate');
   } finally {
     db.close();
   }

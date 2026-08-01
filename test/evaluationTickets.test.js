@@ -163,7 +163,7 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     assert.equal(row.linked_facility_address, 'Linked Address');
     assert.equal(row.business_license_file, 'license.pdf');
     assert.equal(row.attp_certificate_file, 'attp.pdf');
-    assert.equal(row.qa_support_ids, JSON.stringify(['support-a@masangroup.com']));
+    assert.ok(!db.pragma("table_info('evaluation_tickets')").some((column) => column.name === 'qa_support_ids'));
     assert.ok(row.snapshot_locked_at);
     assert.equal(
       row.snapshot_locked_at,
@@ -296,10 +296,7 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
       db.prepare('SELECT supplier_introduction FROM evaluation_tickets WHERE id = ?').get(ticketInfo.lastInsertRowid).supplier_introduction,
       REQUIRED_SUPPLIER_INTRODUCTION
     );
-    assert.equal(
-      db.prepare('SELECT attendees_json FROM evaluation_rounds WHERE ticket_id = ? AND round_no = 1').get(ticketInfo.lastInsertRowid).attendees_json,
-      JSON.stringify(saveJson.round.attendees)
-    );
+    assert.ok(!db.pragma("table_info('evaluation_rounds')").some((column) => column.name === 'attendees_json'));
     assert.equal(db.prepare(`SELECT COUNT(*) FROM evaluation_participants
       WHERE round_id=(SELECT id FROM evaluation_rounds WHERE ticket_id=? AND round_no=1)
         AND participant_role='ATTENDEE'`).pluck().get(ticketInfo.lastInsertRowid), 2);

@@ -20,16 +20,6 @@ function calculatedScore(score, definition) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function parseAttendees(value) {
-  if (!value) return [];
-  try {
-    const rows = JSON.parse(value);
-    return Array.isArray(rows) ? rows.map(normalizeAttendee).filter((row) => row.name || row.opening || row.closing) : [];
-  } catch {
-    return [];
-  }
-}
-
 function normalizeAttendee(value) {
   return {
     name: String(value?.name || value?.title || '').trim(),
@@ -129,7 +119,7 @@ class EvaluationScoringService {
 
   roundParticipantResolution(round) {
     const resolution = this.participantRepository?.resolveRoundParticipants(round.id)
-      || { participants: [], source: 'LEGACY', mismatch: false, mismatch_count: 0, fallback_count: 0 };
+      || { participants: [], source: 'NONE', mismatch: false, mismatch_count: 0, fallback_count: 0 };
     if (resolution.mismatch) {
       logger.warn('evaluation.canonical_read_mismatch', {
         resource_type: 'round_participant',
@@ -153,9 +143,7 @@ class EvaluationScoringService {
         opening: !!participant.opening_meeting,
         closing: !!participant.closing_meeting,
       }));
-    const attendees = canonicalAttendees.length || this.participantRepository
-      ? canonicalAttendees
-      : parseAttendees(round.attendees_json);
+    const attendees = canonicalAttendees;
     return {
       id: round.id,
       assessment_code: round.assessment_code || this.assessmentCode(ticket, round.round_no),
@@ -166,8 +154,7 @@ class EvaluationScoringService {
       source_round_no: round.source_round_no || null,
       status: round.status,
       assessment_date: round.assessment_date || String(round.completed_at || round.started_at || '').slice(0, 10),
-      evaluator_id: evaluator?.user_id || evaluator?.display_name
-        || round.locked_by || ticket.qa_lead_id || ticket.evaluator_name || '',
+      evaluator_id: evaluator?.user_id || evaluator?.display_name || round.locked_by || '',
       total_score: round.total_score,
       final_result: round.final_result,
       classification: round.classification,
@@ -402,9 +389,7 @@ class EvaluationScoringService {
         opening: !!participant.opening_meeting,
         closing: !!participant.closing_meeting,
       }));
-    const attendees = canonicalAttendees.length || this.participantRepository
-      ? canonicalAttendees
-      : parseAttendees(round.attendees_json);
+    const attendees = canonicalAttendees;
     return {
       ticket: this.mapTicket(ticket),
       round: {
@@ -497,7 +482,15 @@ class EvaluationScoringService {
       ? this.normalizeIncomingAnswers(ticket, selectedIncomingAnswers, usesCanonicalAnswers)
       : selectedIncomingAnswers;
     const hasAttendeePayload = Array.isArray(attendees);
-    const normalizedAttendees = hasAttendeePayload ? normalizeAttendees(attendees) : parseAttendees(round.attendees_json);
+    const normalizedAttendees = hasAttendeePayload
+      ? normalizeAttendees(attendees)
+      : this.roundParticipantResolution(round).participants
+        .filter((participant) => participant.participant_role === 'ATTENDEE')
+        .map((participant) => ({
+          name: participant.display_name,
+          opening: !!participant.opening_meeting,
+          closing: !!participant.closing_meeting,
+        }));
     if (!normalizedAttendees.length) {
       throw Object.assign(new Error('attendees_required'), {
         status: 400,

@@ -8,6 +8,7 @@ const Database = require('better-sqlite3');
 const LEDGER_TABLE = 'schema_migrations';
 const MIGRATION_FILE_PATTERN = /^(\d{4})_([a-z0-9][a-z0-9_-]*)\.sql$/;
 const NON_TRANSACTIONAL_SQL = /\bVACUUM\b|\bATTACH\s+DATABASE\b|\bDETACH\s+DATABASE\b|PRAGMA\s+(?:journal_mode|foreign_keys)\b/i;
+const FOREIGN_KEYS_OFF_DIRECTIVE = /^\s*--\s*migrate:\s*foreign_keys=off\s*$/im;
 
 class MigrationError extends Error {
   constructor(code, message, details = {}) {
@@ -40,6 +41,7 @@ function loadMigrations(migrationsDir) {
         sql,
         checksum: checksumSql(sql),
         transactional: !NON_TRANSACTIONAL_SQL.test(sql),
+        foreignKeysOff: FOREIGN_KEYS_OFF_DIRECTIVE.test(sql),
       };
     })
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -218,6 +220,7 @@ function migrationStatus(db, { migrationsDir }) {
       name: migration.name,
       checksum: migration.checksum,
       transactional: migration.transactional,
+      foreign_keys_off: migration.foreignKeysOff,
       state: row ? 'applied' : 'pending',
       applied_at: row?.applied_at || null,
       duration_ms: row?.duration_ms ?? null,
@@ -315,7 +318,22 @@ function migrateDatabase(db, options) {
     };
 
     try {
-      if (migration.transactional) {
+      if (migration.transactional && migration.foreignKeysOff) {
+        if (db.inTransaction) {
+          throw new MigrationError(
+            'MIGRATION_TRANSACTION_ACTIVE',
+            `Migration ${migration.id} must control foreign-key enforcement outside an existing transaction.`,
+            { migrationId: migration.id }
+          );
+        }
+        const foreignKeysEnabled = db.pragma('foreign_keys', { simple: true });
+        if (foreignKeysEnabled) db.pragma('foreign_keys = OFF');
+        try {
+          db.transaction(apply)();
+        } finally {
+          db.pragma(`foreign_keys = ${foreignKeysEnabled ? 'ON' : 'OFF'}`);
+        }
+      } else if (migration.transactional) {
         db.transaction(apply)();
       } else if (allowedNonTransactionalIds.includes(migration.id)) {
         apply();

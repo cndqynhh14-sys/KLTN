@@ -82,7 +82,7 @@ class EvaluationTicketRepository {
           business_license_file, attp_certificate_type, attp_certificate_file,
           contact_name, contact_email, contact_phone,
           mch2, mch3, product_group, product_name, evaluation_type, template_id, facility_type,
-          supplier_scale, question_template_version_id, evaluation_method, evaluator_name, planned_date, current_status,
+          supplier_scale, question_template_version_id, evaluation_method, planned_date, current_status,
           current_round_no, assigned_specialist_id, created_by, updated_by
         )
         VALUES (
@@ -92,14 +92,12 @@ class EvaluationTicketRepository {
           @business_license_file, @attp_certificate_type, @attp_certificate_file,
           @contact_name, @contact_email, @contact_phone,
           @mch2, @mch3, @product_group, @product_name, @evaluation_type, @template_id, @facility_type,
-          @supplier_scale, @question_template_version_id, @evaluation_method, @evaluator_name, @planned_date, @current_status,
+          @supplier_scale, @question_template_version_id, @evaluation_method, @planned_date, @current_status,
           1, @assigned_specialist_id, @created_by, @updated_by
         )
       `),
       updateCreateExtras: db.prepare(`
         UPDATE evaluation_tickets SET
-          qa_lead_id=@qa_lead_id,
-          qa_support_ids=@qa_support_ids,
           evaluation_department=@evaluation_department,
           actual_evaluation_date=@actual_evaluation_date
         WHERE id=@id
@@ -132,7 +130,6 @@ class EvaluationTicketRepository {
           product_name=@product_name, evaluation_type=@evaluation_type, template_id=@template_id,
           question_template_version_id=@question_template_version_id,
           facility_type=@facility_type, supplier_scale=@supplier_scale, evaluation_method=@evaluation_method,
-          evaluator_name=@evaluator_name, qa_lead_id=@qa_lead_id, qa_support_ids=@qa_support_ids,
           evaluation_department=@evaluation_department, planned_date=@planned_date,
           actual_evaluation_date=@actual_evaluation_date,
           assigned_specialist_id=@assigned_specialist_id, updated_at=datetime('now'), updated_by=@updated_by
@@ -245,14 +242,16 @@ class EvaluationTicketRepository {
 
   insert(payload) {
     const info = this.statements.insert.run({ current_status: WORKFLOW_STATUSES.DRAFT, ...payload });
-    this.participantRepository.syncTicket(info.lastInsertRowid, payload.created_by || payload.updated_by);
+    this.participantRepository.replaceTicketAssignments(
+      info.lastInsertRowid,
+      payload.participant_assignments,
+      payload.created_by || payload.updated_by,
+    );
     return info;
   }
 
   updateCreateExtras(payload) {
-    const info = this.statements.updateCreateExtras.run(payload);
-    this.participantRepository.syncTicket(payload.id, payload.updated_by || payload.created_by);
-    return info;
+    return this.statements.updateCreateExtras.run(payload);
   }
 
   updateLegalFileNames(payload) {
@@ -262,12 +261,22 @@ class EvaluationTicketRepository {
   updateByCode(payload) {
     const info = this.statements.updateByCode.run(payload);
     const ticket = this.statements.getByCode.get(payload.ticket_code);
-    if (ticket) this.participantRepository.syncTicket(ticket.id, payload.updated_by);
+    if (ticket) {
+      this.participantRepository.replaceTicketAssignments(
+        ticket.id,
+        payload.participant_assignments,
+        payload.updated_by,
+      );
+    }
     return info;
   }
 
   softDelete(payload) {
     return this.statements.softDelete.run(payload);
+  }
+
+  participantAssignments(ticketId) {
+    return this.participantRepository.ticketAssignments(ticketId);
   }
 }
 
