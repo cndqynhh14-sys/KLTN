@@ -849,13 +849,13 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
   const activeQuestionIds = new Set();
   const insert = db.prepare(`
     INSERT INTO evaluation_nonconformities (
-      ticket_id, round_id, question_id, clause_code, category, nonconformity,
-      remediation, due_date, severity, status, corrective_action_id, created_by, updated_by,
+      ticket_id, round_id, question_id, clause_code, category,
+      due_date, severity, status, created_by, updated_by,
       evaluation_answer_id, nonconformity_content, remediation_content
     )
     VALUES (
-      @ticket_id, @round_id, @question_id, @clause_code, @category, @nonconformity,
-      @remediation, @due_date, @severity, @status, @corrective_action_id, @created_by, @updated_by,
+      @ticket_id, @round_id, @question_id, @clause_code, @category,
+      @due_date, @severity, @status, @created_by, @updated_by,
       @evaluation_answer_id, @nonconformity_content, @remediation_content
     )
   `);
@@ -863,10 +863,9 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
     UPDATE evaluation_nonconformities
     SET clause_code=@clause_code,
         category=@category,
-        nonconformity=@nonconformity,
         nonconformity_content=@nonconformity_content,
         evaluation_answer_id=COALESCE(evaluation_answer_id, @evaluation_answer_id),
-        remediation_content=COALESCE(remediation_content, remediation, @remediation_content),
+        remediation_content=COALESCE(remediation_content, @remediation_content),
         severity=@severity,
         due_date=COALESCE(due_date, @due_date),
         updated_at=datetime('now'),
@@ -888,15 +887,12 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
       question_id: parseInt(questionId, 10),
       clause_code: question.question_code,
       category: question.section_name,
-      nonconformity: String(answer.comment || answer.note || question.text || '').trim(),
       nonconformity_content: String(answer.comment || answer.note || question.text || '').trim(),
       evaluation_answer_id: answer.answer_id || null,
-      remediation: existing?.remediation || null,
-      remediation_content: existing?.remediation_content || existing?.remediation || null,
+      remediation_content: existing?.remediation_content || null,
       due_date: existing?.due_date || defaultDueDate,
       severity: answer.score,
       status: existing?.status || 'OPEN',
-      corrective_action_id: existing?.corrective_action_id || null,
       created_by: existing?.created_by || userEmail,
       updated_by: userEmail,
     };
@@ -913,11 +909,11 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
 
 function missingRequiredNonconformityActions(ticketId, roundId = null) {
   const sql = `
-    SELECT id, clause_code, category, severity, remediation, due_date
+    SELECT id, clause_code, category, severity, remediation_content AS remediation, due_date
     FROM evaluation_nonconformities
     WHERE ticket_id = ?
       AND severity IN ('B', 'C', 'D')
-      AND (NULLIF(TRIM(COALESCE(remediation, '')), '') IS NULL OR NULLIF(TRIM(COALESCE(due_date, '')), '') IS NULL)
+      AND (NULLIF(TRIM(COALESCE(remediation_content, '')), '') IS NULL OR NULLIF(TRIM(COALESCE(due_date, '')), '') IS NULL)
       ${roundId ? 'AND round_id = ?' : ''}
     ORDER BY category, clause_code, id
   `;
@@ -1277,39 +1273,6 @@ router.post('/:ticketId/reports/export-print', canExportEvaluation, (req, res) =
   }
 });
 
-router.post('/:ticketId/corrective-actions', canEditEvaluation, (req, res) => {
-  const ticket = visibleTicketOrResponse(req, res, req.params.ticketId);
-  if (!ticket) return;
-  const body = req.body || {};
-  if (!String(body.issue_description || '').trim() || !String(body.required_action || '').trim()) {
-    return res.status(400).json({ error: 'issue_and_action_required' });
-  }
-  const roundNo = parseInt(body.round_no || ticket.current_round_no || ticket.completed_round || '1', 10);
-  const round = getRound(ticket.id, roundNo);
-  if (!round) return res.status(404).json({ error: 'round_not_found' });
-  if (!isProcessingStatus(ticket.current_status) || round.correction_locked) {
-    return res.status(423).json({
-      error: 'correction_fields_locked',
-      current_status: ticket.current_status,
-      assessment_id: round.id,
-      round_no: round.round_no,
-    });
-  }
-  const info = correctiveActionRepository.insert({
-    ticket_id: ticket.id,
-    round_id: round.id,
-    issue_description: String(body.issue_description).trim(),
-    required_action: String(body.required_action).trim(),
-    responsible_party: String(body.responsible_party || '').trim() || null,
-    due_date: String(body.due_date || '').trim() || null,
-    status: String(body.status || 'OPEN').trim(),
-    evidence_attachment_id: body.evidence_attachment_id || null,
-    created_by: req.user.email,
-  });
-  logWorkflow(ticket.id, req.user, 'CORRECTIVE_ACTION_CREATE', ticket.current_status, ticket.current_status, `CA#${info.lastInsertRowid}`);
-  res.status(201).json({ item: correctiveActionsForTicket(ticket.id).find((item) => item.id === info.lastInsertRowid) });
-});
-
 router.put('/:ticketId/nonconformities/:nonconformityId', canEditEvaluation, (req, res) => {
   const ticket = visibleTicketOrResponse(req, res, req.params.ticketId);
   if (!ticket) return;
@@ -1326,7 +1289,9 @@ router.put('/:ticketId/nonconformities/:nonconformityId', canEditEvaluation, (re
   }
   const dueDate = Object.prototype.hasOwnProperty.call(body, 'due_date') ? String(body.due_date || '').trim() : existing.due_date;
   if (dueDate && !isValidISODate(dueDate)) return res.status(400).json({ error: 'due_date_invalid' });
-  const remediation = Object.prototype.hasOwnProperty.call(body, 'remediation') ? String(body.remediation || '').trim() : existing.remediation;
+  const remediation = Object.prototype.hasOwnProperty.call(body, 'remediation')
+    ? String(body.remediation || '').trim()
+    : existing.remediation_content;
   if (remediation && !CORRECTIVE_REQUIREMENT_OPTIONS.has(remediation)) return res.status(400).json({ error: 'invalid_remediation' });
   correctiveActionRepository.updateNonconformityProposal({
     id,
@@ -1334,7 +1299,6 @@ router.put('/:ticketId/nonconformities/:nonconformityId', canEditEvaluation, (re
     remediation: remediation || null,
     due_date: dueDate || null,
     status,
-    corrective_action_id: Object.prototype.hasOwnProperty.call(body, 'corrective_action_id') ? body.corrective_action_id || null : existing.corrective_action_id,
     updated_by: req.user.email,
   });
   logWorkflow(ticket.id, req.user, 'NONCONFORMITY_UPDATE', ticket.current_status, ticket.current_status, `NC#${id}`);

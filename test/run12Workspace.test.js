@@ -253,7 +253,7 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
     `).run(round2EvaluationId, users.specialist[0]);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, nonconformity, remediation, due_date, severity, status, created_by
+        ticket_id, round_id, nonconformity_content, remediation_content, due_date, severity, status, created_by
       ) VALUES (?, ?, 'Điểm cần khắc phục', 'Bổ sung bằng chứng', ?, 'C', 'OPEN', ?)
     `).run(round2EvaluationId, round1Info.lastInsertRowid, isoDate(4), users.specialist[0]);
     seedEvaluation(db, {

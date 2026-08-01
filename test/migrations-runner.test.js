@@ -61,7 +61,7 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
     const first = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'test-version' });
     assert.deepEqual(first.results.map((row) => row.id), projectMigrationIds);
     assert.ok(first.results.every((row) => row.state === 'applied' && row.executionMode === 'applied'));
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 63);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 62);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(
         db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),
@@ -69,6 +69,7 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
         table
       );
     }
+    assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='corrective_actions'").get(), undefined);
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_events'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='report_legacy_template_links'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='report_legacy_migration_review'").get());
@@ -229,10 +230,15 @@ test('backup and restored fixture retain ledger, row counts and foreign-key inte
 test('0019 through 0025 upgrade a populated 0018 database and preserve retained supplier-evaluation rows', () => {
   const directory = tempDir('scope-upgrade');
   const historicalMigrations = path.join(directory, 'migrations-through-0018');
+  const migrationsThrough0025 = path.join(directory, 'migrations-through-0025');
   fs.mkdirSync(historicalMigrations);
+  fs.mkdirSync(migrationsThrough0025);
   for (const fileName of fs.readdirSync(projectMigrations)) {
     if (/^00(?:0[1-9]|1[0-8])_.+\.sql$/.test(fileName)) {
       fs.copyFileSync(path.join(projectMigrations, fileName), path.join(historicalMigrations, fileName));
+    }
+    if (/^\d{4}_.+\.sql$/.test(fileName) && fileName.slice(0, 4) <= '0025') {
+      fs.copyFileSync(path.join(projectMigrations, fileName), path.join(migrationsThrough0025, fileName));
     }
   }
   const db = new Database(':memory:');
@@ -259,7 +265,7 @@ test('0019 through 0025 upgrade a populated 0018 database and preserve retained 
       (receiver_user_id, notification_type, message, unique_key)
       VALUES ('scope-upgrade@example.invalid', 'EVALUATION_ASSIGNED', 'synthetic retained', 'scope-retained')`).run();
 
-    const result = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'commit-2' });
+    const result = migrateDatabase(db, { migrationsDir: migrationsThrough0025, appVersion: 'commit-2' });
 
     assert.equal(result.results.find((row) => row.id === '0019').executionMode, 'applied');
     assert.equal(result.results.at(-1).id, '0025');

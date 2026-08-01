@@ -177,7 +177,7 @@ function insertAnswer(db, roundId, questionId, score) {
 function insertNonconformity(db, ticketId, roundId, questionId, clauseCode, category, status = 'OPEN') {
   db.prepare(`
     INSERT INTO evaluation_nonconformities (
-      ticket_id, round_id, question_id, clause_code, category, nonconformity, severity, status, created_by
+      ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
     )
     VALUES (?, ?, ?, ?, ?, 'Aggregate finding', 'B', ?, 'admin@masangroup.com')
   `).run(ticketId, roundId, questionId, clauseCode, category, status);

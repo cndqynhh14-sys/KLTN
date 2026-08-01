@@ -35,6 +35,7 @@
     "report-artifacts:reconcile": "node scripts/report-artifact-reconcile.js",
     "report-export:worker": "node scripts/report-export-worker.js --once",
     "scoring-policy:reconcile": "node scripts/reconcile-scoring-policy.js",
+    "stage4:parity": "node scripts/check-stage4-parity.js",
     "evidence:baseline": "node scripts/run-with-evidence.js baseline",
     "evidence:run": "node scripts/run-with-evidence.js run",
     "evidence:test": "node scripts/run-with-evidence.js test",

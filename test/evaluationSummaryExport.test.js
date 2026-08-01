@@ -209,19 +209,19 @@ test('evaluation summary route exports filtered rows using template columns and 
     `).run(otherTicket.lastInsertRowid);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, 'LEGAL-01', 'Hồ sơ pháp lý', 'Missing business license appendix', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticket.lastInsertRowid, round1.lastInsertRowid, legalQuestion);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, 'QUALITY-01', 'Kiểm soát chất lượng', 'Quality control checklist incomplete', 'C', 'OPEN', 'admin@masangroup.com')
     `).run(ticket.lastInsertRowid, round1.lastInsertRowid, qualityQuestion);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, 'R2-ONLY', 'Kiểm soát chất lượng', 'Round 2 issue must not appear', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticket.lastInsertRowid, round2.lastInsertRowid, qualityQuestion);

@@ -95,11 +95,12 @@ function seedCanonicalBackfillFixture(db) {
 }
 
 test('stage 2 fresh schema is additive and exposes every canonical bridge', () => {
+  const stage2Migrations = historicalDirectory('0025');
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   try {
-    migrateDatabase(db, { migrationsDir, appVersion: 'stage2-test' });
-    assert.deepEqual(migrationIds().slice(-6), ['0020', '0021', '0022', '0023', '0024', '0025']);
+    migrateDatabase(db, { migrationsDir: stage2Migrations, appVersion: 'stage2-test' });
+    assert.deepEqual(migrationIds().filter((id) => id >= '0020' && id <= '0025'), ['0020', '0021', '0022', '0023', '0024', '0025']);
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evaluation_participants'").get());
     assert.ok(columnNames(db, 'evaluation_answers').includes('question_item_id'));
     assert.ok(columnNames(db, 'evaluation_nonconformities').includes('evaluation_answer_id'));
@@ -113,17 +114,19 @@ test('stage 2 fresh schema is additive and exposes every canonical bridge', () =
     assert.equal(db.pragma('foreign_key_check').length, 0);
   } finally {
     db.close();
+    fs.rmSync(stage2Migrations, { recursive: true, force: true });
   }
 });
 
 test('stage 2 upgrades a populated 0019 database with deterministic backfill and no legacy deletion', () => {
   const historical = historicalDirectory('0019');
+  const stage2Migrations = historicalDirectory('0025');
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   try {
     migrateDatabase(db, { migrationsDir: historical, appVersion: 'stage1-test' });
     const fixture = seedCanonicalBackfillFixture(db);
-    migrateDatabase(db, { migrationsDir, appVersion: 'stage2-test' });
+    migrateDatabase(db, { migrationsDir: stage2Migrations, appVersion: 'stage2-test' });
 
     assert.equal(db.prepare('SELECT question_item_id FROM evaluation_answers WHERE id=?').pluck().get(fixture.answerId), fixture.itemId);
     const nc = db.prepare(`SELECT evaluation_answer_id, nonconformity_content, remediation_content
@@ -147,5 +150,6 @@ test('stage 2 upgrades a populated 0019 database with deterministic backfill and
   } finally {
     db.close();
     fs.rmSync(historical, { recursive: true, force: true });
+    fs.rmSync(stage2Migrations, { recursive: true, force: true });
   }
 });

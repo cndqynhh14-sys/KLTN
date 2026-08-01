@@ -3837,7 +3837,6 @@ import { state } from './js/state.js';
     actions.appendChild(el('span', { className: 'muted mono', attrs: { id: 'ticket-report-export-msg' }, text: '' }));
     const detailActions = [actionDescriptor('report.export_pdf', () => exportTicketPdf(row.code), row, { objectIdentity: row.code })];
     if (canEditWorkflowRecord(row) && !['Hoàn thành', 'Gia hạn', 'Tạm ngưng', 'Hủy', 'Đã hủy'].includes(row.status)) {
-      detailActions.push(actionDescriptor('evaluation.corrective_action', () => createCorrectiveAction(row.code), row, { objectIdentity: row.code }));
       detailActions.push(actionDescriptor('evaluation.cancellation_request', () => requestTicketCancellation(row.code), row, { objectIdentity: row.code }));
     }
     if (canEditWorkflowRecord(row) && isRound2NotPassed(row) && row.status !== 'Chờ duyệt (TBP)') {
@@ -3954,22 +3953,6 @@ import { state } from './js/state.js';
     renderScoring();
     renderApprovals();
     renderReports();
-  }
-
-  async function createCorrectiveAction(code) {
-    const issue = prompt('Mô tả điểm không phù hợp:');
-    if (!issue) return;
-    const action = prompt('Hành động khắc phục cần thực hiện:');
-    if (!action) return;
-    const responsible = prompt('Đơn vị/người phụ trách:', 'NCC');
-    const dueDateInput = prompt('Hạn hoàn thành (DD/MM/YYYY):', '');
-    const dueDate = dateInputValue(dueDateInput);
-    const r = await api('/evaluations/' + encodeURIComponent(code) + '/corrective-actions', {
-      method: 'POST',
-      body: { issue_description: issue, required_action: action, responsible_party: responsible, due_date: dueDate, status: 'OPEN' },
-    });
-    if (!r.ok) return showToast('Không tạo được yêu cầu khắc phục.', 'err');
-    openTicketDetail(code);
   }
 
   async function createCorrectionExtension(code) {

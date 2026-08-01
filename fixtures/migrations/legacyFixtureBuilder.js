@@ -16,7 +16,6 @@ const CORE_TABLES = Object.freeze([
   'users',
   'supplier_master',
   'evaluation_tickets',
-  'corrective_actions',
   'report_exports',
 ]);
 
@@ -109,9 +108,6 @@ function createLegacyFixture(dbPath) {
       'Synthetic facility', 'LARGE', ?, 'fixture')`).run(
       FIXTURE.ticketCode, FIXTURE.supplierCode, FIXTURE.supplierName, FIXTURE.userEmail, FIXTURE.timestamp
     );
-    db.prepare(`INSERT INTO corrective_actions
-      (ticket_id, round_id, issue_description, required_action, created_at)
-      VALUES (1, 1, 'SYNTHETIC FINDING', 'SYNTHETIC ACTION', ?)`).run(FIXTURE.timestamp);
     db.prepare(`INSERT INTO report_exports
       (ticket_id, report_type, file_path, exported_by, exported_at)
       VALUES (1, 'INTERNAL', ?, ?, ?)`).run(FIXTURE.reportPath, FIXTURE.userEmail, FIXTURE.timestamp);
