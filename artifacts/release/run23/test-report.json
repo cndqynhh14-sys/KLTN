@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-15T07:31:24.727Z",
+  "gate": "RUN-23",
+  "runtime": "v24.16.0",
+  "status": "NO-GO",
+  "commands": [
+    {
+      "id": "node20_npm_ci",
+      "status": "BLOCKED",
+      "reason": "requires_node_20_current_v24.16.0",
+      "exit_code": null,
+      "duration_ms": 0
+    },
+    {
+      "id": "npm_test",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 27815.497
+    },
+    {
+      "id": "build",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 2112.081
+    },
+    {
+      "id": "test_webapp",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 9348.153
+    },
+    {
+      "id": "uat_smoke",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 9594.136
+    },
+    {
+      "id": "uat_full",
+      "status": "FAIL",
+      "reason": "command_failed",
+      "exit_code": 1,
+      "duration_ms": 6188.78
+    },
+    {
+      "id": "migrations",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 2063.826
+    },
+    {
+      "id": "a11y",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 723.112
+    },
+    {
+      "id": "security",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 6509.907
+    },
+    {
+      "id": "nfr",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 1450.999
+    },
+    {
+      "id": "lint",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 12145.748
+    },
+    {
+      "id": "coverage",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 29854.223
+    },
+    {
+      "id": "npm_audit",
+      "status": "FAIL",
+      "reason": "command_failed",
+      "exit_code": 1,
+      "duration_ms": 1906.735
+    },
+    {
+      "id": "release_verify",
+      "status": "PASS",
+      "reason": null,
+      "exit_code": 0,
+      "duration_ms": 473.89
+    }
+  ]
+}

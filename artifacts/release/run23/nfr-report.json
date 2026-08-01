@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-15T07:28:55.094Z",
+  "runtime": "v24.16.0",
+  "fixture": "deterministic synthetic only",
+  "measurements": [
+    {
+      "id": "authz_resolution",
+      "target": {
+        "id": "authz_resolution",
+        "metric": "p95_ms",
+        "operator": "<=",
+        "value": 10,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "p95_ms",
+        "value": 0.173
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "samples": 200,
+        "cache": "cold"
+      }
+    },
+    {
+      "id": "audit_pagination",
+      "target": {
+        "id": "audit_pagination",
+        "metric": "p95_ms_at_5000_rows",
+        "operator": "<=",
+        "value": 100,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "p95_ms_at_5000_rows",
+        "value": 10.654
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "rows": 5000,
+        "page_size": 100,
+        "samples": 40
+      }
+    },
+    {
+      "id": "questions_1000",
+      "target": {
+        "id": "questions_1000",
+        "metric": "load_ms",
+        "operator": "<=",
+        "value": 250,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "load_ms",
+        "value": 3.921
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "rows": 1000
+      }
+    },
+    {
+      "id": "workbook_import",
+      "target": {
+        "id": "workbook_import",
+        "metric": "parse_1000_rows_ms",
+        "operator": "<=",
+        "value": 2000,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "parse_1000_rows_ms",
+        "value": 41.277
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "rows": 1000,
+        "bytes": 397639,
+        "formulas_evaluated": false
+      }
+    },
+    {
+      "id": "preview_export_concurrency",
+      "target": {
+        "id": "preview_export_concurrency",
+        "metric": "five_format_sets_ms",
+        "operator": "<=",
+        "value": 5000,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "five_format_sets_ms",
+        "value": 12.388
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "sets": 5,
+        "formats": [
+          "HTML",
+          "XLSX"
+        ],
+        "byte_sizes": [
+          5617,
+          24752,
+          5617,
+          24752,
+          5617,
+          24752,
+          5617,
+          24752,
+          5617,
+          24752
+        ]
+      }
+    },
+    {
+      "id": "job_recovery",
+      "target": {
+        "id": "job_recovery",
+        "metric": "recover_100_jobs_ms",
+        "operator": "<=",
+        "value": 500,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "recover_100_jobs_ms",
+        "value": 0.036
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "jobs": 100,
+        "rule": "stale RUNNING to QUEUED synthetic recovery probe"
+      }
+    },
+    {
+      "id": "sqlite_contention",
+      "target": {
+        "id": "sqlite_contention",
+        "metric": "blocked_writer_recovery_ms",
+        "operator": "<=",
+        "value": 1500,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "blocked_writer_recovery_ms",
+        "value": 171.134
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "writers": 2,
+        "lock_release_after_ms": 120,
+        "busy_timeout_ms": 1200
+      }
+    },
+    {
+      "id": "logging_evidence_overhead",
+      "target": {
+        "id": "logging_evidence_overhead",
+        "metric": "redact_1000_records_ms",
+        "operator": "<=",
+        "value": 250,
+        "set_at": "2026-07-15T00:00:00.000Z"
+      },
+      "observed": {
+        "metric": "redact_1000_records_ms",
+        "value": 3.467
+      },
+      "measured_at": "2026-07-15T07:28:54.242Z",
+      "status": "PASS",
+      "details": {
+        "records": 1000,
+        "redaction": true
+      }
+    }
+  ],
+  "status": "PASS"
+}
