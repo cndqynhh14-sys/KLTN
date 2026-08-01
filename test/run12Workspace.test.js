@@ -248,9 +248,9 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
       VALUES (?, 1, 'COMPLETED', datetime('now'), ?)
     `).run(round2EvaluationId, users.specialist[0]);
     db.prepare(`
-      INSERT INTO evaluation_rounds (ticket_id, round_no, status, evaluator_id)
-      VALUES (?, 2, 'PROCESSING', ?)
-    `).run(round2EvaluationId, users.specialist[0]);
+      INSERT INTO evaluation_rounds (ticket_id, round_no, status)
+      VALUES (?, 2, 'PROCESSING')
+    `).run(round2EvaluationId);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, nonconformity_content, remediation_content, due_date, severity, status, created_by

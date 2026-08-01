@@ -71,7 +71,7 @@ test('DOC-4 report context includes input columns, sections, category percentage
         business_type, cmc_owner, cmc_head, business_license_file, attp_certificate_type,
         attp_certificate_file, contact_name, contact_email, contact_phone, mch2, mch3,
         product_group, product_name, evaluation_type, template_id, facility_type, supplier_scale,
-        evaluation_method, evaluator_name, qa_lead_id, qa_support_ids, evaluation_department,
+        evaluation_method, evaluation_department,
         planned_date, actual_evaluation_date, current_status, current_round_no,
         score_percent, grade_code, result_label, result_reason, corrected_score_percent,
         corrected_result_label, correction_date, final_conclusion, specialist_proposal, supplier_introduction,
@@ -83,7 +83,7 @@ test('DOC-4 report context includes input columns, sections, category percentage
         'Manufacturing', 'CMC Owner', 'CMC Head', 'license.pdf', 'HACCP',
         'attp.pdf', 'Supplier Contact', 'contact@example.com', '0900000000', 'Fresh', 'Vegetable',
         'Produce', 'Carrot', 'Định kỳ', @template_id, 'CHUNG', 'LARGE',
-        'Onsite', 'Evaluator', 'admin@masangroup.com', @support_ids, 'QA',
+        'Onsite', 'QA',
         '2026-07-10', '2026-07-15', 'Hoàn thành', 2,
         70, 'C', 'Đạt mức cơ bản', 'Supplier corrective action', 91,
         'Đạt mức cao', '2026-08-01', 'Final pass', 'Approve supplier', @supplier_introduction,
@@ -92,17 +92,24 @@ test('DOC-4 report context includes input columns, sections, category percentage
     `).run({
       supplier_id: supplier.lastInsertRowid,
       template_id: template.lastInsertRowid,
-      support_ids: JSON.stringify(['support@masangroup.com']),
       supplier_introduction: 'Supplier intro line 1\nSupplier intro line 2',
     });
     const round = db.prepare(`
-      INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, evaluator_id, status, completed_at, total_score, final_result, classification, locked_at, locked_by)
-      VALUES (?, 1, 'TICKET-RPT-R1', '2026-07-10', 'admin@masangroup.com', 'Hoàn thành', '2026-07-15', 70, 'Đạt mức cơ bản', 'C', '2026-07-15', 'admin@masangroup.com')
+      INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, status, completed_at, total_score, final_result, classification, locked_at, locked_by)
+      VALUES (?, 1, 'TICKET-RPT-R1', '2026-07-10', 'Hoàn thành', '2026-07-15', 70, 'Đạt mức cơ bản', 'C', '2026-07-15', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid);
     const round2 = db.prepare(`
-      INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, evaluator_id, status, completed_at, total_score, final_result, classification, locked_at, locked_by)
-      VALUES (?, 2, 'TICKET-RPT-R2', '2026-08-01', 'admin@masangroup.com', 'Hoàn thành', '2026-08-01', 91, 'Đạt mức cao', 'A', '2026-08-01', 'admin@masangroup.com')
+      INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, status, completed_at, total_score, final_result, classification, locked_at, locked_by)
+      VALUES (?, 2, 'TICKET-RPT-R2', '2026-08-01', 'Hoàn thành', '2026-08-01', 91, 'Đạt mức cao', 'A', '2026-08-01', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid);
+    const insertParticipant = db.prepare(`INSERT INTO evaluation_participants
+      (ticket_id, round_id, user_id, display_name, participant_role, assigned_by)
+      VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')`);
+    insertParticipant.run(ticketInfo.lastInsertRowid, null, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
+    insertParticipant.run(ticketInfo.lastInsertRowid, null, 'admin@masangroup.com', 'Nguyen Van Auditor', 'QA_LEAD');
+    insertParticipant.run(ticketInfo.lastInsertRowid, null, 'support@masangroup.com', 'Le Thi QA Support', 'QA_SUPPORT');
+    insertParticipant.run(null, round.lastInsertRowid, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
+    insertParticipant.run(null, round2.lastInsertRowid, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
     const insertAnswer = db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
@@ -145,10 +152,15 @@ test('DOC-4 report context includes input columns, sections, category percentage
       { name: 'Nguyen Van A - QA Lead', opening: true, closing: true },
       { name: 'Tran Thi B - NCC', opening: true, closing: false },
     ];
-    db.prepare('UPDATE evaluation_rounds SET attendees_json = ? WHERE id = ?')
-      .run(JSON.stringify(round1Attendees), round.lastInsertRowid);
-    db.prepare('UPDATE evaluation_rounds SET attendees_json = ? WHERE id = ?')
-      .run(JSON.stringify(attendees), round2.lastInsertRowid);
+    const insertAttendee = db.prepare(`INSERT INTO evaluation_participants
+      (round_id, display_name, participant_role, opening_meeting, closing_meeting, assigned_by)
+      VALUES (?, ?, 'ATTENDEE', ?, ?, 'admin@masangroup.com')`);
+    round1Attendees.forEach((attendee) => insertAttendee.run(
+      round.lastInsertRowid, attendee.name, attendee.opening ? 1 : 0, attendee.closing ? 1 : 0,
+    ));
+    attendees.forEach((attendee) => insertAttendee.run(
+      round2.lastInsertRowid, attendee.name, attendee.opening ? 1 : 0, attendee.closing ? 1 : 0,
+    ));
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, question_id, clause_code, category, nonconformity_content,
@@ -202,7 +214,7 @@ test('DOC-4 report context includes input columns, sections, category percentage
     assert.equal(context.doc4.result_summary.next_evaluation_date, '2028-08-01');
     assert.equal(context.doc4.related_information.evaluation_address, 'Audit Address');
     assert.equal(context.doc4.scope.product, 'Carrot');
-    assert.equal(context.doc4.participants.qa_support[0], 'support@masangroup.com');
+    assert.equal(context.doc4.participants.qa_support[0], 'Le Thi QA Support');
     assert.deepEqual(context.doc4.participants.rows, attendees);
     assert.deepEqual(context.doc4.participants.opening_meeting, ['Nguyen Van A - QA Lead', 'Tran Thi B - NCC']);
     assert.deepEqual(context.doc4.participants.closing_meeting, ['Nguyen Van A - QA Lead']);
@@ -340,9 +352,16 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
       { name: 'Le Van G - QA', opening: true, closing: true },
     ];
     const roundInfo = db.prepare(`
-      INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, status, completed_at, attendees_json)
-      VALUES (?, 1, 'TICKET-EXP-R1', '2026-07-15', 'Hoan thanh', '2026-07-15', ?)
-    `).run(ticketInfo.lastInsertRowid, JSON.stringify(attendees));
+      INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, status, completed_at)
+      VALUES (?, 1, 'TICKET-EXP-R1', '2026-07-15', 'Hoan thanh', '2026-07-15')
+    `).run(ticketInfo.lastInsertRowid);
+    const insertExportAttendee = db.prepare(`INSERT INTO evaluation_participants
+      (round_id, display_name, participant_role, opening_meeting, closing_meeting,
+       assigned_by)
+      VALUES (?, ?, 'ATTENDEE', ?, ?, 'admin@masangroup.com')`);
+    attendees.forEach((attendee) => insertExportAttendee.run(
+      roundInfo.lastInsertRowid, attendee.name, attendee.opening ? 1 : 0, attendee.closing ? 1 : 0,
+    ));
     const insertFinding = db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, clause_code, category, nonconformity_content,

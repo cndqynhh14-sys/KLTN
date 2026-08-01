@@ -215,11 +215,14 @@ function specialistCanSubmitLead(ticket) {
 
 function ticketUserValues(row) {
   if (!row) return [];
-  const assignee = row.assigned_specialist_id || row.evaluator_name || row.created_by;
+  const participants = row.id
+    ? participantRepository.resolveTicketParticipants(row.id).participants
+    : [];
+  const assignee = row.assigned_specialist_id
+    || participants.find((participant) => participant.participant_role === 'OWNER')?.user_id
+    || row.created_by;
   return [
-    row.evaluator_name,
-    row.qa_lead_id,
-    row.qa_support_ids,
+    ...participants.map((participant) => participant.user_id),
     row.assigned_specialist_id,
     assignee,
     row.created_by,
@@ -542,8 +545,7 @@ function mapAssessmentRound(ticket, round) {
     participants: participantResolution.participants,
     participant_source: participantResolution.source,
     participant_mismatch: participantResolution.mismatch,
-    evaluator_id: evaluator?.user_id || evaluator?.display_name
-      || round.locked_by || ticket.qa_lead_id || ticket.evaluator_name || '',
+    evaluator_id: evaluator?.user_id || evaluator?.display_name || round.locked_by || '',
     total_score: round.total_score,
     final_result: round.final_result,
     classification: round.classification,

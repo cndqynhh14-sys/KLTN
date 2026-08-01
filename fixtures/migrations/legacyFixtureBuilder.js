@@ -105,8 +105,9 @@ function createLegacyFixture(dbPath) {
       current_status, assigned_specialist_id, evaluation_type, template_id,
       facility_type, supplier_scale, created_at, created_by
     ) VALUES (?, 1, ?, ?, 'SYNTHETIC ADDRESS', 'Khoi tao', ?, 'Synthetic', 1,
-      'Synthetic facility', 'LARGE', ?, 'fixture')`).run(
-      FIXTURE.ticketCode, FIXTURE.supplierCode, FIXTURE.supplierName, FIXTURE.userEmail, FIXTURE.timestamp
+      'Synthetic facility', 'LARGE', ?, ?)`).run(
+      FIXTURE.ticketCode, FIXTURE.supplierCode, FIXTURE.supplierName,
+      FIXTURE.userEmail, FIXTURE.timestamp, FIXTURE.userEmail
     );
     db.prepare(`INSERT INTO report_exports
       (ticket_id, report_type, file_path, exported_by, exported_at)

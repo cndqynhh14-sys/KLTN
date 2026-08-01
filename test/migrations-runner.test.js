@@ -148,6 +148,49 @@ test('failure in a transactional migration rolls back and a corrected pending mi
   }
 });
 
+test('foreign-keys-off migration directive restores enforcement after success and rollback', () => {
+  const directory = tempDir('migration-foreign-keys-off');
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  try {
+    writeMigration(directory, '0001_base.sql', `
+      CREATE TABLE parent_record (id INTEGER PRIMARY KEY);
+      CREATE TABLE child_record (
+        id INTEGER PRIMARY KEY,
+        parent_id INTEGER NOT NULL REFERENCES parent_record(id)
+      );
+      INSERT INTO parent_record (id) VALUES (1);
+      INSERT INTO child_record (id, parent_id) VALUES (1, 1);
+    `);
+    writeMigration(directory, '0002_rebuild.sql', `
+      -- migrate: foreign_keys=off
+      CREATE TABLE parent_record_rebuilt (id INTEGER PRIMARY KEY, label TEXT);
+      INSERT INTO parent_record_rebuilt (id, label) SELECT id, 'synthetic' FROM parent_record;
+      DROP TABLE parent_record;
+      ALTER TABLE parent_record_rebuilt RENAME TO parent_record;
+    `);
+    migrateDatabase(db, { migrationsDir: directory, appVersion: 'test-version' });
+    assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
+    assert.equal(db.pragma('foreign_key_check').length, 0);
+    assert.equal(db.prepare('SELECT label FROM parent_record WHERE id=1').pluck().get(), 'synthetic');
+
+    writeMigration(directory, '0003_failure.sql', `
+      -- migrate: foreign_keys=off
+      CREATE TABLE rollback_probe (id INTEGER PRIMARY KEY);
+      INSERT INTO missing_table (id) VALUES (1);
+    `);
+    assert.throws(
+      () => migrateDatabase(db, { migrationsDir: directory, appVersion: 'test-version' }),
+      (error) => error instanceof MigrationError && error.code === 'MIGRATION_APPLY_FAILED'
+    );
+    assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
+    assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rollback_probe'").get(), undefined);
+    assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0003'").pluck().get(), 0);
+  } finally {
+    closeAndRemove(db, directory);
+  }
+});
+
 test('checksum mismatch and missing applied files fail closed', () => {
   const directory = tempDir('migration-checksum');
   const db = new Database(':memory:');

@@ -19,14 +19,14 @@ class EvaluationRoundRepository {
         ORDER BY r.round_no
       `),
       insert: db.prepare(`
-        INSERT INTO evaluation_rounds (ticket_id, round_no, source_round_id, assessment_code, assessment_date, evaluator_id, status)
-        VALUES (@ticket_id, @round_no, @source_round_id, @assessment_code, @assessment_date, @evaluator_id, @status)
+        INSERT INTO evaluation_rounds (ticket_id, round_no, source_round_id, assessment_code, assessment_date, status)
+        VALUES (@ticket_id, @round_no, @source_round_id, @assessment_code, @assessment_date, @status)
       `),
       markProcessingIfDraft: db.prepare('UPDATE evaluation_rounds SET status = ? WHERE id = ? AND status = ?'),
       complete: db.prepare(`
         UPDATE evaluation_rounds
         SET status='Hoàn thành', completed_at=datetime('now'), assessment_date=@assessment_date,
-            evaluator_id=COALESCE(evaluator_id, @locked_by), total_score=@total_score,
+            total_score=@total_score,
             final_result=@final_result, classification=@classification,
             scoring_policy_version_id=@scoring_policy_version_id,
             scoring_result_snapshot_json=@scoring_result_snapshot_json,
@@ -34,11 +34,6 @@ class EvaluationRoundRepository {
             locked_at=datetime('now'), locked_by=@locked_by,
             correction_locked=1
         WHERE id=@id
-      `),
-      updateAttendees: db.prepare(`
-        UPDATE evaluation_rounds
-        SET attendees_json = @attendees_json
-        WHERE id = @id
       `),
       setCorrectionLock: db.prepare(`
         UPDATE evaluation_rounds
@@ -69,7 +64,11 @@ class EvaluationRoundRepository {
 
   insert(payload) {
     const info = this.statements.insert.run(payload);
-    this.participantRepository.syncRound(info.lastInsertRowid, payload.evaluator_id);
+    this.participantRepository.setRoundEvaluator(
+      info.lastInsertRowid,
+      payload.evaluator_id,
+      payload.evaluator_id,
+    );
     return info;
   }
 
@@ -78,18 +77,12 @@ class EvaluationRoundRepository {
   }
 
   complete(payload) {
-    const info = this.statements.complete.run(payload);
-    this.participantRepository.syncRound(payload.id, payload.locked_by);
-    return info;
+    return this.statements.complete.run(payload);
   }
 
   updateAttendees(roundId, attendees) {
-    const info = this.statements.updateAttendees.run({
-      id: roundId,
-      attendees_json: JSON.stringify(attendees || []),
-    });
-    this.participantRepository.syncRound(roundId);
-    return info;
+    this.participantRepository.setRoundAttendees(roundId, attendees);
+    return { changes: 1 };
   }
 
   setCorrectionLock({ ticketId, roundNo, locked }) {

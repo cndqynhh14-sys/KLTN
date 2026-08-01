@@ -5,7 +5,6 @@ const { execFileSync } = require('child_process');
 const XLSX = require('xlsx');
 const { REPORT_EXPORT_DIR } = require('../config/paths');
 const { calculateNextEvaluationDate, normalizeResultLabel } = require('../domain/evaluationRules');
-const { userDisplayNameMap } = require('./userDisplayNames');
 const { GOLDEN_V1_DEFINITION, buildEvaluationResultWithPolicy, validateScoringPolicyDefinition } = require('../scoring/scoringPolicyEngine');
 const { resolveReportAlias } = require('../reporting/reportAliasCatalog');
 const EvaluationParticipantRepository = require('../repositories/EvaluationParticipantRepository');
@@ -149,29 +148,10 @@ function participantDisplayName(row = {}) {
   return name || position;
 }
 
-function assessmentTeamMemberIds(ticket, round) {
-  return uniqueTextList([
-    round?.evaluator_id,
-    ticket.evaluator_name,
-    ticket.qa_lead_id,
-    ...parseJsonArray(ticket.qa_support_ids),
-  ]);
-}
-
-function resolveUserDisplayName(value, displayNames) {
-  const text = String(value || '').trim();
-  if (!text) return '';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return '';
-  const displayName = displayNames.get(text.toLowerCase());
-  return displayName || '';
-}
-
-function assessmentTeamMembers(ticket, round, displayNames) {
-  return uniqueTextList(assessmentTeamMemberIds(ticket, round).map((value) => resolveUserDisplayName(value, displayNames)));
-}
-
-function firstUserDisplayName(values, displayNames) {
-  return values.map((value) => resolveUserDisplayName(value, displayNames)).find(Boolean) || '';
+function assessmentTeamMembers(participants) {
+  return uniqueTextList((participants || [])
+    .filter((participant) => participant.participant_role !== 'ATTENDEE')
+    .map((participant) => participant.display_name || participant.user_id));
 }
 
 function supplierIntroductionText(doc4) {
@@ -359,29 +339,6 @@ function listText(rows, mapper) {
   return rows.map(mapper).join('\n');
 }
 
-function parseJsonArray(value) {
-  try {
-    const parsed = JSON.parse(value || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseRoundAttendees(value) {
-  return parseJsonArray(value).map((row) => {
-    const parsed = {
-      name: String(row?.name || '').trim(),
-      opening: !!(row?.opening || row?.opening_meeting),
-      closing: !!(row?.closing || row?.closing_meeting),
-    };
-    const position = String(row?.position || row?.title || row?.role || '').trim();
-    if (!parsed.name && position) parsed.name = position;
-    else if (position) parsed.position = position;
-    return parsed;
-  }).filter((row) => participantDisplayName(row) || row.opening || row.closing);
-}
-
 function scoreValue(score, scoreValues) {
   const value = scoreValues?.[score];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -482,7 +439,7 @@ function finalScoreContext(ticket, latestRound, scoringDefinition = GOLDEN_V1_DE
   };
 }
 
-function inputColumnsForDoc4(ticket, score, nextEvaluationDate, nonconformities) {
+function inputColumnsForDoc4(ticket, score, nextEvaluationDate, nonconformities, ticketParticipants = []) {
   const evaluationDate = ticket.actual_evaluation_date || ticket.planned_date || String(ticket.created_at || '').slice(0, 10);
   const year = String(evaluationDate || '').slice(0, 4);
   const month = String(evaluationDate || '').slice(5, 7);
@@ -511,8 +468,13 @@ function inputColumnsForDoc4(ticket, score, nextEvaluationDate, nonconformities)
     Q: { label: 'Số điện thoại liên hệ', value: ticket.contact_phone || '' },
     R: { label: 'Email', value: ticket.contact_email || '' },
     S: { label: 'Sản phẩm đánh giá', value: ticket.product_name || ticket.product_group || '' },
-    T: { label: 'QA lead đánh giá', value: ticket.qa_lead_id || '' },
-    U: { label: 'QA hỗ trợ', value: parseJsonArray(ticket.qa_support_ids).join(', ') || ticket.qa_support_ids || '' },
+    T: { label: 'QA lead đánh giá', value: ticketParticipants
+      .find((participant) => participant.participant_role === 'QA_LEAD')?.display_name || '' },
+    U: { label: 'QA hỗ trợ', value: ticketParticipants
+      .filter((participant) => participant.participant_role === 'QA_SUPPORT')
+      .map((participant) => participant.display_name)
+      .filter(Boolean)
+      .join(', ') },
     V: { label: 'Bộ phận đánh giá', value: ticket.evaluation_department || '' },
     W: { label: 'Ngày ĐG thực tế', value: evaluationDate || '' },
     X: { label: 'Điểm đánh giá lần 1 (%)', value: score.first_score == null ? '' : Number(score.first_score).toFixed(1) },
@@ -651,15 +613,10 @@ function buildReportContext(db, ticket, options = {}) {
       opening: !!participant.opening_meeting,
       closing: !!participant.closing_meeting,
     }));
-  const teamMemberIds = uniqueTextList([...ticketParticipants, ...roundParticipants]
-    .filter((participant) => participant.participant_role !== 'ATTENDEE')
-    .map((participant) => participant.user_id || participant.display_name));
-  const displayNames = userDisplayNameMap(db, teamMemberIds);
-  const teamMembers = assessmentTeamMembers(ticket, latestRound, displayNames);
+  const teamMembers = assessmentTeamMembers([...ticketParticipants, ...roundParticipants]);
   const primaryEvaluatorParticipant = [...roundParticipants, ...ticketParticipants]
     .find((participant) => ['EVALUATOR', 'QA_LEAD'].includes(participant.participant_role));
-  const primaryEvaluator = primaryEvaluatorParticipant?.display_name
-    || firstUserDisplayName(teamMemberIds, displayNames);
+  const primaryEvaluator = primaryEvaluatorParticipant?.display_name || '';
   const evaluationDate = actualAssessmentDateForReport(ticket, latestRound, reportDefinition.code);
   const selectedRoundNo = Number(latestRound.round_no || 0);
   const nextEvaluationDate = score.passed
@@ -667,7 +624,13 @@ function buildReportContext(db, ticket, options = {}) {
       ? calculateNextEvaluationDate(evaluationDate, score.final_score)
       : (ticket.next_evaluation_date || calculateNextEvaluationDate(score.correction_date || evaluationDate, score.final_score)))
     : '';
-  const inputColumns = inputColumnsForDoc4(ticket, score, nextEvaluationDate, structuredNonconformities);
+  const inputColumns = inputColumnsForDoc4(
+    ticket,
+    score,
+    nextEvaluationDate,
+    structuredNonconformities,
+    ticketParticipants,
+  );
   const doc4 = {
     input_columns: inputColumns,
     related_information: {

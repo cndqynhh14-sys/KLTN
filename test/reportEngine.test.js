@@ -297,10 +297,10 @@ test('RUN-19 canonical export pins template, question, and scoring policy versio
     `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actor);
     const round = db.prepare(`
       INSERT INTO evaluation_rounds (
-        ticket_id, round_no, assessment_code, assessment_date, evaluator_id,
+        ticket_id, round_no, assessment_code, assessment_date,
         status, completed_at, total_score, final_result, classification
-      ) VALUES (?, 1, 'RUN17-EXPORT-001-R1', '2026-07-14', ?, 'Completed', '2026-07-14', 100, 'Pass', 'A')
-    `).run(ticketInfo.lastInsertRowid, actor);
+      ) VALUES (?, 1, 'RUN17-EXPORT-001-R1', '2026-07-14', 'Completed', '2026-07-14', 100, 'Pass', 'A')
+    `).run(ticketInfo.lastInsertRowid);
     const ticket = db.prepare('SELECT * FROM evaluation_tickets WHERE id=?').get(ticketInfo.lastInsertRowid);
     const { exportCanonicalReport } = require('../server/reporting/canonicalReportExports');
     const exported = exportCanonicalReport(db, {

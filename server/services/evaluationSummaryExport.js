@@ -210,9 +210,17 @@ function evaluationRows(db, filters = {}, scope = null) {
       COALESCE(NULLIF(TRIM(t.attp_certificate_type), ''), NULLIF(TRIM(sm.attp_certificate_type), '')) AS attp_certificate_type,
       t.evaluation_type,
       t.evaluation_method,
-      t.evaluator_name,
-      t.qa_lead_id,
-      t.qa_support_ids,
+      (SELECT p.display_name
+       FROM evaluation_participants p
+       WHERE p.ticket_id = t.id AND p.participant_role = 'EVALUATOR' AND p.active = 1
+       ORDER BY p.id LIMIT 1) AS evaluator_name,
+      (SELECT p.display_name
+       FROM evaluation_participants p
+       WHERE p.ticket_id = t.id AND p.participant_role = 'QA_LEAD' AND p.active = 1
+       ORDER BY p.id LIMIT 1) AS qa_lead_id,
+      (SELECT group_concat(p.display_name, ', ')
+       FROM evaluation_participants p
+       WHERE p.ticket_id = t.id AND p.participant_role = 'QA_SUPPORT' AND p.active = 1) AS qa_support_ids,
       t.evaluation_department,
       t.planned_date,
       t.actual_evaluation_date,
