@@ -1,3 +1,22 @@
+function canonicalNonconformity(row) {
+  if (!row) return row;
+  const legacyNonconformity = row.nonconformity;
+  const legacyRemediation = row.remediation;
+  const nonconformityContent = row.nonconformity_content || legacyNonconformity || null;
+  const remediationContent = row.remediation_content || legacyRemediation
+    || row.legacy_corrective_action || null;
+  return {
+    ...row,
+    nonconformity_content: nonconformityContent,
+    remediation_content: remediationContent,
+    nonconformity: nonconformityContent,
+    remediation: remediationContent,
+    legacy_nonconformity: legacyNonconformity,
+    legacy_remediation: legacyRemediation,
+    read_source: row.nonconformity_content || row.remediation_content ? 'CANONICAL' : 'LEGACY',
+  };
+}
+
 class CorrectiveActionRepository {
   constructor(db) {
     this.db = db;
@@ -19,10 +38,13 @@ class CorrectiveActionRepository {
           @due_date, @status, @evidence_attachment_id, @created_by)
       `),
       listNonconformitiesByTicket: db.prepare(`
-        SELECT nc.*, er.round_no, er.correction_locked, q.question_text
+        SELECT nc.*, er.round_no, er.correction_locked, q.question_text,
+          q.version_item_id AS question_item_id,
+          ca.required_action AS legacy_corrective_action
         FROM evaluation_nonconformities nc
         LEFT JOIN evaluation_rounds er ON er.id = nc.round_id
         LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = nc.question_id
+        LEFT JOIN corrective_actions ca ON ca.id = nc.corrective_action_id
         WHERE nc.ticket_id = ?
         ORDER BY COALESCE(er.round_no, 0), nc.category, nc.clause_code, nc.created_at
       `),
@@ -50,11 +72,11 @@ class CorrectiveActionRepository {
   }
 
   listNonconformitiesByTicket(ticketId) {
-    return this.statements.listNonconformitiesByTicket.all(ticketId);
+    return this.statements.listNonconformitiesByTicket.all(ticketId).map(canonicalNonconformity);
   }
 
   getNonconformityForTicket(id, ticketId) {
-    return this.statements.getNonconformityForTicket.get(id, ticketId);
+    return canonicalNonconformity(this.statements.getNonconformityForTicket.get(id, ticketId));
   }
 
   updateNonconformityProposal(payload) {

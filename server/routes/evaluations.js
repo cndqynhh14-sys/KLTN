@@ -33,6 +33,7 @@ const logger = require('../logger');
 const EvaluationTicketRepository = require('../repositories/EvaluationTicketRepository');
 const EvaluationRoundRepository = require('../repositories/EvaluationRoundRepository');
 const EvaluationAnswerRepository = require('../repositories/EvaluationAnswerRepository');
+const EvaluationParticipantRepository = require('../repositories/EvaluationParticipantRepository');
 const AttachmentRepository = require('../repositories/AttachmentRepository');
 const CorrectiveActionRepository = require('../repositories/CorrectiveActionRepository');
 const ApprovalTaskRepository = require('../repositories/ApprovalTaskRepository');
@@ -52,6 +53,7 @@ const questionVersionService = new QuestionVersionService(db);
 const ticketRepository = new EvaluationTicketRepository(db);
 const roundRepository = new EvaluationRoundRepository(db);
 const answerRepository = new EvaluationAnswerRepository(db);
+const participantRepository = new EvaluationParticipantRepository(db);
 const attachmentRepository = new AttachmentRepository(db);
 const correctiveActionRepository = new CorrectiveActionRepository(db);
 const approvalTaskRepository = new ApprovalTaskRepository(db);
@@ -321,6 +323,22 @@ function enrichAttachmentRows(rows, displayNames = null) {
 
 function mapTicket(row, displayNames = new Map()) {
   if (!row) return null;
+  const participantResolution = participantRepository.resolveTicketParticipants(row.id);
+  if (participantResolution.mismatch) {
+    logger.warn('evaluation.canonical_read_mismatch', {
+      resource_type: 'ticket_participant',
+      ticket_id: row.id,
+      mismatch_count: participantResolution.mismatch_count,
+      fallback_count: participantResolution.fallback_count,
+    });
+  }
+  const participants = participantResolution.participants;
+  const forRole = (role) => participants.filter((participant) => participant.participant_role === role);
+  const identity = (participant) => participant?.user_id || participant?.display_name || '';
+  const evaluator = forRole('EVALUATOR')[0];
+  const qaLead = forRole('QA_LEAD')[0];
+  const owner = forRole('OWNER')[0];
+  const qaSupport = forRole('QA_SUPPORT');
   const pendingTask = pendingApprovalTask(row.id);
   const round2 = round2Gate(row);
   const reassessmentDueDate = reassessmentDueDateForTicket(row);
@@ -329,8 +347,8 @@ function mapTicket(row, displayNames = new Map()) {
   const finalGrade = completedRound >= 2 && row.corrected_grade_code ? row.corrected_grade_code : row.grade_code;
   const finalResultLabel = completedRound >= 2 && row.corrected_result_label ? row.corrected_result_label : row.result_label;
   const finalConclusion = row.final_conclusion || (finalScore == null ? '' : finalConclusionForTicket(row, finalScore));
-  const qaSupportIds = parseUserValues(row.qa_support_ids);
-  const assignee = row.assigned_specialist_id || row.evaluator_name || row.created_by;
+  const qaSupportIds = qaSupport.map(identity).filter(Boolean);
+  const assignee = identity(owner) || identity(evaluator) || row.created_by;
   return {
     id: row.id,
     ticket_code: row.ticket_code,
@@ -372,12 +390,15 @@ function mapTicket(row, displayNames = new Map()) {
     facility_type: row.facility_type,
     supplier_scale: row.supplier_scale,
     evaluation_method: row.evaluation_method,
-    evaluator_name: row.evaluator_name,
-    evaluator_display_name: displayNameForValue(row.evaluator_name, displayNames),
-    qa_lead_id: row.qa_lead_id,
-    qa_lead_display_name: displayNameForValue(row.qa_lead_id, displayNames),
-    qa_support_ids: row.qa_support_ids,
-    qa_support_display_names: displayNamesForValues(qaSupportIds, displayNames),
+    participants,
+    participant_source: participantResolution.source,
+    participant_mismatch: participantResolution.mismatch,
+    evaluator_name: identity(evaluator),
+    evaluator_display_name: evaluator?.display_name || displayNameForValue(identity(evaluator), displayNames),
+    qa_lead_id: identity(qaLead),
+    qa_lead_display_name: qaLead?.display_name || displayNameForValue(identity(qaLead), displayNames),
+    qa_support_ids: JSON.stringify(qaSupportIds),
+    qa_support_display_names: qaSupport.map((participant) => participant.display_name),
     evaluation_department: row.evaluation_department,
     dates: {
       created: String(row.created_at || '').slice(0, 10),
@@ -409,6 +430,8 @@ function mapTicket(row, displayNames = new Map()) {
     specialist_proposal: row.specialist_proposal,
     supplier_introduction: row.supplier_introduction || '',
     scoring_locked: !!row.scoring_locked,
+    scoring_policy_version_id: row.scoring_policy_version_id || null,
+    snapshot_locked_at: row.snapshot_locked_at || null,
     completed_round: row.completed_round || row.current_round_no || 1,
     current_round_no: row.current_round_no,
     is_deleted: !!row.is_deleted,
@@ -431,6 +454,8 @@ function mapTicket(row, displayNames = new Map()) {
 
 function mapQuestion(row) {
   return {
+    question_item_id: row.version_item_id || row.question_item_id || null,
+    legacy_question_id: String(row.id),
     question_id: String(row.id),
     db_id: row.id,
     template_id: row.template_id,
@@ -504,6 +529,9 @@ function assessmentCode(ticket, roundNo) {
 }
 
 function mapAssessmentRound(ticket, round) {
+  const participantResolution = participantRepository.resolveRoundParticipants(round.id);
+  const evaluator = participantResolution.participants
+    .find((participant) => participant.participant_role === 'EVALUATOR');
   return {
     id: round.id,
     assessment_code: round.assessment_code || assessmentCode(ticket, round.round_no),
@@ -511,7 +539,11 @@ function mapAssessmentRound(ticket, round) {
     round_no: round.round_no,
     status: round.status,
     assessment_date: round.assessment_date || String(round.completed_at || round.started_at || '').slice(0, 10),
-    evaluator_id: round.evaluator_id || round.locked_by || ticket.qa_lead_id || ticket.evaluator_name || '',
+    participants: participantResolution.participants,
+    participant_source: participantResolution.source,
+    participant_mismatch: participantResolution.mismatch,
+    evaluator_id: evaluator?.user_id || evaluator?.display_name
+      || round.locked_by || ticket.qa_lead_id || ticket.evaluator_name || '',
     total_score: round.total_score,
     final_result: round.final_result,
     classification: round.classification,
@@ -1003,6 +1035,7 @@ evaluationScoringService = new EvaluationScoringService({
   ticketRepository,
   roundRepository,
   answerRepository,
+  participantRepository,
   attachmentRepository,
   logWorkflow,
   mapTicket: mapTicketForResponse,
@@ -1498,6 +1531,7 @@ router.put('/:ticketId/rounds/:roundNo/answers', canEditEvaluation, (req, res) =
       ticketId: req.params.ticketId,
       roundNo,
       answers: req.body?.answers || {},
+      canonicalAnswers: req.body?.canonical_answers,
       attendees: req.body?.attendees,
       supplierIntroduction: req.body?.supplier_introduction,
       user: req.user,
@@ -1514,6 +1548,7 @@ router.post('/:ticketId/rounds/:roundNo/complete', canEditEvaluation, (req, res)
       ticketId: req.params.ticketId,
       roundNo,
       answers: req.body?.answers || null,
+      canonicalAnswers: req.body?.canonical_answers,
       attendees: req.body?.attendees,
       supplierIntroduction: req.body?.supplier_introduction,
       finalAction: String(req.body?.final_action || '').trim(),
@@ -1546,7 +1581,19 @@ router.post('/:ticketId/rounds/:roundNo/attachments', canEditEvaluation, upload.
     return res.status(403).json({ error: 'round_locked' });
   }
   if (!req.file) return res.status(400).json({ error: 'file_required' });
-  const questionId = parseInt(req.body?.question_id || req.body?.questionId || '0', 10);
+  const canonicalQuestionItemId = parseInt(req.body?.question_item_id || '0', 10);
+  let questionId = parseInt(req.body?.question_id || req.body?.questionId || '0', 10);
+  if (canonicalQuestionItemId) {
+    try {
+      const normalized = evaluationScoringService.normalizeIncomingAnswers(ticket, {
+        [String(canonicalQuestionItemId)]: {},
+      }, true);
+      questionId = parseInt(Object.keys(normalized)[0] || '0', 10);
+    } catch (error) {
+      removeLocalFile(req.file.path);
+      return res.status(error.status || 400).json(error.payload || { error: 'question_not_in_ticket' });
+    }
+  }
   if (!questionId) {
     removeLocalFile(req.file.path);
     return res.status(400).json({ error: 'question_id_required' });
@@ -1720,6 +1767,7 @@ router.post('/:code/round-2', canEditEvaluation, (req, res) => {
     res.status(201).json(withEvaluationActionEnvelope(evaluationScoringService.createRound2({
       code: req.params.code,
       answers: req.body?.answers || null,
+      canonicalAnswers: req.body?.canonical_answers,
       user: req.user,
     }), req.user));
   } catch (e) {
