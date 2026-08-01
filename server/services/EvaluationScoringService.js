@@ -13,6 +13,7 @@ const ScoringPolicyRepository = require('../scoring/ScoringPolicyRepository');
 const { PERMISSIONS } = require('../authorization/permissionCatalog');
 const { resourceContext } = require('./PolicyService');
 const { WORKFLOW_STATUSES } = require('../domain/workflowHistory');
+const logger = require('../logger');
 
 function calculatedScore(score, definition) {
   const value = definition?.score_values?.[score];
@@ -52,6 +53,7 @@ class EvaluationScoringService {
     ticketRepository,
     roundRepository,
     answerRepository,
+    participantRepository,
     attachmentRepository,
     logWorkflow,
     mapTicket,
@@ -69,6 +71,7 @@ class EvaluationScoringService {
     this.ticketRepository = ticketRepository;
     this.roundRepository = roundRepository;
     this.answerRepository = answerRepository;
+    this.participantRepository = participantRepository;
     this.attachmentRepository = attachmentRepository;
     this.logWorkflow = logWorkflow;
     this.mapTicket = mapTicket;
@@ -124,7 +127,35 @@ class EvaluationScoringService {
     return this.roundRepository.getByTicketAndRound(ticketId, roundNo);
   }
 
+  roundParticipantResolution(round) {
+    const resolution = this.participantRepository?.resolveRoundParticipants(round.id)
+      || { participants: [], source: 'LEGACY', mismatch: false, mismatch_count: 0, fallback_count: 0 };
+    if (resolution.mismatch) {
+      logger.warn('evaluation.canonical_read_mismatch', {
+        resource_type: 'round_participant',
+        ticket_id: round.ticket_id,
+        round_id: round.id,
+        mismatch_count: resolution.mismatch_count,
+        fallback_count: resolution.fallback_count,
+      });
+    }
+    return resolution;
+  }
+
   mapAssessmentRound(ticket, round) {
+    const participantResolution = this.roundParticipantResolution(round);
+    const evaluator = participantResolution.participants
+      .find((participant) => participant.participant_role === 'EVALUATOR');
+    const canonicalAttendees = participantResolution.participants
+      .filter((participant) => participant.participant_role === 'ATTENDEE')
+      .map((participant) => ({
+        name: participant.display_name,
+        opening: !!participant.opening_meeting,
+        closing: !!participant.closing_meeting,
+      }));
+    const attendees = canonicalAttendees.length || this.participantRepository
+      ? canonicalAttendees
+      : parseAttendees(round.attendees_json);
     return {
       id: round.id,
       assessment_code: round.assessment_code || this.assessmentCode(ticket, round.round_no),
@@ -135,11 +166,15 @@ class EvaluationScoringService {
       source_round_no: round.source_round_no || null,
       status: round.status,
       assessment_date: round.assessment_date || String(round.completed_at || round.started_at || '').slice(0, 10),
-      evaluator_id: round.evaluator_id || round.locked_by || ticket.qa_lead_id || ticket.evaluator_name || '',
+      evaluator_id: evaluator?.user_id || evaluator?.display_name
+        || round.locked_by || ticket.qa_lead_id || ticket.evaluator_name || '',
       total_score: round.total_score,
       final_result: round.final_result,
       classification: round.classification,
-      attendees: parseAttendees(round.attendees_json),
+      participants: participantResolution.participants,
+      participant_source: participantResolution.source,
+      participant_mismatch: participantResolution.mismatch,
+      attendees,
       final_conclusion: round.total_score == null ? '' : finalConclusionFromScore(round.total_score),
       started_at: round.started_at,
       completed_at: round.completed_at,
@@ -187,6 +222,8 @@ class EvaluationScoringService {
     return rows.reduce((acc, row) => {
       acc[String(row.question_id)] = {
         answer_id: row.id,
+        question_item_id: row.resolved_question_item_id || row.question_item_id || null,
+        legacy_question_id: row.question_id,
         score: row.score || '',
         note: row.comment || '',
         comment: row.comment || '',
@@ -194,6 +231,37 @@ class EvaluationScoringService {
         attachments: byAnswer[row.id] || [],
       };
       return acc;
+    }, {});
+  }
+
+  canonicalAnswersForRound(answers) {
+    return Object.values(answers || {}).reduce((acc, answer) => {
+      if (answer.question_item_id == null) return acc;
+      acc[String(answer.question_item_id)] = answer;
+      return acc;
+    }, {});
+  }
+
+  normalizeIncomingAnswers(ticket, answers, canonicalIdentifiers = false) {
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return answers || {};
+    const legacyByInputId = new Map();
+    for (const question of this.questionsForTicket(ticket)) {
+      const legacyId = String(question.db_id || question.question_id || '');
+      if (!legacyId) continue;
+      if (!canonicalIdentifiers) legacyByInputId.set(legacyId, legacyId);
+      const canonicalId = question.question_item_id || question.version_item_id;
+      if (canonicalIdentifiers && canonicalId != null) legacyByInputId.set(String(canonicalId), legacyId);
+    }
+    return Object.entries(answers).reduce((normalized, [inputId, value]) => {
+      const legacyId = legacyByInputId.get(String(inputId));
+      if (!legacyId) {
+        throw Object.assign(new Error('question_not_in_ticket'), {
+          status: 400,
+          payload: { error: 'question_not_in_ticket', question_id: inputId },
+        });
+      }
+      normalized[legacyId] = value;
+      return normalized;
     }, {});
   }
 
@@ -326,6 +394,17 @@ class EvaluationScoringService {
   roundPayload(ticket, round) {
     const questions = this.questionsForTicket(ticket);
     const answers = this.applyRoundReadonly(ticket, round.round_no, this.answersForRound(round.id));
+    const participantResolution = this.roundParticipantResolution(round);
+    const canonicalAttendees = participantResolution.participants
+      .filter((participant) => participant.participant_role === 'ATTENDEE')
+      .map((participant) => ({
+        name: participant.display_name,
+        opening: !!participant.opening_meeting,
+        closing: !!participant.closing_meeting,
+      }));
+    const attendees = canonicalAttendees.length || this.participantRepository
+      ? canonicalAttendees
+      : parseAttendees(round.attendees_json);
     return {
       ticket: this.mapTicket(ticket),
       round: {
@@ -341,13 +420,17 @@ class EvaluationScoringService {
         total_score: round.total_score,
         final_result: round.final_result,
         classification: round.classification,
-        attendees: parseAttendees(round.attendees_json),
+        participants: participantResolution.participants,
+        participant_source: participantResolution.source,
+        participant_mismatch: participantResolution.mismatch,
+        attendees,
         locked_at: round.locked_at,
         locked_by: round.locked_by,
         locked: !!round.locked_at,
       },
       questions,
       answers,
+      canonical_answers: this.canonicalAnswersForRound(answers),
       nonconformities: this.nonconformitiesForTicket(ticket.id).filter((row) => row.round_id === round.id),
     };
   }
@@ -362,14 +445,20 @@ class EvaluationScoringService {
     return this.roundPayload(this.ticketRepository.getByCode(ticket.ticket_code), round);
   }
 
-  updateAnswers({ ticketId, roundNo, answers, attendees, supplierIntroduction, user }) {
+  updateAnswers({ ticketId, roundNo, answers, canonicalAnswers, attendees, supplierIntroduction, user }) {
     const ticket = this.ticketRepository.getByIdOrCode(ticketId);
     if (!ticket) throw Object.assign(new Error('ticket_not_found'), { status: 404, payload: { error: 'ticket_not_found' } });
     this.assertVisible(ticket, user);
     const round = this.ensureRound(ticket, roundNo, user);
     if (!round) throw Object.assign(new Error('round_not_found'), { status: 404, payload: { error: 'round_not_found' } });
     if (round.locked_at) throw Object.assign(new Error('round_locked'), { status: 403, payload: { error: 'round_locked' } });
-    const readonlyAttempts = this.validateRoundReadonlyChanges(ticket, roundNo, answers);
+    const usesCanonicalAnswers = canonicalAnswers !== undefined;
+    const normalizedAnswers = this.normalizeIncomingAnswers(
+      ticket,
+      usesCanonicalAnswers ? canonicalAnswers : answers,
+      usesCanonicalAnswers,
+    );
+    const readonlyAttempts = this.validateRoundReadonlyChanges(ticket, roundNo, normalizedAnswers);
     if (readonlyAttempts.length) {
       throw Object.assign(new Error('inherited_answer_readonly'), {
         status: 400,
@@ -379,7 +468,7 @@ class EvaluationScoringService {
     this.db.transaction(() => {
       if (Array.isArray(attendees)) this.roundRepository.updateAttendees(round.id, normalizeAttendees(attendees));
       this.maybeUpdateSupplierIntroduction(ticket, roundNo, supplierIntroduction, user.email);
-      this.upsertRoundAnswers(round, answers, user.email);
+      this.upsertRoundAnswers(round, normalizedAnswers, user.email);
       this.syncRoundNonconformities(ticket, round, this.questionsForTicket(ticket), this.answersForRound(round.id), user.email);
       this.roundRepository.markProcessingIfDraft({
         roundId: round.id,
@@ -394,13 +483,19 @@ class EvaluationScoringService {
     return this.roundPayload(this.ticketRepository.getByCode(ticket.ticket_code), this.getRound(ticket.id, roundNo));
   }
 
-  completeRound({ ticketId, roundNo, answers: incomingAnswers, attendees, supplierIntroduction, finalAction, user }) {
+  completeRound({ ticketId, roundNo, answers: incomingAnswers, canonicalAnswers,
+    attendees, supplierIntroduction, finalAction, user }) {
     const ticket = this.ticketRepository.getByIdOrCode(ticketId);
     if (!ticket) throw Object.assign(new Error('ticket_not_found'), { status: 404, payload: { error: 'ticket_not_found' } });
     this.assertVisible(ticket, user);
     const round = this.ensureRound(ticket, roundNo, user);
     if (!round) throw Object.assign(new Error('round_not_found'), { status: 404, payload: { error: 'round_not_found' } });
     if (round.locked_at) throw Object.assign(new Error('round_locked'), { status: 403, payload: { error: 'round_locked' } });
+    const usesCanonicalAnswers = canonicalAnswers !== undefined;
+    const selectedIncomingAnswers = usesCanonicalAnswers ? canonicalAnswers : incomingAnswers;
+    const normalizedIncomingAnswers = selectedIncomingAnswers
+      ? this.normalizeIncomingAnswers(ticket, selectedIncomingAnswers, usesCanonicalAnswers)
+      : selectedIncomingAnswers;
     const hasAttendeePayload = Array.isArray(attendees);
     const normalizedAttendees = hasAttendeePayload ? normalizeAttendees(attendees) : parseAttendees(round.attendees_json);
     if (!normalizedAttendees.length) {
@@ -418,14 +513,14 @@ class EvaluationScoringService {
       });
     }
     const result = this.db.transaction(() => {
-      const readonlyAttempts = this.validateRoundReadonlyChanges(ticket, roundNo, incomingAnswers || {});
+      const readonlyAttempts = this.validateRoundReadonlyChanges(ticket, roundNo, normalizedIncomingAnswers || {});
       if (readonlyAttempts.length) {
         throw Object.assign(new Error('inherited_answer_readonly'), {
           status: 400,
           payload: { error: 'inherited_answer_readonly', question_ids: readonlyAttempts },
         });
       }
-      if (incomingAnswers) this.upsertRoundAnswers(round, incomingAnswers, user.email);
+      if (normalizedIncomingAnswers) this.upsertRoundAnswers(round, normalizedIncomingAnswers, user.email);
       if (hasAttendeePayload) this.roundRepository.updateAttendees(round.id, normalizedAttendees);
       this.maybeUpdateSupplierIntroduction(ticket, roundNo, normalizedSupplierIntroduction, user.email);
       const questions = this.questionsForTicket(ticket);
@@ -529,7 +624,7 @@ class EvaluationScoringService {
     };
   }
 
-  createRound2({ code, answers, user }) {
+  createRound2({ code, answers, canonicalAnswers, user }) {
     const ticket = this.ticketRepository.getByCode(code);
     if (!ticket) throw Object.assign(new Error('ticket_not_found'), { status: 404, payload: { error: 'ticket_not_found' } });
     this.assertVisible(ticket, user);
@@ -541,7 +636,12 @@ class EvaluationScoringService {
         payload: { error: 'round_2_not_allowed', reason: gate.reason },
       });
     }
-    const round = this.db.transaction(() => this.openRound2Transaction(ticket, user, answers || null))();
+    const usesCanonicalAnswers = canonicalAnswers !== undefined;
+    const selectedAnswers = usesCanonicalAnswers ? canonicalAnswers : answers;
+    const normalizedAnswers = selectedAnswers
+      ? this.normalizeIncomingAnswers(ticket, selectedAnswers, usesCanonicalAnswers)
+      : null;
+    const round = this.db.transaction(() => this.openRound2Transaction(ticket, user, normalizedAnswers))();
     return this.roundPayload(this.ticketRepository.getByCode(code), round);
   }
 

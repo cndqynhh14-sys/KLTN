@@ -142,6 +142,10 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     assert.equal(json.ticket.facility_type, 'CHUNG');
     assert.equal(json.ticket.evaluation_method, 'Online');
     assert.equal(json.ticket.qa_lead_id, 'admin@masangroup.com');
+    assert.equal(json.ticket.participant_source, 'CANONICAL');
+    assert.equal(json.ticket.participants.length, 4);
+    assert.deepEqual(new Set(json.ticket.participants.map((item) => item.participant_role)),
+      new Set(['OWNER', 'QA_LEAD', 'QA_SUPPORT', 'EVALUATOR']));
     assert.equal(json.ticket.evaluation_department, 'QA Fresh');
     assert.equal(json.ticket.dates.actual, '2026-07-02');
     assert.ok(json.ticket.allowed_actions.includes('view'));
@@ -201,6 +205,10 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     assert.ok(roundJson.questions.every((question) => question.template_code === 'BM04'));
     assert.ok(roundJson.questions.every((question) => question.facility_type === 'CHUNG'));
     assert.ok(roundJson.questions.every((question) => question.supplier_scale === 'LARGE'));
+    assert.ok(roundJson.questions.every((question) => question.question_item_id > 0));
+    assert.equal(roundJson.round.participant_source, 'CANONICAL');
+    assert.equal(roundJson.round.participants.some((item) => item.participant_role === 'EVALUATOR'), true);
+    assert.ok(roundJson.canonical_answers && typeof roundJson.canonical_answers === 'object');
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     db.close();
@@ -249,8 +257,9 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id, current_status: draftStatus });
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, draftStatus);
     const question = db.prepare(`
-      SELECT q.id
+      SELECT q.id, qi.id AS question_item_id
       FROM evaluation_questions q
+      JOIN question_items qi ON qi.legacy_question_id = q.id
       WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
       LIMIT 1
@@ -264,7 +273,7 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
       body: JSON.stringify({
-        answers: { [question.id]: { score: 'A', note: '' } },
+        canonical_answers: { [question.question_item_id]: { score: 'A', note: '' } },
         attendees: [
           { name: 'Nguyen Van A - QA Lead', opening: true, closing: true },
           { name: 'Tran Thi B - NCC', opening: true, closing: false },
@@ -276,10 +285,12 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
     assert.equal(saveRes.status, 200, JSON.stringify(saveJson));
     assert.equal(saveJson.ticket.workflow_status, processingStatus);
     assert.equal(saveJson.answers[String(question.id)].score, 'A');
+    assert.equal(saveJson.canonical_answers[String(question.question_item_id)].score, 'A');
     assert.deepEqual(saveJson.round.attendees, [
       { name: 'Nguyen Van A - QA Lead', opening: true, closing: true },
       { name: 'Tran Thi B - NCC', opening: true, closing: false },
     ]);
+    assert.equal(saveJson.round.participants.filter((item) => item.participant_role === 'ATTENDEE').length, 2);
     assert.equal(saveJson.ticket.supplier_introduction, REQUIRED_SUPPLIER_INTRODUCTION);
     assert.equal(
       db.prepare('SELECT supplier_introduction FROM evaluation_tickets WHERE id = ?').get(ticketInfo.lastInsertRowid).supplier_introduction,
@@ -578,6 +589,7 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     assert.equal(createJson.nonconformities[0].category, questions[0].category);
     assert.equal(createJson.nonconformities[0].severity, 'B');
     assert.equal(createJson.nonconformities[0].nonconformity, 'Label evidence is incomplete');
+    assert.equal(createJson.nonconformities[0].nonconformity_content, 'Label evidence is incomplete');
     assert.equal(createJson.nonconformities[0].due_date, '2026-07-08');
     assert.equal(createJson.nonconformities[0].status, 'OPEN');
     const canonicalCreated = db.prepare(`SELECT evaluation_answer_id, nonconformity_content
@@ -613,6 +625,7 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     assert.equal(updateJson.item.remediation, 'Bổ sung hồ sơ');
     assert.equal(updateJson.item.due_date, '2026-08-01');
     assert.equal(updateJson.item.status, 'IN_PROGRESS');
+    assert.equal(updateJson.item.remediation_content, updateJson.item.remediation);
     assert.equal(db.prepare(`SELECT remediation_content FROM evaluation_nonconformities WHERE id=?`)
       .pluck().get(ncId), 'Bổ sung hồ sơ');
 

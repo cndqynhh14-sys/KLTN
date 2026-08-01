@@ -8,6 +8,7 @@ const { calculateNextEvaluationDate, normalizeResultLabel } = require('../domain
 const { userDisplayNameMap } = require('./userDisplayNames');
 const { GOLDEN_V1_DEFINITION, buildEvaluationResultWithPolicy, validateScoringPolicyDefinition } = require('../scoring/scoringPolicyEngine');
 const { resolveReportAlias } = require('../reporting/reportAliasCatalog');
+const EvaluationParticipantRepository = require('../repositories/EvaluationParticipantRepository');
 
 const EXPORT_DIR = REPORT_EXPORT_DIR;
 const PDF_RENDER_MAX_BUFFER = 100 * 1024 * 1024;
@@ -576,21 +577,34 @@ function buildReportContext(db, ticket, options = {}) {
     });
   }
   const answers = latestRound.id ? db.prepare(`
-    SELECT q.category, q.category_code, q.category_label_snapshot,
-      q.question_code, q.question_text, a.score, a.comment, er.round_no
+    SELECT COALESCE(qi.category, q.category) AS category,
+      q.category_code, q.category_label_snapshot,
+      COALESCE(qi.question_code, q.question_code) AS question_code,
+      COALESCE(qi.question_text, q.question_text) AS question_text,
+      a.score, a.comment, er.round_no
     FROM evaluation_answers a
     JOIN evaluation_rounds er ON er.id = a.round_id
-    JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
+    LEFT JOIN question_items qi ON qi.id = a.question_item_id
+    LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
     WHERE a.round_id = ?
-    ORDER BY q.order_index, q.question_code
+    ORDER BY COALESCE(qi.order_index, q.order_index), COALESCE(qi.question_code, q.question_code)
   `).all(latestRound.id) : [];
   const structuredNonconformities = db.prepare(`
-    SELECT nc.*, q.question_code, q.question_text, q.order_index
+    SELECT nc.*,
+      COALESCE(qi.question_code, q.question_code) AS question_code,
+      COALESCE(qi.question_text, q.question_text) AS question_text,
+      COALESCE(qi.order_index, q.order_index) AS order_index
     FROM evaluation_nonconformities nc
+    LEFT JOIN evaluation_answers a ON a.id = nc.evaluation_answer_id
+    LEFT JOIN question_items qi ON qi.id = a.question_item_id
     LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = nc.question_id
     WHERE nc.ticket_id = @ticket_id AND (@round_id IS NULL OR nc.round_id = @round_id)
     ORDER BY COALESCE(q.order_index, 999999), nc.clause_code, nc.created_at
-  `).all({ ticket_id: ticket.id, round_id: latestRound.id || null });
+  `).all({ ticket_id: ticket.id, round_id: latestRound.id || null }).map((row) => ({
+    ...row,
+    nonconformity: row.nonconformity_content || row.nonconformity,
+    remediation: row.remediation_content || row.remediation,
+  }));
   const answerNonconformities = answers.filter((a) => ['B', 'C', 'D'].includes(a.score));
   const correctiveActions = db.prepare(`
     SELECT * FROM corrective_actions
@@ -615,16 +629,27 @@ function buildReportContext(db, ticket, options = {}) {
   }
   const categorySummary = computeCategorySummary(answers, scoringDefinition.score_values);
   const score = finalScoreContext(ticket, latestRound, scoringDefinition);
-  const attendees = parseRoundAttendees(latestRound.attendees_json);
-  const teamMemberIds = assessmentTeamMemberIds(ticket, latestRound);
+  const participantRepository = new EvaluationParticipantRepository(db);
+  const ticketParticipants = participantRepository.resolveTicketParticipants(ticket.id).participants;
+  const roundParticipants = latestRound.id
+    ? participantRepository.resolveRoundParticipants(latestRound.id).participants
+    : [];
+  const attendees = roundParticipants
+    .filter((participant) => participant.participant_role === 'ATTENDEE')
+    .map((participant) => ({
+      name: participant.display_name,
+      opening: !!participant.opening_meeting,
+      closing: !!participant.closing_meeting,
+    }));
+  const teamMemberIds = uniqueTextList([...ticketParticipants, ...roundParticipants]
+    .filter((participant) => participant.participant_role !== 'ATTENDEE')
+    .map((participant) => participant.user_id || participant.display_name));
   const displayNames = userDisplayNameMap(db, teamMemberIds);
   const teamMembers = assessmentTeamMembers(ticket, latestRound, displayNames);
-  const primaryEvaluator = firstUserDisplayName([
-    ticket.qa_lead_id,
-    latestRound.evaluator_id,
-    ticket.evaluator_name,
-    ...teamMemberIds,
-  ], displayNames);
+  const primaryEvaluatorParticipant = [...roundParticipants, ...ticketParticipants]
+    .find((participant) => ['EVALUATOR', 'QA_LEAD'].includes(participant.participant_role));
+  const primaryEvaluator = primaryEvaluatorParticipant?.display_name
+    || firstUserDisplayName(teamMemberIds, displayNames);
   const evaluationDate = actualAssessmentDateForReport(ticket, latestRound, reportDefinition.code);
   const selectedRoundNo = Number(latestRound.round_no || 0);
   const nextEvaluationDate = score.passed
@@ -660,8 +685,10 @@ function buildReportContext(db, ticket, options = {}) {
       rows: attendees,
       opening_meeting: attendees.filter((row) => row.opening).map(participantDisplayName),
       closing_meeting: attendees.filter((row) => row.closing).map(participantDisplayName),
-      qa_lead: ticket.qa_lead_id || '',
-      qa_support: parseJsonArray(ticket.qa_support_ids),
+      qa_lead: ticketParticipants.find((participant) => participant.participant_role === 'QA_LEAD')?.display_name || '',
+      qa_support: ticketParticipants
+        .filter((participant) => participant.participant_role === 'QA_SUPPORT')
+        .map((participant) => participant.display_name),
       department: ticket.evaluation_department || '',
       supplier_contact: {
         name: ticket.contact_name || '',

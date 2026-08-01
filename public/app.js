@@ -282,6 +282,11 @@ import { state } from './js/state.js';
     return displayName || value || '';
   }
   function qaSupportDisplay(ticket) {
+    const canonical = (ticket.participants || [])
+      .filter((participant) => participant.participant_role === 'QA_SUPPORT')
+      .map((participant) => participant.display_name || participant.user_id)
+      .filter(Boolean);
+    if (canonical.length) return canonical.join(', ');
     if (Array.isArray(ticket.qa_support_display_names) && ticket.qa_support_display_names.length) {
       return ticket.qa_support_display_names.join(', ');
     }
@@ -295,6 +300,10 @@ import { state } from './js/state.js';
   function mapTicketFromApi(ticket) {
     const displayScore = ticket.display_score_percent ?? ticket.score_percent;
     const round1Score = ticket.round_1_score_percent ?? ticket.score_percent;
+    const participants = Array.isArray(ticket.participants) ? ticket.participants : [];
+    const participantForRole = (role) => participants.find((row) => row.participant_role === role);
+    const evaluator = participantForRole('EVALUATOR');
+    const qaLead = participantForRole('QA_LEAD');
     return {
       code: ticket.ticket_code,
       id: ticket.id,
@@ -328,8 +337,12 @@ import { state } from './js/state.js';
       facility_type: ticket.facility_type || '',
       supplier_scale: ticket.supplier_scale || '',
       evaluation_method: ticket.evaluation_method || '',
-      evaluator_name: ticket.evaluator_name || '',
-      qa_lead: userDisplayValue(ticket.qa_lead_id, ticket.qa_lead_display_name),
+      participants,
+      participant_source: ticket.participant_source || 'LEGACY',
+      participant_mismatch: !!ticket.participant_mismatch,
+      evaluator_name: evaluator?.display_name || evaluator?.user_id || ticket.evaluator_name || '',
+      qa_lead: qaLead?.display_name || qaLead?.user_id
+        || userDisplayValue(ticket.qa_lead_id, ticket.qa_lead_display_name),
       qa_support: qaSupportDisplay(ticket),
       evaluation_department: ticket.evaluation_department || '',
       template_code: ticket.template_code || '',
@@ -383,8 +396,10 @@ import { state } from './js/state.js';
   }
   function mapQuestionFromApi(question) {
     return {
-      id: String(question.question_id || question.id),
+      id: String(question.question_item_id || question.question_id || question.id),
       db_id: question.db_id || question.id,
+      question_item_id: question.question_item_id || null,
+      legacy_question_id: question.legacy_question_id || question.question_id || question.id,
       template_id: question.template_id,
       template_code: question.template_code || '',
       question_template_version_id: question.question_template_version_id || null,
@@ -613,13 +628,15 @@ import { state } from './js/state.js';
     const r = await api('/evaluations/' + encodeURIComponent(code) + '/rounds/' + roundNo + '/answers', {
       method: 'PUT',
       body: {
-        answers: answersByTicket[code] || {},
+        canonical_answers: answersByTicket[code] || {},
         attendees: state.roundAttendees[roundStateKey(code, roundNo)] || [],
         supplier_introduction: ticket ? (ticket.supplier_introduction || '') : '',
       },
     });
     if (!r.ok) throw new Error((r.data && r.data.error) || 'answers_update_failed');
-    if (r.data && r.data.answers) answersByTicket[code] = r.data.answers;
+    if (r.data && (r.data.canonical_answers || r.data.answers)) {
+      answersByTicket[code] = r.data.canonical_answers || r.data.answers;
+    }
     if (r.data && r.data.round) {
       state.roundAttendees[roundStateKey(code, roundNo)] = normalizeAttendees(r.data.round.attendees || []);
     }
@@ -643,7 +660,7 @@ import { state } from './js/state.js';
     const r = await api('/evaluations/' + encodeURIComponent(ticket.code) + '/rounds/' + roundNo);
     if (!r.ok) throw new Error((r.data && r.data.error) || 'round_load_failed');
     state.roundQuestions[key] = (r.data.questions || []).map(mapQuestionFromApi);
-    answersByTicket[ticket.code] = r.data.answers || {};
+    answersByTicket[ticket.code] = r.data.canonical_answers || r.data.answers || {};
     if (r.data.round) {
       ticket.scoringLocked = !!r.data.round.locked;
       ticket.roundStatus = r.data.round.status;
@@ -666,7 +683,7 @@ import { state } from './js/state.js';
     const roundNo = ticket.current_round_no || ticket.completed_round || 1;
     const fd = new FormData();
     fd.append('file', file);
-    fd.append('question_id', questionId);
+    fd.append('question_item_id', questionId);
     const r = await api('/evaluations/' + encodeURIComponent(ticket.code) + '/rounds/' + roundNo + '/attachments', { method: 'POST', body: fd });
     if (!r.ok) throw new Error((r.data && r.data.error) || 'attachment_upload_failed');
     const answers = ensureAnswers(ticket.code, questionsForTicket(ticket));
@@ -4319,7 +4336,8 @@ import { state } from './js/state.js';
   }
 
   function nonconformityQuestionKey(row) {
-    return String(row?.question_id || row?.db_id || row?.questionId || row?.question_id || row?.question_code || row?.clause_code || row?.id || '').trim();
+    return String(row?.question_item_id || row?.evaluation_answer_id || row?.question_id
+      || row?.db_id || row?.questionId || row?.question_code || row?.clause_code || row?.id || '').trim();
   }
 
   function draftCorrectiveRequirementKey(ticket, row) {
@@ -4347,7 +4365,8 @@ import { state } from './js/state.js';
   }
 
   function nonconformityDisplayRow(row, ticket) {
-    const persisted = !!(row && row.id && row.question_id);
+    const persisted = !!(row && row.id
+      && (row.evaluation_answer_id || row.question_item_id || row.question_id));
     const draftKey = persisted ? '' : draftCorrectiveRequirementKey(ticket, row);
     const draft = draftKey ? (draftCorrectiveRequirementStore()[draftKey] || {}) : {};
     const hasDraftDueDate = Object.prototype.hasOwnProperty.call(draft, 'due_date');
@@ -4357,7 +4376,10 @@ import { state } from './js/state.js';
       : '';
     return {
       ...row,
-      remediation: row?.remediation || draft.remediation || '',
+      nonconformity_content: row?.nonconformity_content || row?.nonconformity || row?.note || '',
+      remediation_content: row?.remediation_content || row?.remediation || draft.remediation || '',
+      nonconformity: row?.nonconformity_content || row?.nonconformity || row?.note || '',
+      remediation: row?.remediation_content || row?.remediation || draft.remediation || '',
       due_date: savedDueDate || defaultDueDate,
       _due_date_is_default: !!defaultDueDate,
       _validation_id: persisted ? String(row.id) : draftKey,
@@ -5511,7 +5533,7 @@ import { state } from './js/state.js';
       const r = await api('/evaluations/' + encodeURIComponent(ticket.code) + '/rounds/' + roundNo + '/complete', {
         method: 'POST',
         body: {
-          answers,
+          canonical_answers: answers,
           attendees: state.roundAttendees[roundStateKey(ticket.code, roundNo)] || [],
           supplier_introduction: ticket.supplier_introduction || '',
           final_action: finalAction,
@@ -5534,7 +5556,7 @@ import { state } from './js/state.js';
         throw new Error((r.data && r.data.error) || 'round_complete_failed');
       }
       clearScoringValidationIssue();
-      answersByTicket[ticket.code] = r.data.answers || answers;
+      answersByTicket[ticket.code] = r.data.canonical_answers || r.data.answers || answers;
       if (r.data.round) state.roundAttendees[roundStateKey(ticket.code, roundNo)] = normalizeAttendees(r.data.round.attendees || []);
       const updated = mapTicketFromApi(r.data.ticket);
       updated.scoringLocked = !!(r.data.round && r.data.round.locked);
@@ -5741,7 +5763,7 @@ import { state } from './js/state.js';
       const r = await api('/evaluations/' + encodeURIComponent(ticket.code) + '/round-2', { method: 'POST', body: {} });
       if (!r.ok) throw new Error((r.data && (r.data.reason || r.data.error)) || 'round_2_failed');
       state.roundQuestions[roundStateKey(ticket.code, 2)] = (r.data.questions || []).map(mapQuestionFromApi);
-      answersByTicket[ticket.code] = r.data.answers || {};
+      answersByTicket[ticket.code] = r.data.canonical_answers || r.data.answers || {};
       const updated = mapTicketFromApi(r.data.ticket);
       Object.assign(ticket, updated, {
         current_round_no: 2,

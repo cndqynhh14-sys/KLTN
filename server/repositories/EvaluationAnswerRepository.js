@@ -3,10 +3,14 @@ class EvaluationAnswerRepository {
     this.db = db;
     this.statements = {
       listByRound: db.prepare(`
-        SELECT a.*, q.question_code, q.version_item_id
+        SELECT a.*,
+          COALESCE(qi.question_code, q.question_code) AS question_code,
+          COALESCE(a.question_item_id, q.version_item_id) AS resolved_question_item_id,
+          q.version_item_id AS legacy_resolved_question_item_id
         FROM evaluation_answers a
         JOIN evaluation_rounds er ON er.id = a.round_id
-        JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
+        LEFT JOIN question_items qi ON qi.id = a.question_item_id
+        LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
         WHERE a.round_id = ?
       `),
       upsertAnswer: db.prepare(`

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-15T07:36:25.231Z",
+  "source_scanned": true,
+  "history_scanned": true,
+  "artifacts_scanned": true,
+  "secret_findings": [],
+  "package_forbidden_entries": [],
+  "history_scan_error": null,
+  "status": "PASS"
+}

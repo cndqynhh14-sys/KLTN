@@ -75,14 +75,15 @@ class EvaluationWorkspaceProvider {
         EXISTS(SELECT 1 FROM evaluation_rounds r WHERE r.ticket_id=t.id AND r.round_no=2) AS has_round2,
         (SELECT COUNT(*) FROM evaluation_nonconformities n
           WHERE n.ticket_id=t.id AND n.severity IN ('B','C','D')
-            AND (NULLIF(TRIM(COALESCE(n.remediation,'')),'') IS NULL
+            AND (NULLIF(TRIM(COALESCE(n.remediation_content,n.remediation,'')),'') IS NULL
               OR NULLIF(TRIM(COALESCE(n.due_date,'')),'') IS NULL)) AS missing_nonconformity_action_count,
         (SELECT COUNT(*) FROM evaluation_answers a
           JOIN evaluation_rounds r ON r.id=a.round_id
-          JOIN evaluation_questions q ON q.id=a.question_id
+          LEFT JOIN question_items qi ON qi.id=a.question_item_id
+          LEFT JOIN evaluation_questions q ON q.id=a.question_id
           WHERE r.ticket_id=t.id
             AND r.round_no=COALESCE(NULLIF(t.current_round_no,0), NULLIF(t.completed_round,0), 1)
-            AND q.is_critical_clause=1 AND a.score='D') AS failed_critical_count
+            AND COALESCE(qi.is_critical_clause,q.is_critical_clause,0)=1 AND a.score='D') AS failed_critical_count
       FROM evaluation_tickets t
       WHERE t.is_deleted=0
     `).all();

@@ -18,6 +18,9 @@ const STRUCTURED_METADATA_FIELDS = Object.freeze({
   'audit.access.write_failed': ['access_action', 'error'],
   'audit.event.write_failed': ['status_code', 'error_code', 'error'],
   'report.render.failed': ['report_type', 'error'],
+  'evaluation.canonical_read_mismatch': [
+    'resource_type', 'ticket_id', 'round_id', 'mismatch_count', 'fallback_count',
+  ],
 });
 
 function serializeError(error) {

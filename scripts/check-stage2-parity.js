@@ -130,6 +130,45 @@ function runParity(db) {
   ].filter(([expected, actual]) => participant[expected] !== participant[actual]).length;
 
   const warnings = {
+    ticket_participant_role_fallbacks: scalar(db, `SELECT COUNT(*) FROM (
+      SELECT t.id, roles.role
+      FROM evaluation_tickets t
+      JOIN (
+        SELECT 'OWNER' role UNION ALL SELECT 'QA_LEAD'
+        UNION ALL SELECT 'QA_SUPPORT' UNION ALL SELECT 'EVALUATOR'
+      ) roles
+      WHERE NOT EXISTS (
+        SELECT 1 FROM evaluation_participants p
+        WHERE p.ticket_id=t.id AND p.participant_role=roles.role AND p.active=1
+      ) AND (
+        (roles.role='OWNER' AND NULLIF(trim(t.assigned_specialist_id),'') IS NOT NULL)
+        OR (roles.role='QA_LEAD' AND NULLIF(trim(t.qa_lead_id),'') IS NOT NULL)
+        OR (roles.role='QA_SUPPORT' AND json_array_length(
+          CASE WHEN json_valid(t.qa_support_ids) THEN t.qa_support_ids ELSE '[]' END
+        ) > 0)
+        OR (roles.role='EVALUATOR' AND NULLIF(trim(t.evaluator_name),'') IS NOT NULL)
+      )
+    )`),
+    round_participant_role_fallbacks: scalar(db, `SELECT COUNT(*) FROM (
+      SELECT r.id, roles.role
+      FROM evaluation_rounds r
+      JOIN (SELECT 'EVALUATOR' role UNION ALL SELECT 'ATTENDEE') roles
+      WHERE NOT EXISTS (
+        SELECT 1 FROM evaluation_participants p
+        WHERE p.round_id=r.id AND p.participant_role=roles.role AND p.active=1
+      ) AND (
+        (roles.role='EVALUATOR' AND NULLIF(trim(r.evaluator_id),'') IS NOT NULL)
+        OR (roles.role='ATTENDEE' AND json_array_length(
+          CASE WHEN json_valid(r.attendees_json) THEN r.attendees_json ELSE '[]' END
+        ) > 0)
+      )
+    )`),
+    nonconformity_legacy_content_fallbacks: scalar(db, `SELECT COUNT(*)
+      FROM evaluation_nonconformities nc
+      LEFT JOIN corrective_actions ca ON ca.id=nc.corrective_action_id
+      WHERE (nc.nonconformity_content IS NULL AND nc.nonconformity IS NOT NULL)
+         OR (nc.remediation_content IS NULL
+           AND COALESCE(nc.remediation, ca.required_action) IS NOT NULL)`),
     legacy_report_exports_without_job: scalar(db, `SELECT COUNT(*) FROM report_exports
       WHERE job_id IS NULL`),
     legacy_report_exports_without_artifact: scalar(db, `SELECT COUNT(*) FROM report_exports

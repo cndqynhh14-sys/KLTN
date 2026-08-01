@@ -123,6 +123,10 @@ test('DOC-4 report context includes input columns, sections, category percentage
       VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Missing contract evidence',
         'Upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid, round.lastInsertRowid, q2);
+    db.prepare(`UPDATE evaluation_nonconformities
+      SET nonconformity_content='Canonical missing contract evidence',
+          remediation_content='Canonical upload contract'
+      WHERE round_id=? AND question_id=?`).run(round.lastInsertRowid, q2);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, question_id, clause_code, category, nonconformity,
@@ -131,6 +135,10 @@ test('DOC-4 report context includes input columns, sections, category percentage
       VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Missing contract evidence',
         'Upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, q2);
+    db.prepare(`UPDATE evaluation_nonconformities
+      SET nonconformity_content='Canonical missing contract evidence',
+          remediation_content='Canonical upload contract'
+      WHERE ticket_id=? AND question_id=?`).run(ticketInfo.lastInsertRowid, q2);
     db.prepare(`
       INSERT INTO corrective_actions (ticket_id, round_id, issue_description, required_action, responsible_party, due_date, status, created_by)
       VALUES (?, ?, 'Missing contract evidence', 'Upload contract', 'Supplier', '2026-08-01', 'OPEN', 'admin@masangroup.com')
@@ -220,7 +228,8 @@ test('DOC-4 report context includes input columns, sections, category percentage
     assert.match(nccTemplate.template_body, /\{\{participants_table\}\}/);
     assert.match(renderTemplate(nccTemplate.template_body, context), /Thành phần tham dự:\nTen\/Chuc danh \| Tham du hop khai mac \| Tham du hop be mac/);
     assert.equal(context.doc4.supplier_introduction.certificates.attp_certificate_type, 'HACCP');
-    assert.equal(context.doc4.nonconformity_summary[0].corrective_action, 'Upload contract');
+    assert.equal(context.doc4.nonconformity_summary[0].corrective_action, 'Canonical upload contract');
+    assert.equal(context.doc4.nonconformity_summary[0].description, 'Canonical missing contract evidence');
     assert.equal(context.doc4.signatures.approved_by, 'admin@masangroup.com');
     assert.ok(context.doc4_sections_json.includes('nonconformity_summary'));
     assert.equal(round1Context.round_no, 1);

@@ -261,7 +261,7 @@ function nonconformitiesByTicket(db, ticketIds) {
       nc.ticket_id,
       nc.clause_code,
       nc.category,
-      nc.nonconformity,
+      COALESCE(nc.nonconformity_content, nc.nonconformity) AS nonconformity,
       nc.severity,
       q.question_code,
       q.question_text,
