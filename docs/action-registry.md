@@ -63,7 +63,6 @@ Generated from `public/js/action-registry.js` (version 13). Do not edit this fil
 | evaluation.submit_lead | Gửi Lead duyệt phiếu | EVALUATION | form | primary | EVALUATION.SCORE | submit_lead | Idempotency-Key | evaluation.workflow.transitioned |
 | evaluation.add_attendee | Thêm người tham dự | EVALUATION | form | secondary | EVALUATION.SCORE | — | — | — |
 | evaluation.remove_attendee | Xóa người tham dự | EVALUATION | row | danger | EVALUATION.SCORE | — | — | — |
-| evaluation.corrective_action | Thêm yêu cầu khắc phục | EVALUATION | form | secondary | EVALUATION.SCORE | score | Idempotency-Key | evaluation.workflow.transitioned |
 | evaluation.cancellation_request | Yêu cầu hủy phiếu | EVALUATION | form | danger | EVALUATION.SCORE | score | Idempotency-Key | evaluation.workflow.transitioned |
 | evaluation.correction_extension | Gia hạn khắc phục | EVALUATION | form | primary | EVALUATION.SCORE | score | Idempotency-Key | evaluation.workflow.transitioned |
 | evaluation.suspension_request | Đề xuất tạm ngưng | EVALUATION | form | secondary | EVALUATION.SCORE | score | Idempotency-Key | evaluation.workflow.transitioned |

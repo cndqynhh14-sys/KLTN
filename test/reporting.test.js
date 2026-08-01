@@ -117,32 +117,20 @@ test('DOC-4 report context includes input columns, sections, category percentage
     insertAnswer.run(round2.lastInsertRowid, q4, 'NA', 'Not applicable', null);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity,
-        remediation, due_date, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category,
+        nonconformity_content, remediation_content, due_date, severity, status, created_by
       )
-      VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Missing contract evidence',
-        'Upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Canonical missing contract evidence',
+        'Canonical upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid, round.lastInsertRowid, q2);
-    db.prepare(`UPDATE evaluation_nonconformities
-      SET nonconformity_content='Canonical missing contract evidence',
-          remediation_content='Canonical upload contract'
-      WHERE round_id=? AND question_id=?`).run(round.lastInsertRowid, q2);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity,
-        remediation, due_date, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category,
+        nonconformity_content, remediation_content, due_date, severity, status, created_by
       )
-      VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Missing contract evidence',
-        'Upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Canonical missing contract evidence',
+        'Canonical upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, q2);
-    db.prepare(`UPDATE evaluation_nonconformities
-      SET nonconformity_content='Canonical missing contract evidence',
-          remediation_content='Canonical upload contract'
-      WHERE ticket_id=? AND question_id=?`).run(ticketInfo.lastInsertRowid, q2);
-    db.prepare(`
-      INSERT INTO corrective_actions (ticket_id, round_id, issue_description, required_action, responsible_party, due_date, status, created_by)
-      VALUES (?, ?, 'Missing contract evidence', 'Upload contract', 'Supplier', '2026-08-01', 'OPEN', 'admin@masangroup.com')
-    `).run(ticketInfo.lastInsertRowid, round.lastInsertRowid);
     db.prepare(`
       INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, status, acted_at, acted_by, comment)
       VALUES (?, 'TBP', 'TBP', 'APPROVED', '2026-08-02', 'admin@masangroup.com', '{}')
@@ -163,8 +151,8 @@ test('DOC-4 report context includes input columns, sections, category percentage
       .run(JSON.stringify(attendees), round2.lastInsertRowid);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity,
-        remediation, due_date, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category, nonconformity_content,
+        remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'R2-ONLY', 'Round 2', 'Round 2 issue must not appear',
         'Round 2 action', '2026-09-01', 'B', 'OPEN', 'admin@masangroup.com')
@@ -357,8 +345,8 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     `).run(ticketInfo.lastInsertRowid, JSON.stringify(attendees));
     const insertFinding = db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, clause_code, category, nonconformity,
-        remediation, due_date, severity, status, created_by
+        ticket_id, round_id, clause_code, category, nonconformity_content,
+        remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'Export category', ?, ?, ?, 'B', 'OPEN', 'admin@masangroup.com')
     `);

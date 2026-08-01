@@ -21,6 +21,7 @@ const RETIRED_SCOPE_TABLES = Object.freeze([
   'input_dossier_reviews', 'input_dossier_review_errors',
   'input_dossier_workflow_history', 'input_dossier_export_logs',
   'input_dossier_approval_tasks', 'input_dossier_email_logs',
+  'corrective_actions',
 ]);
 
 function freshDbModule(dbPath) {
@@ -74,7 +75,7 @@ test('legacy synthetic fixture upgrades through controlled forward-repair and pr
     const db = mod.db;
 
     const ledger = db.prepare('SELECT * FROM schema_migrations ORDER BY migration_id').all();
-    assert.equal(ledger.length, 25);
+    assert.equal(ledger.length, 26);
     assert.equal(ledger[0].migration_id, '0001');
     assert.equal(ledger[0].execution_mode, 'forward-repair');
     assert.match(ledger[0].checksum, /^[a-f0-9]{64}$/);
@@ -106,7 +107,7 @@ test('legacy synthetic fixture upgrades through controlled forward-repair and pr
     assert.equal(ledger[18].migration_id, '0019');
     assert.equal(ledger[18].execution_mode, 'applied');
     assert.deepEqual(ledger.slice(19).map((row) => row.migration_id),
-      ['0020', '0021', '0022', '0023', '0024', '0025']);
+      ['0020', '0021', '0022', '0023', '0024', '0025', '0026']);
     assert.ok(ledger.slice(19).every((row) => row.execution_mode === 'applied'));
     assert.equal(ledger[7].execution_mode, 'applied');
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
@@ -163,14 +164,14 @@ test('fresh database survives two consecutive normal startups without recreating
 
   try {
     let mod = freshDbModule(dbPath);
-    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 25);
+    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 26);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(mod.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), undefined, table);
     }
     closeTempDb(mod.db);
 
     mod = freshDbModule(dbPath);
-    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 25);
+    assert.equal(mod.db.prepare('SELECT COUNT(*) FROM schema_migrations').pluck().get(), 26);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(mod.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table), undefined, table);
     }

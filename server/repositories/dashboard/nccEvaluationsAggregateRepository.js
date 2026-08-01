@@ -126,7 +126,7 @@ class NccEvaluationsAggregateRepository {
         nc.round_id,
         nc.clause_code,
         nc.category,
-        nc.nonconformity,
+        nc.nonconformity_content AS nonconformity,
         q.question_code,
         q.question_text
       FROM evaluation_nonconformities nc

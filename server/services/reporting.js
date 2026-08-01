@@ -602,15 +602,25 @@ function buildReportContext(db, ticket, options = {}) {
     ORDER BY COALESCE(q.order_index, 999999), nc.clause_code, nc.created_at
   `).all({ ticket_id: ticket.id, round_id: latestRound.id || null }).map((row) => ({
     ...row,
-    nonconformity: row.nonconformity_content || row.nonconformity,
-    remediation: row.remediation_content || row.remediation,
+    nonconformity: row.nonconformity_content,
+    remediation: row.remediation_content,
   }));
   const answerNonconformities = answers.filter((a) => ['B', 'C', 'D'].includes(a.score));
-  const correctiveActions = db.prepare(`
-    SELECT * FROM corrective_actions
-    WHERE ticket_id = @ticket_id AND (@round_id IS NULL OR round_id = @round_id)
-    ORDER BY created_at
-  `).all({ ticket_id: ticket.id, round_id: latestRound.id || null });
+  const correctiveActions = structuredNonconformities
+    .filter((row) => row.remediation_content)
+    .map((row) => ({
+      id: row.id,
+      ticket_id: row.ticket_id,
+      round_id: row.round_id,
+      issue_description: row.nonconformity_content,
+      required_action: row.remediation_content,
+      due_date: row.due_date,
+      status: row.status,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_by: row.updated_by,
+      updated_at: row.updated_at,
+    }));
   const correctionExtensions = db.prepare(`
     SELECT * FROM correction_extensions WHERE ticket_id = ? ORDER BY extension_no, created_at
   `).all(ticket.id);

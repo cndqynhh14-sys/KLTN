@@ -76,22 +76,19 @@ test('participant reads prefer canonical rows and fall back per missing role wit
   }
 });
 
-test('nonconformity reads expose canonical content while retaining explicit legacy compatibility', () => {
+test('nonconformity reads expose canonical content through response compatibility aliases', () => {
   const { db, roundId, ticketId } = fixture();
   try {
     const id = db.prepare(`INSERT INTO evaluation_nonconformities
-      (ticket_id, round_id, nonconformity, nonconformity_content, remediation,
-       remediation_content, due_date, status, created_by)
-      VALUES (?, ?, 'Legacy finding', 'Canonical finding', 'Legacy remediation',
-        'Canonical remediation', '2026-12-31', 'OPEN', 'owner@example.invalid')`).run(ticketId, roundId).lastInsertRowid;
+      (ticket_id, round_id, nonconformity_content, remediation_content, due_date, status, created_by)
+      VALUES (?, ?, 'Canonical finding', 'Canonical remediation',
+        '2026-12-31', 'OPEN', 'owner@example.invalid')`).run(ticketId, roundId).lastInsertRowid;
     const repository = new CorrectiveActionRepository(db);
     const row = repository.listNonconformitiesByTicket(ticketId).find((item) => item.id === id);
     assert.equal(row.nonconformity_content, 'Canonical finding');
     assert.equal(row.remediation_content, 'Canonical remediation');
     assert.equal(row.nonconformity, 'Canonical finding');
     assert.equal(row.remediation, 'Canonical remediation');
-    assert.equal(row.legacy_nonconformity, 'Legacy finding');
-    assert.equal(row.legacy_remediation, 'Legacy remediation');
     assert.equal(row.read_source, 'CANONICAL');
   } finally {
     db.close();

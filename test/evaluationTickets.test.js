@@ -392,8 +392,8 @@ test('round 2 inherits A/NA answers as readonly and rejects bypass changes', asy
     `).run(round1.lastInsertRowid, questions[2].id, 'B', 'Cần cải thiện', 75);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity,
-        remediation, due_date, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category, nonconformity_content,
+        remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'R2-B', 'Test', 'Cần cải thiện', 'Khắc phục', '2026-07-15', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid, questions[2].id);
@@ -1039,8 +1039,8 @@ test('correction extension records required fields, due-date history, and workfl
     `).get(template.id);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity,
-        remediation, due_date, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category, nonconformity_content,
+        remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, ?, ?, 'Still open', 'Fix remaining issue', '2026-08-01', 'D', 'OPEN', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, question.id, question.question_code, question.category);
@@ -1319,7 +1319,7 @@ test('round 1 approval with nonconformities enters correction state before final
     `).run(round1.lastInsertRowid, questions[1].id);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity, severity, status, created_by
+        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, ?, ?, 'Needs correction', 'B', 'OPEN', 'admin@masangroup.com')
     `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid, questions[0].id, questions[0].question_code, questions[0].category);

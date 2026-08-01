@@ -65,9 +65,7 @@ class EvaluationWorkspaceProvider {
             (SELECT ce.new_due_date FROM correction_extensions ce
               WHERE ce.ticket_id=t.id ORDER BY ce.extension_no DESC, ce.id DESC LIMIT 1),
             (SELECT MIN(due_date) FROM evaluation_nonconformities n
-              WHERE n.ticket_id=t.id AND n.status IN ('OPEN','IN_PROGRESS') AND n.due_date IS NOT NULL),
-            (SELECT MIN(due_date) FROM corrective_actions c
-              WHERE c.ticket_id=t.id AND c.status IN ('OPEN','IN_PROGRESS') AND c.due_date IS NOT NULL)
+              WHERE n.ticket_id=t.id AND n.status IN ('OPEN','IN_PROGRESS') AND n.due_date IS NOT NULL)
           )
         ELSE t.planned_date END AS workspace_due_date,
         EXISTS(SELECT 1 FROM approval_tasks p WHERE p.ticket_id=t.id AND p.status='PENDING') AS has_pending_approval,
@@ -75,7 +73,7 @@ class EvaluationWorkspaceProvider {
         EXISTS(SELECT 1 FROM evaluation_rounds r WHERE r.ticket_id=t.id AND r.round_no=2) AS has_round2,
         (SELECT COUNT(*) FROM evaluation_nonconformities n
           WHERE n.ticket_id=t.id AND n.severity IN ('B','C','D')
-            AND (NULLIF(TRIM(COALESCE(n.remediation_content,n.remediation,'')),'') IS NULL
+            AND (NULLIF(TRIM(COALESCE(n.remediation_content,'')),'') IS NULL
               OR NULLIF(TRIM(COALESCE(n.due_date,'')),'') IS NULL)) AS missing_nonconformity_action_count,
         (SELECT COUNT(*) FROM evaluation_answers a
           JOIN evaluation_rounds r ON r.id=a.round_id
