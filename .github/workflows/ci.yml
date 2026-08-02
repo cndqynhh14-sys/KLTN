@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload test evidence
         if: always() && steps.verify_test_evidence.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dev-evidence-test-${{ steps.evidence_test.outputs.run_id }}
           path: |
@@ -77,7 +77,7 @@ jobs:
 
       - name: Upload build evidence
         if: always() && steps.verify_build_evidence.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dev-evidence-build-${{ steps.evidence_build.outputs.run_id }}
           path: |
