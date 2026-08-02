@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -47,7 +48,7 @@ function freshWorkspace(dbPath) {
   const auth = require('../server/middleware/auth');
   const workspaceRouter = require('../server/routes/workspace');
   const evaluationsRouter = require('../server/routes/evaluations');
-  return { ...dbModule, ...auth, workspaceRouter, evaluationsRouter };
+  return { ...dbModule, ...auth, signToken: canonicalTokenFactory(dbModule, auth), workspaceRouter, evaluationsRouter };
 }
 
 function startApp({ workspaceRouter, evaluationsRouter }) {

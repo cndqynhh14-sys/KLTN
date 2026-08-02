@@ -1,7 +1,12 @@
 'use strict';
 
 const { isCanonicalMch2Id } = require('./AuthorizationService');
-const { PERMISSIONS, ROLE_CODES, SCOPE_TYPES, isActivePermission } = require('../authorization/permissionCatalog');
+const {
+  PERMISSIONS,
+  ROLE_CODES,
+  SCOPE_TYPES,
+  isActivePermission,
+} = require('../authorization/permissionCatalog');
 const { sanitizeString } = require('../observability/redact');
 
 const REQUIRED_APPROVAL_STAGES = Object.freeze([
@@ -548,6 +553,7 @@ class AuthorizationAdminService {
       });
       this.authorizationService.cache.delete(email);
       const afterEffective = this.authorizationService.effectivePermissions(email);
+      if (!afterEffective.roleCodes.length) throw new AuthorizationAdminError('canonical_role_assignment_required', 409);
       if (email === normalizeEmail(context.actor)
           && (afterEffective.permissions.some((code) => !beforeEffective.permissions.includes(code))
             || (!beforeEffective.roleCodes.includes(ROLE_CODES.SYS_ADMIN) && afterEffective.roleCodes.includes(ROLE_CODES.SYS_ADMIN)))) {

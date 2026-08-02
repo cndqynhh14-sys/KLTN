@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 function freshDb(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -375,14 +376,6 @@ test('RUN-18 history download rechecks auth/scope and verifies the same stored b
       VALUES (?, 0, ?, 1, 'RUN-18 Denied Scope', 'RUN-18')
     `).run(deniedUser, ROLES.SPECIALIST);
     const dbModule = require('../server/db');
-    dbModule.authorizationService.syncLegacyUser(actor);
-    dbModule.authorizationService.syncLegacyUser(deniedUser);
-    db.prepare(`
-      UPDATE user_scope_assignments
-      SET scope_type='OWN', scope_value=NULL
-      WHERE user_id=? AND scope_type='GLOBAL'
-    `).run(deniedUser);
-
     const { LocalArtifactStorage } = require('../server/reporting/artifacts/LocalArtifactStorage');
     const { ReportExportJobService } = require('../server/reporting/artifacts/ReportExportJobService');
     const storage = new LocalArtifactStorage({ root: process.env.REPORT_STORAGE_ROOT });
@@ -400,7 +393,14 @@ test('RUN-18 history download rechecks auth/scope and verifies the same stored b
     for (const moduleName of ['../server/middleware/auth', '../server/routes/reportExports']) {
       delete require.cache[require.resolve(moduleName)];
     }
-    const { signToken } = require('../server/middleware/auth');
+    const auth = require('../server/middleware/auth');
+    const signToken = canonicalTokenFactory(dbModule, auth);
+    signToken({ email: deniedUser }, 3600);
+    db.prepare(`DELETE FROM user_scope_assignments WHERE user_id=?`).run(deniedUser);
+    db.prepare(`INSERT INTO user_scope_assignments
+      (user_id, role_id, scope_type, scope_value, effect, source)
+      SELECT ?, id, 'OWN', 'SELF', 'ALLOW', 'MANUAL' FROM roles WHERE role_code='QLCL_SPECIALIST'`
+    ).run(deniedUser);
     const { requestContext } = require('../server/middleware/requestContext');
     const app = express();
     app.use(requestContext());

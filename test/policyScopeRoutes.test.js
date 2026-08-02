@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 const DB_MODULES = [
   '../server/db',
@@ -57,7 +58,7 @@ async function withRouteFixture(prefix, routeModule, mountPath, run) {
   const appInfo = await startApp(router, mountPath);
 
   try {
-    await run({ ...dbModule, ...auth, ...appInfo });
+    await run({ ...dbModule, ...auth, signToken: canonicalTokenFactory(dbModule, auth), ...appInfo });
   } finally {
     await new Promise((resolve) => appInfo.server.close(resolve));
     dbModule.db.close();

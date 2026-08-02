@@ -16,7 +16,7 @@ const {
   requiredConfirmation,
 } = require('../server/services/AuthorizationAdminService');
 const { createAuthorizationAdminRouter } = require('../server/routes/authorizationAdmin');
-const { PERMISSIONS, ROLE_CODES } = require('../server/authorization/permissionCatalog');
+const { PERMISSIONS, ROLE_CODES, LEGACY_ROLE_TO_CODE } = require('../server/authorization/permissionCatalog');
 const { ROLES } = require('../server/domain/roles');
 
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
@@ -28,6 +28,18 @@ function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
     (email, is_admin, role, is_active, display_name, created_at, created_by)
     VALUES (?, ?, ?, 1, 'SYNTHETIC RUN-10 USER', datetime('now'), 'fixture')`
   ).run(email, isAdmin ? 1 : 0, role);
+  const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
+  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
+    SELECT ?, id, 'MANUAL' FROM roles WHERE role_code = ?`).run(email, roleCode);
+  const scopes = roleCode === ROLE_CODES.QLCL_SPECIALIST
+    ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
+    : [['GLOBAL', null]];
+  for (const [scopeType, scopeValue] of scopes) {
+    db.prepare(`INSERT INTO user_scope_assignments
+      (user_id, role_id, scope_type, scope_value, effect, source)
+      SELECT ?, id, ?, ?, 'ALLOW', 'MANUAL' FROM roles WHERE role_code = ?`
+    ).run(email, scopeType, scopeValue, roleCode);
+  }
 }
 
 function fixture() {
@@ -91,7 +103,10 @@ test('custom report designer can be created, configured and assigned without cod
       confirmation: requiredConfirmation('PUBLISH_ROLE', 'REPORT_DESIGNER'),
     }, context());
     service.setUserRoles(TARGET, {
-      roles: [{ roleCode: 'REPORT_DESIGNER', validFrom: null, validUntil: null }],
+      roles: [
+        { roleCode: ROLE_CODES.QLCL_SPECIALIST, validFrom: null, validUntil: null },
+        { roleCode: 'REPORT_DESIGNER', validFrom: null, validUntil: null },
+      ],
       reason: 'Assign the synthetic report designer role to the test account',
       confirmation: requiredConfirmation('ASSIGN_ROLES', TARGET),
     }, context());
@@ -179,6 +194,7 @@ test('effective-rights preview explains expiry, permission deny and scope confli
     }, context());
     service.setUserRoles(TARGET, {
       roles: [
+        { roleCode: ROLE_CODES.QLCL_SPECIALIST, validFrom: null, validUntil: null },
         { roleCode: 'RUN10_CONFLICT_ROLE', validFrom: null, validUntil: null },
         { roleCode: ROLE_CODES.AUDITOR, validFrom: '2020-01-01T00:00:00Z', validUntil: '2020-01-02T00:00:00Z' },
       ],

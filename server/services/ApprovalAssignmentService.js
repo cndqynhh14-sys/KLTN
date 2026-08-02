@@ -13,9 +13,6 @@ class ApprovalAssignmentService {
   }
 
   resolve(workflowType, stageCode, context = {}, options = {}) {
-    // Compatibility adapter for legacy-created users that have not yet passed
-    // through /auth or the admin service. Policy evaluation still uses role codes.
-    this.authorizationService.syncMissingLegacyUsers();
     const now = this.authorizationService._now();
     const workflow = String(workflowType || '').trim().toUpperCase();
     const stage = String(stageCode || '').trim().toUpperCase();

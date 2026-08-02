@@ -6,6 +6,7 @@ const path = require('node:path');
 const XLSX = require('xlsx');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 function freshDb(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -361,7 +362,8 @@ test('RUN-17 version API denies unauthenticated/unprivileged mutations and enfor
     for (const modulePath of ['../server/middleware/auth', '../server/routes/reportTemplates']) {
       delete require.cache[require.resolve(modulePath)];
     }
-    const { signToken } = require('../server/middleware/auth');
+    const auth = require('../server/middleware/auth');
+    const signToken = canonicalTokenFactory(require('../server/db'), auth);
     const router = require('../server/routes/reportTemplates');
     const adminToken = signToken({ email: 'run17-admin@synthetic.invalid' }, 3600);
     const viewerToken = signToken({ email: 'run17-viewer@synthetic.invalid' }, 3600);

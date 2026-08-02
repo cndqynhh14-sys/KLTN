@@ -85,7 +85,7 @@ async function startAuthApi(options = {}) {
       getAck: { get: () => ({ rules_version: 1, acknowledged_at: '2026-07-14 09:00:00' }) },
       upsertAck: { run() {} },
     },
-    authorizationService: { identityForLegacyRoutes: identity, revokeSession() {} },
+    authorizationService: { identityForUser: identity, revokeSession() {} },
     policyService: { identityPayload: (item) => ({
       ...item,
       policy_version: 1,

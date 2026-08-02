@@ -3,7 +3,6 @@
 const crypto = require('crypto');
 const {
   ROLE_CODES,
-  LEGACY_ROLE_TO_CODE,
   ROLE_CODE_TO_LEGACY,
   LEGACY_PRIMARY_ROLE_PRIORITY,
   SCOPE_TYPES,
@@ -69,7 +68,7 @@ class AuthorizationService {
   }
 
   _user(email, activeOnly = true) {
-    return this.db.prepare(`SELECT email, is_admin, role, is_active, display_name, authz_version
+    return this.db.prepare(`SELECT email, is_active, display_name, authz_version
       FROM users WHERE email = ? ${activeOnly ? 'AND is_active = 1' : ''}`).get(normalizeEmail(email));
   }
 
@@ -105,78 +104,22 @@ class AuthorizationService {
   }
 
   syncLegacyUser(email, options = {}) {
-    const user = this._user(email, false);
-    if (!user) throw new AuthorizationError('user_not_found', 404);
-    const roleCode = user.is_admin ? ROLE_CODES.SYS_ADMIN
-      : (LEGACY_ROLE_TO_CODE[user.role] || ROLE_CODES.QLCL_SPECIALIST);
-    const role = this.db.prepare('SELECT id, role_code FROM roles WHERE role_code = ? AND active = 1').get(roleCode);
-    if (!role) throw new AuthorizationError('compatibility_role_not_found', 500);
-
-    let changed = false;
-    const apply = this.db.transaction(() => {
-      const existing = this.db.prepare(`SELECT ur.id, r.role_code FROM user_roles ur
-        JOIN roles r ON r.id = ur.role_id
-        WHERE ur.user_id = ? AND ur.source = 'LEGACY_COMPAT' AND ur.active = 1`).all(user.email);
-      for (const row of existing) {
-        if (row.role_code !== roleCode) {
-          this.db.prepare('UPDATE user_roles SET active = 0, updated_at = datetime(\'now\') WHERE id = ?').run(row.id);
-          changed = true;
-        }
-      }
-      const desired = this.db.prepare('SELECT id, active FROM user_roles WHERE user_id = ? AND role_id = ?').get(user.email, role.id);
-      if (!desired) {
-        this.db.prepare(`INSERT INTO user_roles (user_id, role_id, source, created_by)
-          VALUES (?, ?, 'LEGACY_COMPAT', ?)`).run(user.email, role.id, options.actor || null);
-        changed = true;
-      } else if (!desired.active) {
-        this.db.prepare(`UPDATE user_roles SET active = 1, source = 'LEGACY_COMPAT',
-          updated_at = datetime('now') WHERE id = ?`).run(desired.id);
-        changed = true;
-      }
-      const desiredScopes = roleCode === ROLE_CODES.SUPPLIER_USER
-        ? [['SUPPLIER', user.email]]
-        : roleCode === ROLE_CODES.QLCL_SPECIALIST
-          ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
-          : [['GLOBAL', null]];
-      const desiredKeys = new Set(desiredScopes.map(([type, value]) => `${type}:${value || ''}`));
-      const compatibilityScopes = this.db.prepare(`SELECT id, scope_type, scope_value FROM user_scope_assignments
-        WHERE user_id = ? AND role_id = ? AND source = 'LEGACY_COMPAT' AND active = 1`).all(user.email, role.id);
-      for (const scope of compatibilityScopes) {
-        if (!desiredKeys.has(`${scope.scope_type}:${scope.scope_value || ''}`)) {
-          this.db.prepare('UPDATE user_scope_assignments SET active = 0 WHERE id = ?').run(scope.id);
-          changed = true;
-        }
-      }
-      for (const [scopeType, scopeValue] of desiredScopes) {
-        const scopeInfo = this.db.prepare(`INSERT INTO user_scope_assignments
-            (user_id, role_id, scope_type, scope_value, effect, source, created_by)
-            VALUES (?, ?, ?, ?, 'ALLOW', 'LEGACY_COMPAT', ?)
-            ON CONFLICT DO NOTHING`).run(user.email, role.id, scopeType, scopeValue, options.actor || null);
-        changed = changed || scopeInfo.changes > 0;
-      }
-      if (changed) {
-        this._audit({
-          actor: options.actor, target: user.email, changeType: 'LEGACY_COMPAT_SYNC',
-          objectType: 'USER_ROLE', objectKey: roleCode, after: { role_code: roleCode },
-          requestId: options.requestId, correlationId: options.correlationId,
-        });
-      }
-    });
-    apply();
-    this.cache.delete(user.email);
-    return this.identityForLegacyRoutes(user.email);
+    // Deprecated compatibility method. Stage 4E never synthesizes canonical
+    // assignments from users.role/users.is_admin; callers must assign RBAC first.
+    return this.identityForUser(email);
   }
 
   syncLegacyUsers(options = {}) {
     const users = this.db.prepare('SELECT email FROM users ORDER BY email').all();
-    return users.map(({ email }) => this.syncLegacyUser(email, options));
+    return users.map(({ email }) => this.identityForUser(email, options));
   }
 
   syncMissingLegacyUsers(options = {}) {
     const users = this.db.prepare(`SELECT u.email FROM users u
       WHERE NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.email AND ur.active = 1)
       ORDER BY u.email`).all();
-    return users.map(({ email }) => this.syncLegacyUser(email, options));
+    if (users.length) throw new AuthorizationError('canonical_role_assignment_required', 409);
+    return [];
   }
 
   _permissionValue(rows, { userId, authzVersion }) {
@@ -422,6 +365,68 @@ class AuthorizationService {
     return info.changes;
   }
 
+  setPrimaryRole({ userId, roleCode, actor, requestId, correlationId, source = 'MANUAL' }) {
+    const email = normalizeEmail(userId);
+    if (!LEGACY_PRIMARY_ROLE_PRIORITY.includes(roleCode)) {
+      throw new AuthorizationError('invalid_primary_role', 400);
+    }
+    if (!this._user(email, false)) throw new AuthorizationError('user_not_found', 404);
+    const desiredRole = this.db.prepare('SELECT id FROM roles WHERE role_code = ? AND active = 1').get(roleCode);
+    if (!desiredRole) throw new AuthorizationError('role_not_found', 404);
+
+    const apply = this.db.transaction(() => {
+      let changed = false;
+      const existing = this.db.prepare('SELECT id, active FROM user_roles WHERE user_id=? AND role_id=?')
+        .get(email, desiredRole.id);
+      if (!existing) {
+        this.db.prepare(`INSERT INTO user_roles
+          (user_id, role_id, active, source, created_by) VALUES (?, ?, 1, ?, ?)`
+        ).run(email, desiredRole.id, source, actor || null);
+        changed = true;
+      } else if (!existing.active) {
+        this.db.prepare(`UPDATE user_roles SET active=1, source=?, updated_at=datetime('now') WHERE id=?`)
+          .run(source, existing.id);
+        changed = true;
+      }
+
+      const placeholders = LEGACY_PRIMARY_ROLE_PRIORITY.map(() => '?').join(',');
+      const deactivated = this.db.prepare(`UPDATE user_roles SET active = 0, updated_at = datetime('now')
+        WHERE user_id = ? AND role_id <> ? AND active = 1
+          AND role_id IN (SELECT id FROM roles WHERE role_code IN (${placeholders}))`
+      ).run(email, desiredRole.id, ...LEGACY_PRIMARY_ROLE_PRIORITY);
+      changed = changed || deactivated.changes > 0;
+
+      const scopes = roleCode === ROLE_CODES.SUPPLIER_USER
+        ? [['SUPPLIER', email]]
+        : roleCode === ROLE_CODES.QLCL_SPECIALIST
+          ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
+          : [['GLOBAL', null]];
+      for (const [scopeType, scopeValue] of scopes) {
+        const scope = this.db.prepare(`INSERT INTO user_scope_assignments
+          (user_id, role_id, scope_type, scope_value, effect, source, created_by)
+          VALUES (?, ?, ?, ?, 'ALLOW', ?, ?)
+          ON CONFLICT DO NOTHING`
+        ).run(email, desiredRole.id, scopeType, scopeValue, source, actor || null);
+        changed = changed || scope.changes > 0;
+      }
+      if (changed) {
+        this._audit({
+          actor,
+          target: email,
+          changeType: 'PRIMARY_ROLE_SET',
+          objectType: 'USER_ROLE',
+          objectKey: roleCode,
+          after: { role_code: roleCode },
+          requestId,
+          correlationId,
+        });
+      }
+    });
+    apply();
+    this.cache.delete(email);
+    return this.identityForUser(email);
+  }
+
   assignScope({ userId, roleCode, scopeType, scopeValue, effect = 'ALLOW', actor,
     validFrom, validUntil, customSchemaCode, customSchemaVersion, requestId, correlationId }) {
     const email = normalizeEmail(userId);
@@ -446,7 +451,7 @@ class AuthorizationService {
     this.cache.delete(email);
   }
 
-  identityForLegacyRoutes(email) {
+  identityForUser(email) {
     const user = this._user(email);
     if (!user) throw new AuthorizationError('account_disabled', 401);
     const authz = this.effectivePermissions(user.email);
@@ -454,11 +459,14 @@ class AuthorizationService {
       FROM user_roles ur JOIN roles r ON r.id = ur.role_id
       WHERE ur.user_id = ? AND ur.active = 1 AND r.active = 1
       ORDER BY r.role_code`).all(user.email);
-    const primaryCode = LEGACY_PRIMARY_ROLE_PRIORITY.find((code) => authz.roleCodes.includes(code)) || ROLE_CODES.QLCL_SPECIALIST;
+    const primaryCode = LEGACY_PRIMARY_ROLE_PRIORITY.find((code) => authz.roleCodes.includes(code))
+      || authz.roleCodes[0];
+    if (!primaryCode) throw new AuthorizationError('canonical_role_assignment_required', 403);
     return {
       email: user.email,
       isAdmin: authz.roleCodes.includes(ROLE_CODES.SYS_ADMIN),
-      role: ROLE_CODE_TO_LEGACY[primaryCode] || ROLE_CODE_TO_LEGACY[ROLE_CODES.QLCL_SPECIALIST],
+      primaryRoleCode: primaryCode,
+      role: ROLE_CODE_TO_LEGACY[primaryCode] || null,
       displayName: user.display_name || null,
       authzVersion: user.authz_version,
       roleCodes: authz.roleCodes,
@@ -467,8 +475,12 @@ class AuthorizationService {
     };
   }
 
+  identityForLegacyRoutes(email) {
+    return this.identityForUser(email);
+  }
+
   createSession(email, options = {}) {
-    const identity = this.identityForLegacyRoutes(email);
+    const identity = this.identityForUser(email);
     const ttlSeconds = Number(options.ttlSeconds || 28_800);
     const issued = this.clock();
     const expires = new Date(issued.getTime() + ttlSeconds * 1000);
@@ -492,7 +504,7 @@ class AuthorizationService {
         || Number(row.session_authz_version) !== Number(expectedAuthzVersion)) {
       throw new AuthorizationError('authz_version_mismatch', 401);
     }
-    return this.identityForLegacyRoutes(row.user_id);
+    return this.identityForUser(row.user_id);
   }
 
   revokeSession(sessionId, reason = 'LOGOUT') {

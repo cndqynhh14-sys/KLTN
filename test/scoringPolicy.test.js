@@ -8,6 +8,7 @@ const path = require('node:path');
 const Database = require('better-sqlite3');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 const { migrateDatabase } = require('../server/database/migrationRunner');
 
 const legacy = require('../server/domain/evaluationRules');
@@ -294,7 +295,8 @@ test('scoring policy API denies anonymous/unprivileged access and exposes Draft 
         : 'prompt11-publisher@synthetic.invalid';
       db.prepare(`INSERT INTO user_roles (user_id, role_id, source) VALUES (?, ?, 'MANUAL')`).run(email, roleId);
     }
-    const { signToken } = require('../server/middleware/auth');
+    const auth = require('../server/middleware/auth');
+    const signToken = canonicalTokenFactory(require('../server/db'), auth);
     const router = require('../server/routes/scoringPolicies');
     const app = express();
     app.use(express.json());

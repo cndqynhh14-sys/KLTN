@@ -7,6 +7,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 function clearServerModules() {
   [
@@ -34,6 +35,7 @@ function freshModules(dbPath) {
   return {
     ...dbModule,
     ...auth,
+    signToken: canonicalTokenFactory(dbModule, auth),
     dashboardRouter,
     NccEvaluationsAggregateRepository,
     NccEvaluationsAggregateService,

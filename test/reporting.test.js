@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 const XLSX = require('xlsx');
 
 function freshDb(dbPath) {
@@ -318,7 +319,8 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     for (const modulePath of ['../server/middleware/auth', '../server/routes/evaluations']) {
       delete require.cache[require.resolve(modulePath)];
     }
-    const { signToken } = require('../server/middleware/auth');
+    const auth = require('../server/middleware/auth');
+    const signToken = canonicalTokenFactory(require('../server/db'), auth);
     const evaluationsRouter = require('../server/routes/evaluations');
     const { exportReportHtml, exportReportPdf, exportReportXlsx } = require('../server/services/reporting');
 

@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -36,6 +37,7 @@ function freshModules(dbPath) {
   return {
     ...dbModule,
     ...auth,
+    signToken: canonicalTokenFactory(dbModule, auth),
     reportTemplatesRouter,
     restore() {
       modules.forEach((modulePath) => {

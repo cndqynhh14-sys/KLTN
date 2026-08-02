@@ -14,7 +14,7 @@ const { ApprovalAssignmentService } = require('../server/services/ApprovalAssign
 const { AuthorizationAdminService } = require('../server/services/AuthorizationAdminService');
 const { PolicyService, PolicyError } = require('../server/services/PolicyService');
 const { createAuthorizationAdminRouter } = require('../server/routes/authorizationAdmin');
-const { PERMISSIONS, ROLE_CODES, ADMIN_PERMISSIONS } = require('../server/authorization/permissionCatalog');
+const { PERMISSIONS, ROLE_CODES, ADMIN_PERMISSIONS, LEGACY_ROLE_TO_CODE } = require('../server/authorization/permissionCatalog');
 const { ROLES } = require('../server/domain/roles');
 const navigation = require('../public/js/navigation-manifest');
 
@@ -56,6 +56,13 @@ function addUser(db, email, role, isAdmin = false) {
     (email, is_admin, role, is_active, display_name, created_at, created_by)
     VALUES (?, ?, ?, 1, 'SYNTHETIC RUN-09 USER', datetime('now'), 'run-09')`
   ).run(email, isAdmin ? 1 : 0, role);
+  const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
+  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
+    SELECT ?, id, 'MANUAL' FROM roles WHERE role_code=?`).run(email, roleCode);
+  db.prepare(`INSERT INTO user_scope_assignments
+    (user_id, role_id, scope_type, scope_value, effect, source)
+    SELECT ?, id, 'GLOBAL', NULL, 'ALLOW', 'MANUAL' FROM roles WHERE role_code=?`
+  ).run(email, roleCode);
 }
 
 async function withServer(app, callback) {
@@ -168,12 +175,12 @@ test('RUN-09 authorization administration API returns 403 for approvers and rema
     for (const [index, target] of TARGETS.entries()) {
       const email = `run09-approver-${index}@example.invalid`;
       addUser(db, email, target.legacyRole);
-      authorization.syncLegacyUser(email);
+      authorization.identityForUser(email);
       users.set(target.roleCode, email);
     }
     const adminEmail = 'run09-admin@example.invalid';
     addUser(db, adminEmail, ROLES.ADMIN, true);
-    authorization.syncLegacyUser(adminEmail);
+    authorization.identityForUser(adminEmail);
     users.set(ROLE_CODES.SYS_ADMIN, adminEmail);
 
     const app = express();

@@ -1,0 +1,69 @@
+name: Migration rehearsal
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - migrations/**
+      - scripts/create-rehearsal-database.js
+      - scripts/rehearse-database-migrations.js
+      - scripts/check-stage4c-parity.js
+      - scripts/check-stage4e-parity.js
+      - server/reporting/artifacts/**
+      - server/services/AuthorizationService.js
+      - test/migrationRehearsal.test.js
+      - package.json
+      - package-lock.json
+      - .github/workflows/migration-rehearsal.yml
+
+permissions:
+  contents: read
+
+jobs:
+  stage4-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EMAIL_MODE: console
+      EVIDENCE_SECRET_MARKERS: synthetic-ci-rehearsal-placeholder-only
+      JWT_SECRET: synthetic-ci-rehearsal-placeholder-only
+      USE_IN_MEMORY_OTP: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rehearse migrations, startup, auth and restore
+        run: >-
+          npm run rehearsal:stage4 --
+          --with-uat
+          --output-dir artifacts/migration-rehearsal/${{ github.run_id }}
+
+      - name: Reject database bytes from publishable output
+        shell: bash
+        run: |
+          if find artifacts/migration-rehearsal -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' \) | grep -q .; then
+            echo "Database bytes must not be published by migration rehearsal."
+            exit 1
+          fi
+
+      - name: Upload sanitized rehearsal report
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-rehearsal-${{ github.run_id }}
+          path: |
+            artifacts/migration-rehearsal/${{ github.run_id }}/report.json
+            artifacts/migration-rehearsal/${{ github.run_id }}/report.md
+          retention-days: 14
+          if-no-files-found: error

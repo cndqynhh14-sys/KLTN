@@ -145,7 +145,8 @@ function createAuthRouter(options = {}) {
     }
 
     const user = stmts.getUser.get(email);
-    if (user && authorizationService.identityForLegacyRoutes(email).roleCodes.includes(ROLE_CODES.SUPPLIER_USER)) {
+    const identity = user ? authorizationService.identityForUser(email) : null;
+    if (identity?.roleCodes.includes(ROLE_CODES.SUPPLIER_USER)) {
       res.locals.error_code = 'ncc_login_disabled';
       logAccess({ email, action: 'OTP_REQUEST_NCC_BLOCKED', ip: req.ip, ua: req.get('user-agent') });
       return res.status(403).json({ error: 'ncc_login_disabled' });
@@ -190,7 +191,7 @@ function createAuthRouter(options = {}) {
           ua: req.get('user-agent'),
         });
       } else {
-        logAccess({ email, action: user.is_admin ? 'ADMIN_OTP_REQUEST' : 'OTP_REQUEST', ip: req.ip, ua: req.get('user-agent') });
+        logAccess({ email, action: identity.isAdmin ? 'ADMIN_OTP_REQUEST' : 'OTP_REQUEST', ip: req.ip, ua: req.get('user-agent') });
       }
       return res.json(response);
     } catch (error) {
@@ -219,7 +220,8 @@ function createAuthRouter(options = {}) {
         res.locals.error_code = 'account_disabled';
         return res.status(403).json({ error: 'account_disabled' });
       }
-      if (authorizationService.identityForLegacyRoutes(email).roleCodes.includes(ROLE_CODES.SUPPLIER_USER)) {
+      const canonicalIdentity = authorizationService.identityForUser(email);
+      if (canonicalIdentity.roleCodes.includes(ROLE_CODES.SUPPLIER_USER)) {
         res.locals.error_code = 'ncc_login_disabled';
         return res.status(403).json({ error: 'ncc_login_disabled' });
       }
@@ -229,13 +231,13 @@ function createAuthRouter(options = {}) {
         ? 'development_relaxed'
         : 'guarded';
       const token = signToken({ email, authDeliveryMode, authSecurityProfile });
-      const identity = policyService.identityPayload(authorizationService.identityForLegacyRoutes(email));
+      const identity = policyService.identityPayload(canonicalIdentity);
       const ttl = parseInt(process.env.JWT_TTL_SECONDS || '28800', 10);
       res.cookie('qlcl_token', token, cookieOptions(ttl));
 
       logAccess({
         email,
-        action: authDeliveryMode === 'screen' ? 'LOGIN_SCREEN_DEGRADED' : (user.is_admin ? 'ADMIN_LOGIN' : 'LOGIN'),
+        action: authDeliveryMode === 'screen' ? 'LOGIN_SCREEN_DEGRADED' : (identity.isAdmin ? 'ADMIN_LOGIN' : 'LOGIN'),
         details: authDeliveryMode === 'screen' ? { delivery_channel: 'screen' } : undefined,
         ip: req.ip,
         ua: req.get('user-agent'),

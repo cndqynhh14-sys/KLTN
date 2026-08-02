@@ -1,11 +1,11 @@
-const { ROLES } = require('./roles');
+const { ROLE_CODES } = require('../authorization/permissionCatalog');
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
 function isSpecialistUser(user) {
-  return !!user && user.role === ROLES.SPECIALIST;
+  return !!user && user.roleCodes?.includes(ROLE_CODES.QLCL_SPECIALIST);
 }
 
 function ownsEvaluationTicket(user, ticket) {

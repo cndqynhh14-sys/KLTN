@@ -8,6 +8,7 @@ const path = require('node:path');
 const XLSX = require('xlsx');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -41,6 +42,7 @@ function freshModules(dbPath) {
     ...importModule,
     ...versionModule,
     ...authModule,
+    signToken: canonicalTokenFactory(dbModule, authModule),
     questionTemplatesRouter,
     restore() {
       if (previous.DB_PATH === undefined) delete process.env.DB_PATH; else process.env.DB_PATH = previous.DB_PATH;

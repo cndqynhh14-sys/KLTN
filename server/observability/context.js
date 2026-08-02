@@ -22,8 +22,8 @@ function actorContext(user) {
   const stableIdentity = String(user.id || user.email || user.sub || 'unknown').trim().toLowerCase();
   return {
     id_hash: crypto.createHash('sha256').update(stableIdentity).digest('hex').slice(0, 16),
-    role: user.role || null,
-    is_admin: !!user.isAdmin,
+    role: user.primaryRoleCode || user.roleCodes?.[0] || null,
+    is_admin: Array.isArray(user.roleCodes) && user.roleCodes.includes('SYS_ADMIN'),
   };
 }
 

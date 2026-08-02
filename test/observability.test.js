@@ -129,7 +129,11 @@ test('client IDs use a constrained format', () => {
 test('request and correlation IDs propagate from response to one completion log with normalized route', async () => {
   await withServer((app) => {
     app.get('/items/:id', (req, res) => {
-      setActor({ email: 'synthetic.actor@example.invalid', role: 'ADMIN', isAdmin: true });
+      setActor({
+        email: 'synthetic.actor@example.invalid',
+        primaryRoleCode: 'SYS_ADMIN',
+        roleCodes: ['SYS_ADMIN'],
+      });
       const context = getContext();
       res.json({ observed_request_id: context.request_id, observed_correlation_id: context.correlation_id });
     });
@@ -160,7 +164,7 @@ test('request and correlation IDs propagate from response to one completion log 
     assert.equal(completed[0].method, 'GET');
     assert.equal(completed[0].status_code, 200);
     assert.equal(completed[0].event_code, 'HTTP_SUCCESS');
-    assert.equal(completed[0].actor.role, 'ADMIN');
+    assert.equal(completed[0].actor.role, 'SYS_ADMIN');
     assert.match(completed[0].actor.id_hash, /^[a-f0-9]{16}$/);
     assert.equal(JSON.stringify(completed[0]).includes('synthetic.actor@example.invalid'), false);
   });
