@@ -93,7 +93,6 @@ function validateItems(items) {
       variant_code: clean(source.variant_code) || null,
       category_code: clean(source.category_code) || null,
       clause_code: clean(source.clause_code) || null,
-      legacy_question_id: source.legacy_question_id == null ? null : Number(source.legacy_question_id),
     };
   });
 }
@@ -377,10 +376,10 @@ class QuestionVersionService {
       if (source) {
         const insertItem = this.db.prepare(`
           INSERT INTO question_items (
-            question_template_version_id, legacy_question_id, variant_code, facility_type, supplier_scale,
+            question_template_version_id, variant_code, facility_type, supplier_scale,
             category_code, category_label_snapshot, question_code, clause_code, question_text, category, is_elimination_clause, is_critical_clause,
             requires_attachment, allowed_scores, weight, order_index, active
-          ) VALUES (@version_id, @legacy_question_id, @variant_code, @facility_type, @supplier_scale,
+          ) VALUES (@version_id, @variant_code, @facility_type, @supplier_scale,
             @category_code, @category, @question_code, @clause_code, @question_text, @category, @is_elimination_clause, @is_critical_clause,
             @requires_attachment, @allowed_scores, @weight, @order_index, @active)
         `);
@@ -406,10 +405,10 @@ class QuestionVersionService {
     this.db.prepare('DELETE FROM question_template_variants WHERE question_template_version_id = ?').run(versionId);
     const insertItem = this.db.prepare(`
       INSERT INTO question_items (
-        question_template_version_id, legacy_question_id, variant_code, facility_type, supplier_scale,
+        question_template_version_id, variant_code, facility_type, supplier_scale,
         category_code, category_label_snapshot, question_code, clause_code, question_text, category, is_elimination_clause, is_critical_clause,
         requires_attachment, allowed_scores, weight, order_index, active
-      ) VALUES (@version_id, @legacy_question_id, @variant_code, @facility_type, @supplier_scale,
+      ) VALUES (@version_id, @variant_code, @facility_type, @supplier_scale,
         @category_code, @category, @question_code, @clause_code, @question_text, @category, @is_elimination_clause, @is_critical_clause,
         @requires_attachment, @allowed_scores, @weight, @order_index, @active)
     `);
@@ -485,7 +484,7 @@ class QuestionVersionService {
       items[indexes.get(key)] = { ...items[indexes.get(key)], ...patch };
     });
     additions.forEach((source) => {
-      const addition = { legacy_question_id: null };
+      const addition = {};
       DRAFT_ITEM_PATCH_FIELDS.forEach((field) => {
         if (Object.prototype.hasOwnProperty.call(source || {}, field)) addition[field] = source[field];
       });
@@ -508,39 +507,6 @@ class QuestionVersionService {
     })();
   }
 
-  ensureLegacyQuestionIds(version) {
-    const templateId = version.template_id;
-    const items = this.db.prepare('SELECT * FROM question_items WHERE question_template_version_id=? ORDER BY id').all(version.id);
-    const findLegacy = this.db.prepare(`
-      SELECT id FROM evaluation_questions
-      WHERE template_id=? AND facility_type=? AND supplier_scale=? AND question_code=?
-    `);
-    const insertLegacy = this.db.prepare(`
-      INSERT INTO evaluation_questions (
-        template_id, facility_type, supplier_scale, question_code, question_text, category,
-        category_code, category_label_snapshot,
-        is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-        weight, order_index, active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const setLegacy = this.db.prepare('UPDATE question_items SET legacy_question_id=? WHERE id=?');
-    items.forEach((item) => {
-      if (item.legacy_question_id) return;
-      let legacy = findLegacy.get(templateId, item.facility_type, item.supplier_scale, item.question_code);
-      if (!legacy) {
-        const info = insertLegacy.run(
-          templateId, item.facility_type, item.supplier_scale, item.question_code,
-          item.question_text, item.category, item.category_code,
-          item.category_label_snapshot || item.category,
-          item.is_elimination_clause, item.is_critical_clause,
-          item.requires_attachment, item.allowed_scores, item.weight, item.order_index, item.active
-        );
-        legacy = { id: Number(info.lastInsertRowid) };
-      }
-      setLegacy.run(legacy.id, item.id);
-    });
-  }
-
   checksumForVersion(versionId) {
     const row = this.getRow(versionId);
     if (!row) throw serviceError('question_version_not_found', 404);
@@ -561,7 +527,6 @@ class QuestionVersionService {
     return this.db.transaction(() => {
       const count = this.db.prepare('SELECT COUNT(*) AS n FROM question_items WHERE question_template_version_id=? AND active=1').get(row.id).n;
       if (!count) throw serviceError('question_items_required');
-      this.ensureLegacyQuestionIds(row);
       const checksum = this.checksumForVersion(row.id);
       const result = this.db.prepare(`
         UPDATE question_template_versions
@@ -753,28 +718,7 @@ class QuestionVersionService {
   }
 
   questionsForTicket(ticket, { includeInactive = false } = {}) {
-    let pinned;
-    try {
-      pinned = this.ensureTicketPinned(ticket);
-    } catch (error) {
-      if (error.code !== 'question_version_not_published') throw error;
-      return this.db.prepare(`
-        SELECT q.*, t.template_code, NULL AS version_item_id,
-               NULL AS question_template_version_id, NULL AS version_no,
-               NULL AS version_status, NULL AS version_checksum
-        FROM evaluation_questions q
-        JOIN question_templates t ON t.id=q.template_id
-        WHERE q.template_id=@template_id
-          AND q.facility_type=@facility_type
-          AND q.supplier_scale=@supplier_scale
-          ${includeInactive ? '' : 'AND q.active=1'}
-        ORDER BY q.order_index, q.question_code
-      `).all({
-        template_id: ticket.template_id,
-        facility_type: ticket.facility_type,
-        supplier_scale: ticket.supplier_scale,
-      }).map((item) => ({ ...item, db_id: item.id, legacy_question_id: item.id }));
-    }
+    const pinned = this.ensureTicketPinned(ticket);
     const items = this.questionsForVersion(pinned.question_template_version_id, {
       facilityType: pinned.facility_type,
       supplierScale: pinned.supplier_scale,
@@ -782,8 +726,7 @@ class QuestionVersionService {
     });
     return items.map((item) => ({
       ...item,
-      id: item.legacy_question_id,
-      db_id: item.legacy_question_id,
+      db_id: item.id,
       version_item_id: item.id,
       question_template_version_id: pinned.question_template_version_id,
     }));
@@ -850,34 +793,15 @@ class QuestionVersionService {
     };
   }
 
-  ensureLegacyV1() {
+  ensureCanonicalV1() {
     const templates = this.db.prepare('SELECT * FROM question_templates ORDER BY template_code').all();
     this.db.transaction(() => {
       templates.forEach((template) => {
         let version = this.db.prepare(`
           SELECT * FROM question_template_versions WHERE template_id=? AND version_no=1
         `).get(template.id);
-        if (!version) {
-          const info = this.db.prepare(`
-            INSERT INTO question_template_versions (
-              template_id, version_no, status, version_note, effective_from,
-              lock_version, created_by, updated_by
-            ) VALUES (?, 1, 'DRAFT', 'RUN-14 legacy migration', '1970-01-01', 1, 'compatibility', 'compatibility')
-          `).run(template.id);
-          const versionId = Number(info.lastInsertRowid);
-          const legacyItems = this.db.prepare('SELECT * FROM evaluation_questions WHERE template_id=? ORDER BY facility_type, supplier_scale, order_index, question_code').all(template.id);
-          if (legacyItems.length) {
-            this.replaceDraftItems(versionId, legacyItems.map((item) => ({ ...item, legacy_question_id: item.id })));
-          }
-          const checksum = this.checksumForVersion(versionId);
-          this.db.prepare(`
-            UPDATE question_template_versions
-            SET status='PUBLISHED', checksum=?, submitted_at=datetime('now'), published_at=datetime('now')
-            WHERE id=?
-          `).run(checksum, versionId);
-          version = this.getRow(versionId);
-          this.event(versionId, 'MIGRATED_PUBLISHED_V1', null, null, version);
-        } else if (version.checksum === '0000000000000000000000000000000000000000000000000000000000000000') {
+        if (!version) return;
+        if (version.checksum === '0000000000000000000000000000000000000000000000000000000000000000') {
           this.db.prepare('UPDATE question_template_versions SET checksum=? WHERE id=?').run(this.checksumForVersion(version.id), version.id);
           version = this.getRow(version.id);
         }
@@ -916,12 +840,11 @@ class QuestionVersionService {
 
   reconcile() {
     const source = this.db.prepare(`
-      SELECT t.template_code, q.*
+      SELECT t.template_code, baseline.*
       FROM question_items baseline
       JOIN question_template_versions v ON v.id=baseline.question_template_version_id AND v.version_no=1
-      JOIN evaluation_questions q ON q.id=baseline.legacy_question_id
       JOIN question_templates t ON t.id=v.template_id
-      ORDER BY t.template_code, q.facility_type, q.supplier_scale, q.order_index, q.question_code
+      ORDER BY t.template_code, baseline.facility_type, baseline.supplier_scale, baseline.order_index, baseline.question_code
     `).all();
     const versioned = this.db.prepare(`
       SELECT t.template_code, qi.*
@@ -945,7 +868,7 @@ class QuestionVersionService {
       `).get().n,
       orphan_answer_count: this.db.prepare(`
         SELECT COUNT(*) AS n FROM evaluation_answers a
-        LEFT JOIN evaluation_questions q ON q.id=a.question_id WHERE q.id IS NULL
+        LEFT JOIN question_items qi ON qi.id=a.question_item_id WHERE qi.id IS NULL
       `).get().n,
       unexpected_duplicate_count: this.db.prepare(`
         SELECT COUNT(*) AS n FROM (

@@ -78,12 +78,13 @@ test('stage 4 fresh schema retains only canonical nonconformity remediation stor
 
 test('stage 4 upgrades linked legacy corrective actions without losing canonical content and is retry-safe', () => {
   const historical = historicalDirectory('0025');
+  const stage4 = historicalDirectory('0026');
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   try {
     migrateDatabase(db, { migrationsDir: historical, appVersion: 'stage3-test' });
     const fixture = seedCorrectiveActionFixture(db);
-    migrateDatabase(db, { migrationsDir, appVersion: 'stage4-test' });
+    migrateDatabase(db, { migrationsDir: stage4, appVersion: 'stage4-test' });
 
     const row = db.prepare(`SELECT nonconformity_content, remediation_content, due_date, status
       FROM evaluation_nonconformities WHERE id=?`).get(fixture.nonconformityId);
@@ -94,13 +95,14 @@ test('stage 4 upgrades linked legacy corrective actions without losing canonical
       status: 'OPEN',
     });
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='corrective_actions'").get(), undefined);
-    migrateDatabase(db, { migrationsDir, appVersion: 'stage4-retry-test' });
+    migrateDatabase(db, { migrationsDir: stage4, appVersion: 'stage4-retry-test' });
     assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0026'").pluck().get(), 1);
     assert.equal(db.pragma('integrity_check', { simple: true }), 'ok');
     assert.equal(db.pragma('foreign_key_check').length, 0);
   } finally {
     db.close();
     fs.rmSync(historical, { recursive: true, force: true });
+    fs.rmSync(stage4, { recursive: true, force: true });
   }
 });
 

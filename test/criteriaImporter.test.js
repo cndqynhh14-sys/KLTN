@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
+const { migrateDatabase } = require('../server/database/migrationRunner');
 
 const {
   importCriteriaWorkbook,
@@ -33,7 +34,7 @@ function tempDb() {
   const dbPath = path.join(os.tmpdir(), `qlcl-criteria-test-${Date.now()}-${Math.random()}.db`);
   const db = new Database(dbPath);
   db.pragma('foreign_keys = ON');
-  db.exec(fs.readFileSync(path.resolve(__dirname, '..', 'migrations', '0001_current_schema.sql'), 'utf8'));
+  migrateDatabase(db, { migrationsDir: path.resolve(__dirname, '..', 'migrations'), appVersion: 'criteria-test' });
   return { db, dbPath };
 }
 
@@ -63,12 +64,13 @@ test('criteria workbook import maps DOC-3 markers and is idempotent', () => {
     const second = importCriteriaWorkbook(db, buffer);
     assert.equal(first.imported, 4);
     assert.equal(second.imported, 4);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM evaluation_questions').get().n, 4);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM question_items').get().n, 4);
 
     const elimination = db.prepare(`
       SELECT q.*, t.template_code
-      FROM evaluation_questions q
-      JOIN question_templates t ON t.id = q.template_id
+      FROM question_items q
+      JOIN question_template_versions v ON v.id=q.question_template_version_id
+      JOIN question_templates t ON t.id = v.template_id
       WHERE t.template_code = 'BM01' AND q.question_code = '1.1'
     `).get();
     assert.equal(elimination.facility_type, 'CO_SO_TRONG_TROT');
@@ -80,17 +82,18 @@ test('criteria workbook import maps DOC-3 markers and is idempotent', () => {
 
     const critical = db.prepare(`
       SELECT q.*
-      FROM evaluation_questions q
-      JOIN question_templates t ON t.id = q.template_id
+      FROM question_items q
+      JOIN question_template_versions v ON v.id=q.question_template_version_id
+      JOIN question_templates t ON t.id = v.template_id
       WHERE t.template_code = 'BM01' AND q.question_code = '1.2'
     `).get();
     assert.equal(critical.is_critical_clause, 1);
     assert.equal(critical.allowed_scores, 'A/B/C/D/NA');
-    db.prepare('UPDATE evaluation_questions SET requires_attachment = 1 WHERE id = ?').run(critical.id);
-    db.prepare('UPDATE evaluation_questions SET requires_attachment = 1 WHERE id = ?').run(elimination.id);
+    db.prepare('UPDATE question_items SET requires_attachment = 1 WHERE id = ?').run(critical.id);
+    db.prepare('UPDATE question_items SET requires_attachment = 1 WHERE id = ?').run(elimination.id);
     importCriteriaWorkbook(db, buffer);
-    assert.equal(db.prepare('SELECT requires_attachment FROM evaluation_questions WHERE id = ?').get(elimination.id).requires_attachment, 0);
-    assert.equal(db.prepare('SELECT requires_attachment FROM evaluation_questions WHERE id = ?').get(critical.id).requires_attachment, 1);
+    assert.equal(db.prepare('SELECT requires_attachment FROM question_items WHERE id = ?').get(elimination.id).requires_attachment, 0);
+    assert.equal(db.prepare('SELECT requires_attachment FROM question_items WHERE id = ?').get(critical.id).requires_attachment, 1);
   } finally {
     db.close();
     fs.rmSync(dbPath, { force: true });

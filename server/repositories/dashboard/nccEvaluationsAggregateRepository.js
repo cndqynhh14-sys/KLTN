@@ -131,7 +131,8 @@ class NccEvaluationsAggregateRepository {
         q.question_text
       FROM evaluation_nonconformities nc
       JOIN evaluation_rounds er ON er.id = nc.round_id
-      LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = nc.question_id
+      LEFT JOIN evaluation_answers a ON a.id=nc.evaluation_answer_id
+      LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_item_id
       WHERE nc.round_id IN (${placeholders})
         AND COALESCE(nc.status, 'OPEN') != 'CANCELLED'
     `).all(...roundIds);
@@ -146,7 +147,7 @@ class NccEvaluationsAggregateRepository {
         q.question_text
       FROM evaluation_answers a
       JOIN evaluation_rounds er ON er.id = a.round_id
-      JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
+      JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_item_id
       WHERE a.round_id IN (${placeholders})
         AND a.score IN ('B', 'C', 'D')
     `).all(...roundIds);

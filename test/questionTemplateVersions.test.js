@@ -106,19 +106,14 @@ test('fresh database migrates BM01-BM04 into immutable Published v1 with clean r
     assert.ok(versions.every((row) => row.version_no === 1 && row.status === 'PUBLISHED'));
     assert.ok(versions.every((row) => /^[a-f0-9]{64}$/.test(row.checksum)));
 
-    const legacyCount = fx.db.prepare(`
-      SELECT COUNT(*) AS n FROM evaluation_questions q
-      JOIN question_templates t ON t.id = q.template_id
-      WHERE q.active = 1 AND t.template_code IN ('BM01', 'BM02', 'BM03', 'BM04')
-    `).get().n;
     const versionedCount = fx.db.prepare(`
       SELECT COUNT(*) AS n FROM question_items qi
       JOIN question_template_versions v ON v.id = qi.question_template_version_id
       JOIN question_templates t ON t.id = v.template_id
       WHERE qi.active = 1 AND t.template_code IN ('BM01', 'BM02', 'BM03', 'BM04')
     `).get().n;
-    assert.equal(versionedCount, legacyCount);
-    assert.equal(fx.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('evaluation_questions','question_templates')").get().n, 2);
+    assert.ok(versionedCount > 0);
+    assert.equal(fx.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='evaluation_questions'").get().n, 0);
     assert.ok(fx.db.prepare("PRAGMA table_info('evaluation_tickets')").all().some((column) => column.name === 'question_template_version_id'));
 
     const reconciliation = fx.db.prepare(`
@@ -163,9 +158,9 @@ test('publishing v2 leaves a pinned v1 ticket and its report question text uncha
       VALUES (?, 1, 'RUN14-OLD-R1', 'Hoan thanh', '2026-07-14')
     `).run(oldTicket.id);
     fx.db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, 'A', 'synthetic', 100, 'admin@masangroup.com')
-    `).run(round.lastInsertRowid, oldQuestions[0].legacy_question_id);
+    `).run(round.lastInsertRowid, oldQuestions[0].id);
     const beforeHash = service.ticketQuestionHash(oldTicket.id);
 
     const draft = service.createDraft({ templateId: template.id, cloneFromVersionId: v1.id, note: 'Synthetic v2', actor: 'admin@masangroup.com' });
@@ -175,7 +170,6 @@ test('publishing v2 leaves a pinned v1 ticket and its report question text uncha
     draftDetail.items.push({
       ...lastItem,
       id: undefined,
-      legacy_question_id: null,
       question_code: 'RUN14-NEW-ITEM',
       question_text: 'Synthetic v2-only criterion',
       order_index: Math.max(...draftDetail.items.map((item) => item.order_index)) + 1,
@@ -213,9 +207,9 @@ test('publishing v2 leaves a pinned v1 ticket and its report question text uncha
     `).run(newTicket.id);
     const newQuestion = service.questionsForTicket(newTicket)[0];
     fx.db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, 'A', 'synthetic', 100, 'admin@masangroup.com')
-    `).run(newRound.lastInsertRowid, newQuestion.legacy_question_id);
+    `).run(newRound.lastInsertRowid, newQuestion.id);
     const newContext = fx.reporting.buildReportContext(fx.db, newTicket, { reportType: 'INTERNAL', roundNo: 1 });
     assert.match(newContext.detailed_scoring, /— v2/);
 

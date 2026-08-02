@@ -52,17 +52,21 @@ test('DOC-4 report context includes input columns, sections, category percentage
       INSERT INTO question_templates (template_code, template_name, active)
       VALUES ('RPT', 'Report Test', 1)
     `).run();
+    const version = db.prepare(`INSERT INTO question_template_versions
+      (template_id, version_no, status, checksum, lock_version, created_by)
+      VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(template.lastInsertRowid, 'a'.repeat(64));
     const insertQuestion = db.prepare(`
-      INSERT INTO evaluation_questions (
-        template_id, facility_type, supplier_scale, question_code, question_text,
+      INSERT INTO question_items (
+        question_template_version_id, facility_type, supplier_scale, question_code, question_text,
         category, order_index, active
       )
       VALUES (?, 'CHUNG', 'LARGE', ?, ?, ?, ?, 1)
     `);
-    const q1 = insertQuestion.run(template.lastInsertRowid, 'LEGAL-01', 'Business license is valid', 'Hồ sơ pháp lý', 1).lastInsertRowid;
-    const q2 = insertQuestion.run(template.lastInsertRowid, 'LEGAL-02', 'Contract evidence is complete', 'Hồ sơ pháp lý', 2).lastInsertRowid;
-    const q3 = insertQuestion.run(template.lastInsertRowid, 'QUALITY-01', 'Quality records are maintained', 'Kiểm soát chất lượng sản phẩm', 3).lastInsertRowid;
-    const q4 = insertQuestion.run(template.lastInsertRowid, 'TRACE-01', 'Traceability is available', 'Truy xuất nguồn gốc', 4).lastInsertRowid;
+    const q1 = insertQuestion.run(version.lastInsertRowid, 'LEGAL-01', 'Business license is valid', 'Hồ sơ pháp lý', 1).lastInsertRowid;
+    const q2 = insertQuestion.run(version.lastInsertRowid, 'LEGAL-02', 'Contract evidence is complete', 'Hồ sơ pháp lý', 2).lastInsertRowid;
+    const q3 = insertQuestion.run(version.lastInsertRowid, 'QUALITY-01', 'Quality records are maintained', 'Kiểm soát chất lượng sản phẩm', 3).lastInsertRowid;
+    const q4 = insertQuestion.run(version.lastInsertRowid, 'TRACE-01', 'Traceability is available', 'Truy xuất nguồn gốc', 4).lastInsertRowid;
+    db.prepare("UPDATE question_template_versions SET status='PUBLISHED' WHERE id=?").run(version.lastInsertRowid);
 
     const ticketInfo = db.prepare(`
       INSERT INTO evaluation_tickets (
@@ -70,7 +74,7 @@ test('DOC-4 report context includes input columns, sections, category percentage
         production_address, evaluation_address, linked_facility_address, region, province,
         business_type, cmc_owner, cmc_head, business_license_file, attp_certificate_type,
         attp_certificate_file, contact_name, contact_email, contact_phone, mch2, mch3,
-        product_group, product_name, evaluation_type, template_id, facility_type, supplier_scale,
+        product_group, product_name, evaluation_type, template_id, question_template_version_id, facility_type, supplier_scale,
         evaluation_method, evaluation_department,
         planned_date, actual_evaluation_date, current_status, current_round_no,
         score_percent, grade_code, result_label, result_reason, corrected_score_percent,
@@ -82,7 +86,7 @@ test('DOC-4 report context includes input columns, sections, category percentage
         'Factory Address', 'Audit Address', 'Linked Address', 'North', 'Ha Noi',
         'Manufacturing', 'CMC Owner', 'CMC Head', 'license.pdf', 'HACCP',
         'attp.pdf', 'Supplier Contact', 'contact@example.com', '0900000000', 'Fresh', 'Vegetable',
-        'Produce', 'Carrot', 'Định kỳ', @template_id, 'CHUNG', 'LARGE',
+        'Produce', 'Carrot', 'Định kỳ', @template_id, @version_id, 'CHUNG', 'LARGE',
         'Onsite', 'QA',
         '2026-07-10', '2026-07-15', 'Hoàn thành', 2,
         70, 'C', 'Đạt mức cơ bản', 'Supplier corrective action', 91,
@@ -92,6 +96,7 @@ test('DOC-4 report context includes input columns, sections, category percentage
     `).run({
       supplier_id: supplier.lastInsertRowid,
       template_id: template.lastInsertRowid,
+      version_id: version.lastInsertRowid,
       supplier_introduction: 'Supplier intro line 1\nSupplier intro line 2',
     });
     const round = db.prepare(`
@@ -111,7 +116,7 @@ test('DOC-4 report context includes input columns, sections, category percentage
     insertParticipant.run(null, round.lastInsertRowid, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
     insertParticipant.run(null, round2.lastInsertRowid, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
     const insertAnswer = db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
     `);
     insertAnswer.run(round.lastInsertRowid, q1, 'A', '', 100);
@@ -124,20 +129,24 @@ test('DOC-4 report context includes input columns, sections, category percentage
     insertAnswer.run(round2.lastInsertRowid, q4, 'NA', 'Not applicable', null);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category,
+        ticket_id, round_id, evaluation_answer_id, clause_code, category,
         nonconformity_content, remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Canonical missing contract evidence',
         'Canonical upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
-    `).run(ticketInfo.lastInsertRowid, round.lastInsertRowid, q2);
+    `).run(ticketInfo.lastInsertRowid, round.lastInsertRowid,
+      db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
+        .pluck().get(round.lastInsertRowid, q2));
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category,
+        ticket_id, round_id, evaluation_answer_id, clause_code, category,
         nonconformity_content, remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Canonical missing contract evidence',
         'Canonical upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
-    `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, q2);
+    `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid,
+      db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
+        .pluck().get(round2.lastInsertRowid, q2));
     db.prepare(`
       INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, status, acted_at, acted_by, comment)
       VALUES (?, 'TBP', 'TBP', 'APPROVED', '2026-08-02', 'admin@masangroup.com', '{}')
@@ -163,12 +172,14 @@ test('DOC-4 report context includes input columns, sections, category percentage
     ));
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity_content,
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content,
         remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'R2-ONLY', 'Round 2', 'Round 2 issue must not appear',
         'Round 2 action', '2026-09-01', 'B', 'OPEN', 'admin@masangroup.com')
-    `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, q3);
+    `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid,
+      db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
+        .pluck().get(round2.lastInsertRowid, q3));
 
     const ticket = db.prepare('SELECT * FROM evaluation_tickets WHERE id = ?').get(ticketInfo.lastInsertRowid);
     const context = buildReportContext(db, ticket);
@@ -324,15 +335,28 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
       INSERT INTO question_templates (template_code, template_name, active)
       VALUES ('EXP', 'Export Test', 1)
     `).run();
+    const exportVersion = db.prepare(`INSERT INTO question_template_versions
+      (template_id, version_no, status, checksum, lock_version, created_by)
+      VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(templateRow.lastInsertRowid, 'b'.repeat(64));
+    const exportItems = [];
+    const insertExportItem = db.prepare(`INSERT INTO question_items
+      (question_template_version_id, facility_type, supplier_scale, question_code,
+       question_text, category, order_index, active)
+      VALUES (?, 'CHUNG', 'LARGE', ?, ?, 'Export category', ?, 1)`);
+    for (let index = 1; index <= 12; index += 1) {
+      exportItems.push(insertExportItem.run(exportVersion.lastInsertRowid,
+        `NC-${String(index).padStart(2, '0')}`, `Finding ${index}`, index).lastInsertRowid);
+    }
+    db.prepare("UPDATE question_template_versions SET status='PUBLISHED' WHERE id=?").run(exportVersion.lastInsertRowid);
     const ticketInfo = db.prepare(`
       INSERT INTO evaluation_tickets (
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id,
-        facility_type, supplier_scale, planned_date, actual_evaluation_date, current_status,
+        question_template_version_id, facility_type, supplier_scale, planned_date, actual_evaluation_date, current_status,
         current_round_no, completed_round, score_percent, grade_code, result_label,
         supplier_introduction, assigned_specialist_id, created_by
       )
       VALUES (
-        'TICKET-EXP', @supplier_id, 'NCC-EXP', 'Export Supplier', 'Định kỳ', @template_id,
+        'TICKET-EXP', @supplier_id, 'NCC-EXP', 'Export Supplier', 'Định kỳ', @template_id, @version_id,
         'CHUNG', 'LARGE', '2026-07-15', '2026-07-15', 'Hoàn thành',
         1, 1, 92, 'A', 'Đạt mức cao',
         @supplier_introduction, 'admin@masangroup.com', 'admin@masangroup.com'
@@ -340,6 +364,7 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     `).run({
       supplier_id: supplier.lastInsertRowid,
       template_id: templateRow.lastInsertRowid,
+      version_id: exportVersion.lastInsertRowid,
       supplier_introduction: 'Export supplier introduction for reports',
     });
     const attendees = [
@@ -364,15 +389,20 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     ));
     const insertFinding = db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, clause_code, category, nonconformity_content,
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content,
         remediation_content, due_date, severity, status, created_by
       )
-      VALUES (?, ?, ?, 'Export category', ?, ?, ?, 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, 'Export category', ?, ?, ?, 'B', 'OPEN', 'admin@masangroup.com')
     `);
     for (let index = 1; index <= 12; index += 1) {
+      const answerId = db.prepare(`INSERT INTO evaluation_answers
+        (round_id, question_item_id, score, comment, answered_by)
+        VALUES (?, ?, 'B', ?, 'admin@masangroup.com')`)
+        .run(roundInfo.lastInsertRowid, exportItems[index - 1], `Finding ${index}`).lastInsertRowid;
       insertFinding.run(
         ticketInfo.lastInsertRowid,
         roundInfo.lastInsertRowid,
+        answerId,
         `NC-${String(index).padStart(2, '0')}`,
         `Finding ${index}`,
         `Action ${index}`,
@@ -447,7 +477,7 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     assert.equal(workingSheet.L31.v, '√');
     assert.equal(workingSheet.O31.v, '√');
     assert.equal(workingSheet.B34.v, 'Export supplier introduction for reports');
-    assert.equal(workingSheet.C49.v, 'NC-12 - Export category');
+    assert.equal(workingSheet.C49.v, 'NC-12 - Finding 12');
     assert.equal(workingSheet.D49.v, 'Finding 12');
     assert.match(workingSheet.B50.v, /Đánh giá viên:/);
     assert.doesNotMatch(workingSheet.B50.v, /admin@masangroup\.com|\badmin\b/);

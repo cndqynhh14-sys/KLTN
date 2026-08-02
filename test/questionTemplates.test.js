@@ -109,8 +109,8 @@ test('admin question save keeps Loai evidence off and preserves non-Loai evidenc
     const normal = listJson.items.find((item) => item.question_code === 'Q-001');
     assert.equal(elimination.requires_attachment, false);
     assert.equal(normal.requires_attachment, true);
-    assert.equal(db.prepare('SELECT requires_attachment FROM evaluation_questions WHERE id = ?').get(elimination.id).requires_attachment, 0);
-    assert.equal(db.prepare('SELECT requires_attachment FROM evaluation_questions WHERE id = ?').get(normal.id).requires_attachment, 1);
+    assert.equal(db.prepare('SELECT requires_attachment FROM question_items WHERE id = ?').get(elimination.id).requires_attachment, 0);
+    assert.equal(db.prepare('SELECT requires_attachment FROM question_items WHERE id = ?').get(normal.id).requires_attachment, 1);
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     db.close();

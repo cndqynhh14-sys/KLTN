@@ -81,11 +81,12 @@ function seedEvaluation(db, {
   const info = db.prepare(`
     INSERT INTO evaluation_tickets (
       ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type,
-      template_id, facility_type, supplier_scale, planned_date, current_status,
+      template_id, question_template_version_id, facility_type, supplier_scale, planned_date, current_status,
       assigned_specialist_id, created_by, updated_at
     ) VALUES (?, ?, 'NCC-RUN12', 'Nhà cung cấp RUN-12', 'Đánh giá định kỳ',
-      ?, 'CHUNG', 'LARGE', ?, ?, ?, ?, datetime('now'))
-  `).run(code, supplierId, templateId, plannedDate, status, specialist, specialist);
+      ?, (SELECT id FROM question_template_versions WHERE template_id=? AND status='PUBLISHED'
+          ORDER BY version_no DESC LIMIT 1), 'CHUNG', 'LARGE', ?, ?, ?, ?, datetime('now'))
+  `).run(code, supplierId, templateId, templateId, plannedDate, status, specialist, specialist);
   return Number(info.lastInsertRowid);
 }
 
@@ -251,11 +252,19 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
       INSERT INTO evaluation_rounds (ticket_id, round_no, status)
       VALUES (?, 2, 'PROCESSING')
     `).run(round2EvaluationId);
+    const questionItemId = db.prepare(`SELECT qi.id FROM evaluation_tickets t
+      JOIN question_items qi ON qi.question_template_version_id=t.question_template_version_id
+      WHERE t.id=?
+      ORDER BY qi.order_index LIMIT 1`).pluck().get(round2EvaluationId);
+    const answerId = db.prepare(`INSERT INTO evaluation_answers
+      (round_id, question_item_id, score, comment, answered_by)
+      VALUES (?, ?, 'C', 'Điểm cần khắc phục', ?)`)
+      .run(round1Info.lastInsertRowid, questionItemId, users.specialist[0]).lastInsertRowid;
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, nonconformity_content, remediation_content, due_date, severity, status, created_by
-      ) VALUES (?, ?, 'Điểm cần khắc phục', 'Bổ sung bằng chứng', ?, 'C', 'OPEN', ?)
-    `).run(round2EvaluationId, round1Info.lastInsertRowid, isoDate(4), users.specialist[0]);
+        ticket_id, round_id, evaluation_answer_id, nonconformity_content, remediation_content, due_date, severity, status, created_by
+      ) VALUES (?, ?, ?, 'Điểm cần khắc phục', 'Bổ sung bằng chứng', ?, 'C', 'OPEN', ?)
+    `).run(round2EvaluationId, round1Info.lastInsertRowid, answerId, isoDate(4), users.specialist[0]);
     seedEvaluation(db, {
       code: 'DG-R12-HIDDEN', supplierId: supplier.lastInsertRowid, templateId: template.id,
       specialist: users.other[0], plannedDate: isoDate(2),

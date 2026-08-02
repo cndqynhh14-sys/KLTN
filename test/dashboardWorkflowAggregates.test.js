@@ -112,24 +112,33 @@ function insertTemplate(db) {
 }
 
 function insertQuestion(db, templateId, code, category, text, orderIndex) {
+  let version = db.prepare(`SELECT id FROM question_template_versions
+    WHERE template_id=? AND status='DRAFT' ORDER BY version_no DESC LIMIT 1`).get(templateId);
+  if (!version) {
+    const info = db.prepare(`INSERT INTO question_template_versions
+      (template_id, version_no, status, checksum, lock_version, created_by)
+      VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(templateId, 'd'.repeat(64));
+    version = { id: Number(info.lastInsertRowid) };
+  }
   return db.prepare(`
-    INSERT INTO evaluation_questions (
-      template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active
+    INSERT INTO question_items (
+      question_template_version_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active
     )
     VALUES (?, 'ALL', 'ALL', ?, ?, ?, ?, 1)
-  `).run(templateId, code, text, category, orderIndex).lastInsertRowid;
+  `).run(version.id, code, text, category, orderIndex).lastInsertRowid;
 }
 
 function insertTicket(db, ticketCode, supplierId, templateId, fields = {}) {
   return db.prepare(`
     INSERT INTO evaluation_tickets (
       ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id,
+      question_template_version_id,
       facility_type, supplier_scale, current_status, product_group, mch3, mch2,
       result_label, final_conclusion, is_deleted
     )
     VALUES (
       @ticket_code, @supplier_id, @supplier_code, @supplier_name, 'Đánh giá định kỳ', @template_id,
-      'ALL', 'LARGE', @current_status, @product_group, @mch3, @mch2,
+      @question_template_version_id, 'ALL', 'LARGE', @current_status, @product_group, @mch3, @mch2,
       @result_label, @final_conclusion, @is_deleted
     )
   `).run({
@@ -138,6 +147,8 @@ function insertTicket(db, ticketCode, supplierId, templateId, fields = {}) {
     supplier_code: fields.supplier_code || ticketCode,
     supplier_name: fields.supplier_name || `${ticketCode} Supplier`,
     template_id: templateId,
+    question_template_version_id: db.prepare(`SELECT id FROM question_template_versions
+      WHERE template_id=? ORDER BY version_no DESC LIMIT 1`).pluck().get(templateId),
     current_status: fields.current_status || 'Hoàn thành',
     product_group: fields.product_group ?? null,
     mch3: fields.mch3 ?? null,
@@ -169,18 +180,25 @@ function insertRound(db, ticketId, roundNo, fields = {}) {
 
 function insertAnswer(db, roundId, questionId, score) {
   db.prepare(`
-    INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+    INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
     VALUES (?, ?, ?, 'Dashboard aggregate test', 0, 'admin@masangroup.com')
+    ON CONFLICT(round_id, question_item_id) DO UPDATE SET score=excluded.score
   `).run(roundId, questionId, score);
 }
 
 function insertNonconformity(db, ticketId, roundId, questionId, clauseCode, category, status = 'OPEN') {
+  db.prepare(`INSERT INTO evaluation_answers
+    (round_id, question_item_id, score, comment, calculated_score, answered_by)
+    VALUES (?, ?, 'B', 'Aggregate finding', 75, 'admin@masangroup.com')
+    ON CONFLICT(round_id, question_item_id) DO NOTHING`).run(roundId, questionId);
+  const answerId = db.prepare(`SELECT id FROM evaluation_answers
+    WHERE round_id=? AND question_item_id=?`).pluck().get(roundId, questionId);
   db.prepare(`
     INSERT INTO evaluation_nonconformities (
-      ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
+      ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
     )
     VALUES (?, ?, ?, ?, ?, 'Aggregate finding', 'B', ?, 'admin@masangroup.com')
-  `).run(ticketId, roundId, questionId, clauseCode, category, status);
+  `).run(ticketId, roundId, answerId, clauseCode, category, status);
 }
 
 test('NCC evaluations workflow aggregate counts one latest classifiable supplier and dedupes violations by selected round', () => {
@@ -191,6 +209,7 @@ test('NCC evaluations workflow aggregate counts one latest classifiable supplier
     seedUsers(db);
     const templateId = insertTemplate(db);
     const legalQuestion = insertQuestion(db, templateId, 'LEGAL-01', 'Hồ sơ pháp lý', 'Business license valid', 1);
+    const legalQuestion2 = insertQuestion(db, templateId, 'LEGAL-02', 'Hồ sơ pháp lý', 'Food safety license valid', 2);
     const qualityQuestion = insertQuestion(db, templateId, 'QUALITY-01', 'Kiểm soát chất lượng', 'Quality records maintained', 2);
     const traceQuestion = insertQuestion(db, templateId, 'TRACE-01', 'Truy xuất nguồn gốc', 'Traceability by lot', 3);
     const foodQuestion = insertQuestion(db, templateId, 'ATTP-01', 'Kiểm soát ATVSTP', 'Food safety certificate', 4);
@@ -209,7 +228,7 @@ test('NCC evaluations workflow aggregate counts one latest classifiable supplier
     const ticketB2 = insertTicket(db, 'TICKET-B2', supplierB, templateId, { supplier_code: 'NCC-B', mch3: 'Dry' });
     const latestRoundB = insertRound(db, ticketB2, 1, { assessment_date: '2026-04-25', completed_at: '2026-04-26', total_score: 90, final_result: 'Không đạt', classification: 'A' });
     insertNonconformity(db, ticketB2, latestRoundB, legalQuestion, 'LEGAL-01', 'Hồ sơ pháp lý');
-    insertNonconformity(db, ticketB2, latestRoundB, legalQuestion, 'LEGAL-02', 'Hồ sơ pháp lý');
+    insertNonconformity(db, ticketB2, latestRoundB, legalQuestion2, 'LEGAL-02', 'Hồ sơ pháp lý');
     insertAnswer(db, latestRoundB, traceQuestion, 'B');
     insertAnswer(db, latestRoundB, legalQuestion, 'C');
 

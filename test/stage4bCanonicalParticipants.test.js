@@ -87,12 +87,13 @@ test('stage 4B fresh schema stores participant assignments canonically without l
 
 test('stage 4B backfills ticket and round participants before dropping legacy storage', () => {
   const historical = historicalDirectory('0026');
+  const stage4b = historicalDirectory('0027');
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   try {
     migrateDatabase(db, { migrationsDir: historical, appVersion: 'stage4a-test' });
     const fixture = seedLegacyParticipants(db);
-    migrateDatabase(db, { migrationsDir, appVersion: 'stage4b-test' });
+    migrateDatabase(db, { migrationsDir: stage4b, appVersion: 'stage4b-test' });
 
     const ticketParticipants = db.prepare(`SELECT participant_role, user_id, display_name
       FROM evaluation_participants WHERE ticket_id=? ORDER BY participant_role`).all(fixture.ticketId);
@@ -117,24 +118,26 @@ test('stage 4B backfills ticket and round participants before dropping legacy st
     assert.equal(db.pragma('integrity_check', { simple: true }), 'ok');
     assert.equal(db.pragma('foreign_key_check').length, 0);
 
-    const retry = migrateDatabase(db, { migrationsDir, appVersion: 'stage4b-test' });
+    const retry = migrateDatabase(db, { migrationsDir: stage4b, appVersion: 'stage4b-test' });
     assert.equal(retry.results.find((row) => row.id === '0027').state, 'already-applied');
     assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0027'").pluck().get(), 1);
   } finally {
     db.close();
     fs.rmSync(historical, { recursive: true, force: true });
+    fs.rmSync(stage4b, { recursive: true, force: true });
   }
 });
 
 test('stage 4B refuses malformed attendee JSON and rolls the migration back', () => {
   const historical = historicalDirectory('0026');
+  const stage4b = historicalDirectory('0027');
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   try {
     migrateDatabase(db, { migrationsDir: historical, appVersion: 'stage4a-test' });
     seedLegacyParticipants(db, { attendeesJson: '{malformed-json' });
     assert.throws(
-      () => migrateDatabase(db, { migrationsDir, appVersion: 'stage4b-test' }),
+      () => migrateDatabase(db, { migrationsDir: stage4b, appVersion: 'stage4b-test' }),
       /CHECK constraint failed/,
     );
     assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0027'").pluck().get(), 0);
@@ -144,13 +147,14 @@ test('stage 4B refuses malformed attendee JSON and rolls the migration back', ()
     assert.equal(db.pragma('integrity_check', { simple: true }), 'ok');
 
     db.prepare("UPDATE evaluation_rounds SET attendees_json='[]'").run();
-    migrateDatabase(db, { migrationsDir, appVersion: 'stage4b-test' });
+    migrateDatabase(db, { migrationsDir: stage4b, appVersion: 'stage4b-test' });
     assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0027'").pluck().get(), 1);
     assert.ok(!columns(db, 'evaluation_rounds').includes('attendees_json'));
     assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
   } finally {
     db.close();
     fs.rmSync(historical, { recursive: true, force: true });
+    fs.rmSync(stage4b, { recursive: true, force: true });
   }
 });
 

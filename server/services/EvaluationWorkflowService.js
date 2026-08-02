@@ -73,7 +73,7 @@ class EvaluationWorkflowService {
         SELECT COUNT(*) AS count
         FROM evaluation_answers a
         JOIN evaluation_rounds er ON er.id = a.round_id
-        JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
+        JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_item_id
         WHERE a.round_id = ?
           AND q.is_critical_clause = 1
           AND a.score = 'D'

@@ -8,7 +8,7 @@ class AttachmentRepository {
         FROM evaluation_attachments ea
         LEFT JOIN evaluation_answers a ON a.id = ea.answer_id
         LEFT JOIN evaluation_rounds er ON er.id = a.round_id
-        LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
+        LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_item_id
         WHERE ea.ticket_id = ?
            OR er.ticket_id = ?
         ORDER BY ea.uploaded_at DESC, ea.id DESC

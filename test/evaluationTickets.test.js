@@ -40,6 +40,28 @@ const REQUIRED_ATTENDEES = [
 ];
 const REQUIRED_SUPPLIER_INTRODUCTION = 'Supplier introduction for assessment reports';
 
+function insertCanonicalQuestionSet(db, templateId, rows) {
+  const versionId = Number(db.prepare(`INSERT INTO question_template_versions
+    (template_id, version_no, status, checksum, lock_version, created_by)
+    VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(templateId, 'c'.repeat(64)).lastInsertRowid);
+  const insert = db.prepare(`INSERT INTO question_items
+    (question_template_version_id, facility_type, supplier_scale, question_code,
+     question_text, category, order_index, is_critical_clause, active)
+    VALUES (?, 'CHUNG', 'LARGE', ?, ?, ?, ?, ?, 1)`);
+  const ids = rows.map((row) => Number(insert.run(
+    versionId, row.code, row.text, row.category, row.order, row.critical ? 1 : 0
+  ).lastInsertRowid));
+  db.prepare(`INSERT INTO question_template_variants
+    (question_template_version_id, facility_type, supplier_scale, active)
+    VALUES (?, 'CHUNG', 'LARGE', 1)`).run(versionId);
+  db.prepare("UPDATE question_template_versions SET status='PUBLISHED' WHERE id=?").run(versionId);
+  db.prepare(`INSERT INTO question_template_assignments
+    (template_id, question_template_version_id, facility_type, supplier_scale,
+     effective_from, is_default, active, created_by)
+    VALUES (?, ?, 'CHUNG', 'LARGE', '1970-01-01', 1, 1, 'fixture')`).run(templateId, versionId);
+  return { ids, versionId };
+}
+
 test('ticket creation snapshots selected supplier fields while keeping editable evaluation fields', async () => {
   const dbPath = path.join(os.tmpdir(), `qlcl-ticket-test-${Date.now()}-${Math.random()}.db`);
   const oldDbPath = process.env.DB_PATH;
@@ -257,10 +279,11 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id, current_status: draftStatus });
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, draftStatus);
     const question = db.prepare(`
-      SELECT q.id, qi.id AS question_item_id
-      FROM evaluation_questions q
-      JOIN question_items qi ON qi.legacy_question_id = q.id
-      WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
+      SELECT q.id, q.id AS question_item_id
+      FROM question_items q
+      JOIN question_template_versions qv ON qv.id=q.question_template_version_id
+      WHERE qv.template_id = ? AND qv.version_no=1
+        AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
       LIMIT 1
     `).get(template.id);
@@ -365,35 +388,39 @@ test('round 2 inherits A/NA answers as readonly and rejects bypass changes', asy
     const round1 = db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 1, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoàn thành', 'admin@masangroup.com');
     const questions = db.prepare(`
       SELECT q.id, q.question_code
-      FROM evaluation_questions q
-      WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
+      FROM question_items q
+      JOIN question_template_versions qv ON qv.id=q.question_template_version_id
+      WHERE qv.template_id = ? AND qv.version_no=1
+        AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
       LIMIT 3
     `).all(template.id);
     db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
     `).run(round1.lastInsertRowid, questions[0].id, 'A', '', 100);
-    const inheritedAnswer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_id = ?').get(round1.lastInsertRowid, questions[0].id);
+    const inheritedAnswer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round1.lastInsertRowid, questions[0].id);
     const inheritedAttachment = db.prepare(`
       INSERT INTO evaluation_attachments (answer_id, ticket_id, file_name, file_path, storage_key, mime_type, size_bytes, uploaded_by)
       VALUES (?, ?, 'round1-evidence.pdf', '/tmp/round1-evidence.pdf', 'ROUND1:A:evidence', 'application/pdf', 321, 'admin@masangroup.com')
     `).run(inheritedAnswer.id, ticketInfo.lastInsertRowid);
     db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
     `).run(round1.lastInsertRowid, questions[1].id, 'NA', 'Không áp dụng', null);
     db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
     `).run(round1.lastInsertRowid, questions[2].id, 'B', 'Cần cải thiện', 75);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity_content,
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content,
         remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'R2-B', 'Test', 'Cần cải thiện', 'Khắc phục', '2026-07-15', 'B', 'OPEN', 'admin@masangroup.com')
-    `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid, questions[2].id);
+    `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid,
+      db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
+        .pluck().get(round1.lastInsertRowid, questions[2].id));
 
     const appInfo = await startApp(evaluationsRouter);
     server = appInfo.server;
@@ -497,7 +524,7 @@ test('round 2 inherits A/NA answers as readonly and rejects bypass changes', asy
     const editableJson = await editableRes.json();
     assert.equal(editableRes.status, 200, JSON.stringify(editableJson));
     assert.equal(editableJson.answers[String(questions[2].id)].score, 'A');
-    const round1B = db.prepare('SELECT score, comment FROM evaluation_answers WHERE round_id = ? AND question_id = ?').get(round1.lastInsertRowid, questions[2].id);
+    const round1B = db.prepare('SELECT score, comment FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round1.lastInsertRowid, questions[2].id);
     assert.equal(round1B.score, 'B');
     assert.equal(round1B.comment, 'Cần cải thiện');
     const detailRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-R2`, {
@@ -558,8 +585,10 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, 'Khoi tao');
     const questions = db.prepare(`
       SELECT q.id, q.question_code, q.category
-      FROM evaluation_questions q
-      WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
+      FROM question_items q
+      JOIN question_template_versions qv ON qv.id=q.question_template_version_id
+      WHERE qv.template_id = ? AND qv.version_no=1
+        AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
       LIMIT 2
     `).all(template.id);
@@ -710,8 +739,10 @@ test('round completion requires remediation and due date for nonconformities', a
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, 'Dang xu ly');
     const questions = db.prepare(`
       SELECT q.id, q.question_code, q.category, q.allowed_scores, q.requires_attachment
-      FROM evaluation_questions q
-      WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
+      FROM question_items q
+      JOIN question_template_versions qv ON qv.id=q.question_template_version_id
+      WHERE qv.template_id = ? AND qv.version_no=1
+        AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
     `).all(template.id);
     assert.ok(questions.length > 0);
@@ -743,7 +774,7 @@ test('round completion requires remediation and due date for nonconformities', a
     assert.equal(draftJson.nonconformities[0].due_date, '2026-07-08');
     const round = db.prepare('SELECT id FROM evaluation_rounds WHERE ticket_id = ? AND round_no = 1').get(ticketInfo.lastInsertRowid);
     questions.filter((question) => question.requires_attachment).forEach((question) => {
-      const answer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_id = ?').get(round.id, question.id);
+      const answer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round.id, question.id);
       db.prepare(`
         INSERT INTO evaluation_attachments (answer_id, ticket_id, file_name, uploaded_by)
         VALUES (?, ?, ?, 'admin@masangroup.com')
@@ -909,8 +940,10 @@ test('submit to lead requires locked scoring and rejects clean passing assessmen
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, '\u0110ang x\u1eed l\u00fd');
     const questions = db.prepare(`
       SELECT q.id, q.allowed_scores, q.requires_attachment, q.is_critical_clause
-      FROM evaluation_questions q
-      WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
+      FROM question_items q
+      JOIN question_template_versions qv ON qv.id=q.question_template_version_id
+      WHERE qv.template_id = ? AND qv.version_no=1
+        AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
     `).all(template.id);
     const answers = Object.fromEntries(questions.map((question) => {
@@ -942,7 +975,7 @@ test('submit to lead requires locked scoring and rejects clean passing assessmen
     assert.equal(draftRes.status, 200, await draftRes.text());
     const round = db.prepare('SELECT id FROM evaluation_rounds WHERE ticket_id = ? AND round_no = 1').get(ticketInfo.lastInsertRowid);
     questions.filter((question) => question.requires_attachment).forEach((question) => {
-      const answer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_id = ?').get(round.id, question.id);
+      const answer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round.id, question.id);
       db.prepare(`
         INSERT INTO evaluation_attachments (answer_id, ticket_id, file_name, uploaded_by)
         VALUES (?, ?, ?, 'admin@masangroup.com')
@@ -1029,18 +1062,25 @@ test('correction extension records required fields, due-date history, and workfl
     const round2 = db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 2, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoan thanh', 'admin@masangroup.com');
     const question = db.prepare(`
       SELECT q.id, q.question_code, q.category
-      FROM evaluation_questions q
-      WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
+      FROM question_items q
+      JOIN question_template_versions qv ON qv.id=q.question_template_version_id
+      WHERE qv.template_id = ? AND qv.version_no=1
+        AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
       LIMIT 1
     `).get(template.id);
+    const extensionAnswer = db.prepare(`INSERT INTO evaluation_answers
+      (round_id, question_item_id, score, comment, calculated_score, answered_by)
+      VALUES (?, ?, 'D', 'Still open', 0, 'admin@masangroup.com')`)
+      .run(round2.lastInsertRowid, question.id);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity_content,
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content,
         remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, ?, ?, 'Still open', 'Fix remaining issue', '2026-08-01', 'D', 'OPEN', 'admin@masangroup.com')
-    `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, question.id, question.question_code, question.category);
+    `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, extensionAnswer.lastInsertRowid,
+      question.question_code, question.category);
 
     const appInfo = await startApp(evaluationsRouter);
     server = appInfo.server;
@@ -1138,22 +1178,13 @@ test('round 2 can be locked then optionally submitted to lead approval', async (
       INSERT INTO question_templates (template_code, template_name, active)
       VALUES ('R25', 'Prompt 25 Test', 1)
     `).run();
-    const q1 = db.prepare(`
-      INSERT INTO evaluation_questions (template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active)
-      VALUES (?, 'CHUNG', 'LARGE', 'R25-01', 'Requirement one', 'Quality', 1, 1)
-    `).run(templateInfo.lastInsertRowid).lastInsertRowid;
-    const q2 = db.prepare(`
-      INSERT INTO evaluation_questions (template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, is_critical_clause, active)
-      VALUES (?, 'CHUNG', 'LARGE', 'R25-02', 'Requirement two', 'Quality', 2, 1, 1)
-    `).run(templateInfo.lastInsertRowid).lastInsertRowid;
-    const q3 = db.prepare(`
-      INSERT INTO evaluation_questions (template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active)
-      VALUES (?, 'CHUNG', 'LARGE', 'R25-03', 'Requirement three', 'Quality', 3, 1)
-    `).run(templateInfo.lastInsertRowid).lastInsertRowid;
-    const q4 = db.prepare(`
-      INSERT INTO evaluation_questions (template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active)
-      VALUES (?, 'CHUNG', 'LARGE', 'R25-04', 'Requirement four', 'Quality', 4, 1)
-    `).run(templateInfo.lastInsertRowid).lastInsertRowid;
+    const canonicalQuestions = insertCanonicalQuestionSet(db, templateInfo.lastInsertRowid, [
+      { code: 'R25-01', text: 'Requirement one', category: 'Quality', order: 1 },
+      { code: 'R25-02', text: 'Requirement two', category: 'Quality', order: 2, critical: true },
+      { code: 'R25-03', text: 'Requirement three', category: 'Quality', order: 3 },
+      { code: 'R25-04', text: 'Requirement four', category: 'Quality', order: 4 },
+    ]);
+    const [q1, q2, q3, q4] = canonicalQuestions.ids;
     const ticketInfo = db.prepare(`
       INSERT INTO evaluation_tickets (
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id,
@@ -1281,8 +1312,10 @@ test('round 1 approval with nonconformities enters correction state before final
     const template = db.prepare("SELECT id FROM question_templates WHERE template_code = 'BM04'").get();
     const questions = db.prepare(`
       SELECT q.id, q.question_code, q.category
-      FROM evaluation_questions q
-      WHERE q.template_id = ? AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
+      FROM question_items q
+      JOIN question_template_versions qv ON qv.id=q.question_template_version_id
+      WHERE qv.template_id = ? AND qv.version_no=1
+        AND q.facility_type = 'CHUNG' AND q.supplier_scale = 'LARGE'
       ORDER BY q.order_index, q.question_code
       LIMIT 2
     `).all(template.id);
@@ -1307,19 +1340,22 @@ test('round 1 approval with nonconformities enters correction state before final
       VALUES (?, 1, 'Hoàn thành', datetime('now'), 'admin@masangroup.com', 72, 'Dat co dieu kien', 'B')
     `).run(ticketInfo.lastInsertRowid);
     db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, 'B', 'Needs correction', 75, 'admin@masangroup.com')
     `).run(round1.lastInsertRowid, questions[0].id);
     db.prepare(`
-      INSERT INTO evaluation_answers (round_id, question_id, score, comment, calculated_score, answered_by)
+      INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
       VALUES (?, ?, 'A', '', 100, 'admin@masangroup.com')
     `).run(round1.lastInsertRowid, questions[1].id);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, ?, ?, 'Needs correction', 'B', 'OPEN', 'admin@masangroup.com')
-    `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid, questions[0].id, questions[0].question_code, questions[0].category);
+    `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid,
+      db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
+        .pluck().get(round1.lastInsertRowid, questions[0].id),
+      questions[0].question_code, questions[0].category);
     db.prepare(`
       INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, status, comment)
       VALUES (?, 'TBP', 'TBP', 'PENDING', ?)
@@ -1918,14 +1954,10 @@ test('round 2 completion updates corrected result fields and next evaluation pla
       INSERT INTO question_templates (template_code, template_name, active)
       VALUES ('R14', 'Prompt 14 Test', 1)
     `).run();
-    const q1 = db.prepare(`
-      INSERT INTO evaluation_questions (template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active)
-      VALUES (?, 'CHUNG', 'LARGE', 'R14-01', 'Requirement one', 'Legal', 1, 1)
-    `).run(templateInfo.lastInsertRowid).lastInsertRowid;
-    const q2 = db.prepare(`
-      INSERT INTO evaluation_questions (template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active)
-      VALUES (?, 'CHUNG', 'LARGE', 'R14-02', 'Requirement two', 'Quality', 2, 1)
-    `).run(templateInfo.lastInsertRowid).lastInsertRowid;
+    const [q1, q2] = insertCanonicalQuestionSet(db, templateInfo.lastInsertRowid, [
+      { code: 'R14-01', text: 'Requirement one', category: 'Legal', order: 1 },
+      { code: 'R14-02', text: 'Requirement two', category: 'Quality', order: 2 },
+    ]).ids;
     const ticketInfo = db.prepare(`
       INSERT INTO evaluation_tickets (
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id,

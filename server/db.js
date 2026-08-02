@@ -9,7 +9,6 @@ const packageInfo = require('../package.json');
 const { DB_PATH, MIGRATIONS_DIR, DEFAULT_SEED_PATH } = require('./config/paths');
 const { migrateDatabase } = require('./database/migrationRunner');
 const { ROLES } = require('./domain/roles');
-const evaluationMock = require('./mock/evaluations');
 const { seedCriteriaWorkbook, verifyCriteriaSeedSource } = require('./services/criteriaImporter');
 const { QuestionVersionService } = require('./services/QuestionVersionService');
 const { ensureDefaultReportTemplates, REPORT_TYPE_CODES } = require('./services/reporting');
@@ -77,9 +76,6 @@ function runLegacyForwardRepairCompatibilityAdapter(schema) {
     ['ensureReportArtifactExportColumns', ensureReportArtifactExportColumns],
     ['ensureQuestionTemplates', ensureQuestionTemplates],
     ['ensureDoc3Criteria', ensureDoc3Criteria],
-    ['ensureDefaultEvaluationQuestions', ensureDefaultEvaluationQuestions],
-    ['ensureScoringCategoryCodes', ensureScoringCategoryCodes],
-    ['ensureEliminationQuestionEvidencePolicy', ensureEliminationQuestionEvidencePolicy],
     ['ensureQuestionTemplateVersions', ensureQuestionTemplateVersions],
     ['ensureDefaultReportTemplates', () => ensureDefaultReportTemplates(db)],
     ['ensureCanonicalReportTemplateVersions', () => new ReportTemplateVersionRepository(db).ensureCanonicalDefinitions()],
@@ -91,9 +87,6 @@ function runStartupDataSeeds() {
   executeCompatibilitySteps([
     ['ensureQuestionTemplates', ensureQuestionTemplates],
     ['ensureDoc3Criteria', ensureDoc3Criteria],
-    ['ensureDefaultEvaluationQuestions', ensureDefaultEvaluationQuestions],
-    ['ensureScoringCategoryCodes', ensureScoringCategoryCodes],
-    ['ensureEliminationQuestionEvidencePolicy', ensureEliminationQuestionEvidencePolicy],
     ['ensureQuestionTemplateVersions', ensureQuestionTemplateVersions],
     ['ensureDefaultReportTemplates', () => ensureDefaultReportTemplates(db)],
     ['ensureCanonicalReportTemplateVersions', () => new ReportTemplateVersionRepository(db).ensureCanonicalDefinitions()],
@@ -163,7 +156,9 @@ function ensureDoc3Criteria() {
     const published = tableExists('question_template_versions')
       ? db.prepare("SELECT COUNT(*) AS n FROM question_template_versions WHERE status IN ('PUBLISHED', 'RETIRED')").get().n
       : 0;
-    const existingQuestions = db.prepare('SELECT COUNT(*) AS n FROM evaluation_questions').get().n;
+    const existingQuestions = tableExists('question_items')
+      ? db.prepare('SELECT COUNT(*) AS n FROM question_items').get().n
+      : 0;
     if (published > 0 || existingQuestions > 0) return;
     const seeded = seedCriteriaWorkbook(db, sourcePath, { expectedChecksum: manifest.sha256 });
     questionSeedReadiness = {
@@ -300,7 +295,7 @@ function tableExists(tableName) {
 
 function ensureQuestionTemplateVersions() {
   if (!tableExists('question_template_versions')) return;
-  const reconciliation = new QuestionVersionService(db).ensureLegacyV1();
+  const reconciliation = new QuestionVersionService(db).ensureCanonicalV1();
   if (reconciliation.status !== 'CLEAN') {
     const error = new Error('question_version_reconciliation_failed');
     error.reconciliation_id = reconciliation.id;
@@ -603,44 +598,6 @@ function ensureQuestionTemplates() {
   insert.run('BM04', 'BM04: Thực phẩm sơ chế, chế biến', 'Thực phẩm sơ chế, chế biến');
 }
 
-function ensureDefaultEvaluationQuestions() {
-  const existing = db.prepare('SELECT COUNT(*) AS n FROM evaluation_questions').get();
-  if (existing.n > 0) return;
-  const template = db.prepare("SELECT id FROM question_templates WHERE template_code = 'BM01'").get();
-  if (!template) return;
-  const insert = db.prepare(`
-    INSERT INTO evaluation_questions (
-      template_id, facility_type, supplier_scale, question_code, question_text, category,
-      is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-      weight, order_index, active
-    )
-    VALUES (?, 'ALL', 'ALL', ?, ?, ?, ?, ?, ?, ?, 1, ?, 1)
-  `);
-  evaluationMock.questions.forEach((q, index) => {
-    const isElimination = q.clause_type === 'exclusion' ? 1 : 0;
-    insert.run(
-      template.id,
-      q.question_id,
-      q.text,
-      q.section_name,
-      isElimination,
-      q.is_critical ? 1 : 0,
-      0,
-      isElimination ? 'A/D/NA' : 'A/B/C/D/NA',
-      index + 1
-    );
-  });
-}
-
-function ensureEliminationQuestionEvidencePolicy() {
-  db.prepare(`
-    UPDATE evaluation_questions
-    SET requires_attachment = 0,
-        updated_at = COALESCE(updated_at, datetime('now'))
-    WHERE is_elimination_clause = 1
-      AND requires_attachment != 0
-  `).run();
-}
 initSchema();
 const approvalAssignmentService = new ApprovalAssignmentService(db, authorizationService);
 const policyService = new PolicyService(authorizationService, approvalAssignmentService);
@@ -716,7 +673,7 @@ function logAccess({ email, action, details, ip, ua }) {
 function ensureScoringCategoryCodes() {
   if (!tableExists('scoring_policy_reconciliations')) return;
   db.exec(`
-    UPDATE evaluation_questions SET
+    UPDATE question_items SET
       category_code = CASE category
         WHEN 'Hồ sơ pháp lý' THEN 'LEGAL_RECORDS'
         WHEN 'Kiểm soát ATVSTP' THEN 'FOOD_SAFETY_CONTROL'
@@ -731,7 +688,7 @@ function ensureScoringCategoryCodes() {
     SELECT 'RUN-19-RUNTIME', 'EVALUATION_QUESTION', CAST(q.id AS TEXT),
       q.category_label_snapshot, q.category_code,
       CASE WHEN q.category_code IS NULL THEN 'UNMAPPED' ELSE 'CLEAN' END
-    FROM evaluation_questions q
+    FROM question_items q
     WHERE NOT EXISTS (
       SELECT 1 FROM scoring_policy_reconciliations r
       WHERE r.migration_id='RUN-19-RUNTIME'

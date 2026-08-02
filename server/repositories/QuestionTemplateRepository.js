@@ -39,46 +39,53 @@ class QuestionTemplateRepository {
           SUM(CASE WHEN q.is_critical_clause = 1 THEN 1 ELSE 0 END) AS critical_count,
           MIN(q.order_index) AS first_order_index,
           MAX(q.order_index) AS last_order_index
-        FROM evaluation_questions q
-        JOIN question_templates t ON t.id = q.template_id
+        FROM question_items q
+        JOIN question_template_versions v ON v.id = q.question_template_version_id
+        JOIN question_templates t ON t.id = v.template_id
+        JOIN question_template_assignments a ON a.question_template_version_id=v.id
+          AND a.facility_type=q.facility_type AND a.supplier_scale=q.supplier_scale
+          AND a.active=1 AND a.is_default=1
         WHERE q.active = 1 AND t.active = 1
         GROUP BY t.id, t.template_code, t.template_name, q.facility_type, q.supplier_scale
         ORDER BY t.template_code, q.facility_type, q.supplier_scale
       `),
-      getQuestionByTemplate: db.prepare('SELECT * FROM evaluation_questions WHERE id = ? AND template_id = ?'),
+      getQuestionByTemplate: db.prepare(`SELECT q.*, v.template_id
+        FROM question_items q JOIN question_template_versions v ON v.id=q.question_template_version_id
+        WHERE q.id=? AND v.template_id=?`),
       insertQuestion: db.prepare(`
-        INSERT INTO evaluation_questions (
-          template_id, facility_type, supplier_scale, question_code, question_text, category,
+        INSERT INTO question_items (
+          question_template_version_id, facility_type, supplier_scale, question_code, question_text, category,
           category_code, category_label_snapshot,
           is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
           weight, order_index, active
         )
         VALUES (
-          @template_id, @facility_type, @supplier_scale, @question_code, @question_text, @category,
+          @question_template_version_id, @facility_type, @supplier_scale, @question_code, @question_text, @category,
           @category_code, @category_label_snapshot,
           @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
           @weight, @order_index, @active
         )
       `),
       updateQuestion: db.prepare(`
-        UPDATE evaluation_questions
+        UPDATE question_items
         SET facility_type=@facility_type, supplier_scale=@supplier_scale, question_code=@question_code,
             question_text=@question_text, category=@category,
             category_code=@category_code, category_label_snapshot=@category_label_snapshot,
             is_elimination_clause=@is_elimination_clause, is_critical_clause=@is_critical_clause,
             requires_attachment=@requires_attachment, allowed_scores=@allowed_scores,
-            weight=@weight, order_index=@order_index, active=@active, updated_at=datetime('now')
-        WHERE id=@id AND template_id=@template_id
+            weight=@weight, order_index=@order_index, active=@active
+        WHERE id=@id AND question_template_version_id=@question_template_version_id
       `),
       getQuestionDetail: db.prepare(`
-        SELECT q.*, t.template_code
-        FROM evaluation_questions q
-        JOIN question_templates t ON t.id = q.template_id
+        SELECT q.*, v.template_id, t.template_code
+        FROM question_items q
+        JOIN question_template_versions v ON v.id=q.question_template_version_id
+        JOIN question_templates t ON t.id = v.template_id
         WHERE q.id = ?
       `),
       deactivateQuestion: db.prepare(`
-        UPDATE evaluation_questions SET active = 0, updated_at = datetime('now')
-        WHERE id = ? AND template_id = ?
+        UPDATE question_items SET active = 0
+        WHERE id = ? AND question_template_version_id = ?
       `),
     };
   }
@@ -104,7 +111,12 @@ class QuestionTemplateRepository {
   }
 
   listQuestions({ templateId, includeInactive, facilityType, supplierScale }) {
-    const where = ['q.template_id = @template_id'];
+    const where = [`q.question_template_version_id = (
+      SELECT v.id FROM question_template_versions v
+      WHERE v.template_id=@template_id
+      ORDER BY CASE v.status WHEN 'DRAFT' THEN 0 WHEN 'PUBLISHED' THEN 1 WHEN 'IN_REVIEW' THEN 2 ELSE 3 END,
+               v.version_no DESC LIMIT 1
+    )`];
     const params = { template_id: templateId };
     if (!includeInactive) where.push('q.active = 1');
     if (facilityType) {
@@ -120,9 +132,10 @@ class QuestionTemplateRepository {
     let statement = this.questionListStatementCache.get(cacheKey);
     if (!statement) {
       statement = this.db.prepare(`
-        SELECT q.*, t.template_code
-        FROM evaluation_questions q
-        JOIN question_templates t ON t.id = q.template_id
+        SELECT q.*, v.template_id, t.template_code
+        FROM question_items q
+        JOIN question_template_versions v ON v.id=q.question_template_version_id
+        JOIN question_templates t ON t.id = v.template_id
         WHERE ${where.join(' AND ')}
         ORDER BY q.active DESC, q.facility_type, q.supplier_scale, q.order_index, q.question_code
       `);
@@ -136,11 +149,19 @@ class QuestionTemplateRepository {
   }
 
   insertQuestion(payload) {
-    return this.statements.insertQuestion.run(this.withCategoryIdentity(payload));
+    const version = this.draftVersion(payload.template_id);
+    return this.statements.insertQuestion.run(this.withCategoryIdentity({
+      ...payload,
+      question_template_version_id: version.id,
+    }));
   }
 
   updateQuestion(payload) {
-    return this.statements.updateQuestion.run(this.withCategoryIdentity(payload));
+    const version = this.draftVersion(payload.template_id);
+    return this.statements.updateQuestion.run(this.withCategoryIdentity({
+      ...payload,
+      question_template_version_id: version.id,
+    }));
   }
 
   withCategoryIdentity(payload) {
@@ -156,7 +177,22 @@ class QuestionTemplateRepository {
   }
 
   deactivateQuestion(questionId, templateId) {
-    return this.statements.deactivateQuestion.run(questionId, templateId);
+    return this.statements.deactivateQuestion.run(questionId, this.draftVersion(templateId).id);
+  }
+
+  draftVersion(templateId) {
+    let row = this.db.prepare(`SELECT id FROM question_template_versions
+      WHERE template_id=? AND status='DRAFT' ORDER BY version_no DESC LIMIT 1`).get(templateId);
+    if (!row) {
+      const versionNo = this.db.prepare(`SELECT COALESCE(MAX(version_no),0)+1 AS n
+        FROM question_template_versions WHERE template_id=?`).pluck().get(templateId);
+      const info = this.db.prepare(`INSERT INTO question_template_versions
+        (template_id, version_no, status, version_note, lock_version, created_by)
+        VALUES (?, ?, 'DRAFT', 'Compatibility question editor draft', 1, 'compatibility')`)
+        .run(templateId, versionNo);
+      row = { id: Number(info.lastInsertRowid) };
+    }
+    return row;
   }
 }
 
