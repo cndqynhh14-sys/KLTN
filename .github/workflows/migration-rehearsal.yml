@@ -44,6 +44,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Rehearse migrations, startup, auth and restore
         run: >-
           npm run rehearsal:stage4 --
@@ -51,6 +54,7 @@ jobs:
           --output-dir artifacts/migration-rehearsal/${{ github.run_id }}
 
       - name: Reject database bytes from publishable output
+        if: always()
         shell: bash
         run: |
           if find artifacts/migration-rehearsal -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' \) | grep -q .; then
@@ -59,11 +63,16 @@ jobs:
           fi
 
       - name: Upload sanitized rehearsal report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: migration-rehearsal-${{ github.run_id }}
           path: |
             artifacts/migration-rehearsal/${{ github.run_id }}/report.json
             artifacts/migration-rehearsal/${{ github.run_id }}/report.md
+            artifacts/uat-runs/**/run-meta.json
+            artifacts/uat-runs/**/report.json
+            artifacts/uat-runs/**/report.md
+            artifacts/uat-runs/**/report.junit.xml
           retention-days: 14
           if-no-files-found: error
