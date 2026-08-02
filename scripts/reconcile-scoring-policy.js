@@ -42,8 +42,8 @@ function main() {
     },
     published_default: published,
     categories: {
-      evaluation_question_count: count('SELECT COUNT(*) AS n FROM evaluation_questions'),
-      evaluation_question_unmapped_count: count("SELECT COUNT(*) AS n FROM evaluation_questions WHERE category_code IS NULL OR trim(category_code)=''"),
+      question_item_count: count('SELECT COUNT(*) AS n FROM question_items'),
+      question_item_unmapped_count: count("SELECT COUNT(*) AS n FROM question_items WHERE category_code IS NULL OR trim(category_code)=''"),
       version_item_count: count('SELECT COUNT(*) AS n FROM question_items'),
       version_item_unmapped_count: count("SELECT COUNT(*) AS n FROM question_items WHERE category_code IS NULL OR trim(category_code)=''"),
     },

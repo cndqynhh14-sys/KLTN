@@ -457,8 +457,7 @@ function mapTicket(row, displayNames = new Map()) {
 
 function mapQuestion(row) {
   return {
-    question_item_id: row.version_item_id || row.question_item_id || null,
-    legacy_question_id: String(row.id),
+    question_item_id: row.id || row.version_item_id || row.question_item_id || null,
     question_id: String(row.id),
     db_id: row.id,
     template_id: row.template_id,
@@ -466,7 +465,7 @@ function mapQuestion(row) {
     question_template_version_id: row.question_template_version_id,
     question_template_version_no: row.version_no || row.question_template_version_no,
     question_template_version_checksum: row.version_checksum || row.question_template_version_checksum,
-    version_item_id: row.version_item_id || null,
+    version_item_id: row.id || row.version_item_id || null,
     facility_type: row.facility_type,
     supplier_scale: row.supplier_scale,
     question_code: row.question_code,
@@ -485,9 +484,14 @@ function mapQuestion(row) {
 
 function activeQuestions() {
   return db.prepare(`
-    SELECT q.*, t.template_code
-    FROM evaluation_questions q
-    JOIN question_templates t ON t.id = q.template_id
+    SELECT q.*, v.template_id, v.version_no, v.checksum AS version_checksum,
+      q.id AS version_item_id, t.template_code
+    FROM question_items q
+    JOIN question_template_versions v ON v.id=q.question_template_version_id
+    JOIN question_templates t ON t.id = v.template_id
+    JOIN question_template_assignments a ON a.question_template_version_id=v.id
+      AND a.facility_type=q.facility_type AND a.supplier_scale=q.supplier_scale
+      AND a.active=1 AND a.is_default=1
     WHERE q.active = 1 AND t.active = 1
     ORDER BY t.template_code, q.facility_type, q.supplier_scale, q.order_index, q.question_code
   `).all().map(mapQuestion);
@@ -812,7 +816,7 @@ function categorySummaryForTicket(ticketId) {
       AVG(a.calculated_score) AS average_score
     FROM evaluation_answers a
     JOIN evaluation_rounds er ON er.id = a.round_id
-    JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
+    JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_item_id
     WHERE er.ticket_id = ?
       AND er.round_no = (
         SELECT MAX(round_no)
@@ -847,16 +851,16 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
     SELECT * FROM evaluation_nonconformities
     WHERE ticket_id = ? AND round_id = ?
   `).all(ticket.id, round.id);
-  const existingByQuestion = new Map(existingRows.map((row) => [String(row.question_id), row]));
-  const activeQuestionIds = new Set();
+  const existingByAnswer = new Map(existingRows.map((row) => [String(row.evaluation_answer_id), row]));
+  const activeAnswerIds = new Set();
   const insert = db.prepare(`
     INSERT INTO evaluation_nonconformities (
-      ticket_id, round_id, question_id, clause_code, category,
+      ticket_id, round_id, clause_code, category,
       due_date, severity, status, created_by, updated_by,
       evaluation_answer_id, nonconformity_content, remediation_content
     )
     VALUES (
-      @ticket_id, @round_id, @question_id, @clause_code, @category,
+      @ticket_id, @round_id, @clause_code, @category,
       @due_date, @severity, @status, @created_by, @updated_by,
       @evaluation_answer_id, @nonconformity_content, @remediation_content
     )
@@ -880,13 +884,13 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
     if (!['B', 'C', 'D'].includes(answer.score)) return;
     const question = byQuestionId.get(String(questionId));
     if (!question) return;
-    activeQuestionIds.add(String(questionId));
-    const existing = existingByQuestion.get(String(questionId));
+    if (!answer.answer_id) return;
+    activeAnswerIds.add(String(answer.answer_id));
+    const existing = existingByAnswer.get(String(answer.answer_id));
     const payload = {
       id: existing?.id,
       ticket_id: ticket.id,
       round_id: round.id,
-      question_id: parseInt(questionId, 10),
       clause_code: question.question_code,
       category: question.section_name,
       nonconformity_content: String(answer.comment || answer.note || question.text || '').trim(),
@@ -903,7 +907,7 @@ function syncRoundNonconformities(ticket, round, questions, answers, userEmail) 
   });
 
   existingRows.forEach((row) => {
-    if (!activeQuestionIds.has(String(row.question_id))) {
+    if (!activeAnswerIds.has(String(row.evaluation_answer_id))) {
       db.prepare('DELETE FROM evaluation_nonconformities WHERE id = ?').run(row.id);
     }
   });

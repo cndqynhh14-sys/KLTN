@@ -210,7 +210,6 @@ class EvaluationScoringService {
       acc[String(row.question_id)] = {
         answer_id: row.id,
         question_item_id: row.resolved_question_item_id || row.question_item_id || null,
-        legacy_question_id: row.question_id,
         score: row.score || '',
         note: row.comment || '',
         comment: row.comment || '',

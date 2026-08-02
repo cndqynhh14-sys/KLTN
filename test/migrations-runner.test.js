@@ -61,7 +61,7 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
     const first = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'test-version' });
     assert.deepEqual(first.results.map((row) => row.id), projectMigrationIds);
     assert.ok(first.results.every((row) => row.state === 'applied' && row.executionMode === 'applied'));
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 62);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 61);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(
         db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),

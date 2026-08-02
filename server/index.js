@@ -82,7 +82,7 @@ function scoringPolicyReadiness() {
     LIMIT 1
   `).get();
   const unmapped = db.prepare(`
-    SELECT COUNT(*) AS n FROM evaluation_questions
+    SELECT COUNT(*) AS n FROM question_items
     WHERE category_code IS NULL OR trim(category_code)=''
   `).get().n;
   const status = publishedDefault && unmapped === 0 ? 'ready' : 'degraded';

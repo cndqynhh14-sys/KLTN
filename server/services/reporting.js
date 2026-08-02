@@ -547,7 +547,7 @@ function buildReportContext(db, ticket, options = {}) {
     FROM evaluation_answers a
     JOIN evaluation_rounds er ON er.id = a.round_id
     LEFT JOIN question_items qi ON qi.id = a.question_item_id
-    LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_id
+    LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = er.ticket_id AND q.id = a.question_item_id
     WHERE a.round_id = ?
     ORDER BY COALESCE(qi.order_index, q.order_index), COALESCE(qi.question_code, q.question_code)
   `).all(latestRound.id) : [];
@@ -559,7 +559,7 @@ function buildReportContext(db, ticket, options = {}) {
     FROM evaluation_nonconformities nc
     LEFT JOIN evaluation_answers a ON a.id = nc.evaluation_answer_id
     LEFT JOIN question_items qi ON qi.id = a.question_item_id
-    LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = nc.question_id
+    LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = a.question_item_id
     WHERE nc.ticket_id = @ticket_id AND (@round_id IS NULL OR nc.round_id = @round_id)
     ORDER BY COALESCE(q.order_index, 999999), nc.clause_code, nc.created_at
   `).all({ ticket_id: ticket.id, round_id: latestRound.id || null }).map((row) => ({

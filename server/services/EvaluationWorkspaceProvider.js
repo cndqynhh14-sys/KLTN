@@ -78,10 +78,9 @@ class EvaluationWorkspaceProvider {
         (SELECT COUNT(*) FROM evaluation_answers a
           JOIN evaluation_rounds r ON r.id=a.round_id
           LEFT JOIN question_items qi ON qi.id=a.question_item_id
-          LEFT JOIN evaluation_questions q ON q.id=a.question_id
           WHERE r.ticket_id=t.id
             AND r.round_no=COALESCE(NULLIF(t.current_round_no,0), NULLIF(t.completed_round,0), 1)
-            AND COALESCE(qi.is_critical_clause,q.is_critical_clause,0)=1 AND a.score='D') AS failed_critical_count
+            AND COALESCE(qi.is_critical_clause,0)=1 AND a.score='D') AS failed_critical_count
       FROM evaluation_tickets t
       WHERE t.is_deleted=0
     `).all();

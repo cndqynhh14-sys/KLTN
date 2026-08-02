@@ -37,6 +37,7 @@
     "scoring-policy:reconcile": "node scripts/reconcile-scoring-policy.js",
     "stage4:parity": "node scripts/check-stage4-parity.js",
     "stage4b:parity": "node scripts/check-stage4b-parity.js",
+    "stage4c:parity": "node scripts/check-stage4c-parity.js",
     "evidence:baseline": "node scripts/run-with-evidence.js baseline",
     "evidence:run": "node scripts/run-with-evidence.js run",
     "evidence:test": "node scripts/run-with-evidence.js test",

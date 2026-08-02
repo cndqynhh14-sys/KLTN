@@ -147,20 +147,25 @@ test('evaluation summary route exports filtered rows using template columns and 
       INSERT INTO question_templates (template_code, template_name, active)
       VALUES ('SUMT', 'Summary Template', 1)
     `).run();
+    const version = db.prepare(`INSERT INTO question_template_versions
+      (template_id, version_no, status, checksum, lock_version, created_by)
+      VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(template.lastInsertRowid, 'e'.repeat(64));
     const insertQuestion = db.prepare(`
-      INSERT INTO evaluation_questions (
-        template_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active
+      INSERT INTO question_items (
+        question_template_version_id, facility_type, supplier_scale, question_code, question_text, category, order_index, active
       )
       VALUES (?, 'CHUNG', 'LARGE', ?, ?, ?, ?, 1)
     `);
-    const legalQuestion = insertQuestion.run(template.lastInsertRowid, 'LEGAL-01', 'Legal document complete', 'Hồ sơ pháp lý', 1).lastInsertRowid;
-    const qualityQuestion = insertQuestion.run(template.lastInsertRowid, 'QUALITY-01', 'Quality control records', 'Kiểm soát chất lượng', 2).lastInsertRowid;
+    const legalQuestion = insertQuestion.run(version.lastInsertRowid, 'LEGAL-01', 'Legal document complete', 'Hồ sơ pháp lý', 1).lastInsertRowid;
+    const qualityQuestion = insertQuestion.run(version.lastInsertRowid, 'QUALITY-01', 'Quality control records', 'Kiểm soát chất lượng', 2).lastInsertRowid;
+    db.prepare("UPDATE question_template_versions SET status='PUBLISHED' WHERE id=?").run(version.lastInsertRowid);
 
     const ticket = db.prepare(`
       INSERT INTO evaluation_tickets (
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_address, linked_facility_address,
         region, province, business_type, cmc_owner, cmc_head, contact_name, contact_email, contact_phone,
-        mch2, mch3, product_group, product_name, evaluation_type, template_id, facility_type, supplier_scale,
+        mch2, mch3, product_group, product_name, evaluation_type, template_id,
+        question_template_version_id, facility_type, supplier_scale,
         evaluation_method, evaluation_department,
         planned_date, actual_evaluation_date, current_status, current_round_no, completed_round,
         score_percent, grade_code, result_label, corrected_score_percent, corrected_grade_code,
@@ -170,7 +175,7 @@ test('evaluation summary route exports filtered rows using template columns and 
       VALUES (
         'TICKET-SUM', @supplier_id, 'NCC-SUM', 'Summary Supplier', 'Ticket Audit Site', 'Ticket Linked Site',
         'MN', 'TPHCM', 'Sản xuất', 'CMC Owner', 'CMC Head', 'Supplier Contact', 'contact@example.com', '0900000000',
-        'Thực phẩm tươi sống, chế biến', 'Rau củ', 'Rau', 'Cà rốt', 'Đánh giá định kỳ', @template_id, 'CHUNG', 'LARGE',
+        'Thực phẩm tươi sống, chế biến', 'Rau củ', 'Rau', 'Cà rốt', 'Đánh giá định kỳ', @template_id, @version_id, 'CHUNG', 'LARGE',
         'Onsite', 'QA NCC',
         '2026-04-19', '2026-04-20', 'Hoàn thành', 2, 2,
         72.5, 'C', 'Đạt mức cơ bản và tái đánh giá sau 6 tháng', 87.5, 'B',
@@ -180,6 +185,7 @@ test('evaluation summary route exports filtered rows using template columns and 
     `).run({
       supplier_id: supplier.lastInsertRowid,
       template_id: template.lastInsertRowid,
+      version_id: version.lastInsertRowid,
     });
     const insertTicketParticipant = db.prepare(`INSERT INTO evaluation_participants
       (ticket_id, user_id, display_name, participant_role, assigned_by)
@@ -190,15 +196,16 @@ test('evaluation summary route exports filtered rows using template columns and 
     const otherTicket = db.prepare(`
       INSERT INTO evaluation_tickets (
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id,
+        question_template_version_id,
         facility_type, supplier_scale, mch2, mch3, planned_date, current_status,
         current_round_no, completed_round, created_by
       )
       VALUES (
-        'TICKET-OTHER', @supplier_id, 'NCC-OTHER', 'Other Supplier', 'Đánh giá định kỳ', @template_id,
+        'TICKET-OTHER', @supplier_id, 'NCC-OTHER', 'Other Supplier', 'Đánh giá định kỳ', @template_id, @version_id,
         'CHUNG', 'LARGE', 'Thực phẩm công nghệ', 'Bánh kẹo', '2026-04-20', 'Hoàn thành',
         1, 1, 'admin@masangroup.com'
       )
-    `).run({ supplier_id: otherSupplier.lastInsertRowid, template_id: template.lastInsertRowid });
+    `).run({ supplier_id: otherSupplier.lastInsertRowid, template_id: template.lastInsertRowid, version_id: version.lastInsertRowid });
 
     const round1 = db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, status, total_score, final_result, classification)
@@ -212,24 +219,30 @@ test('evaluation summary route exports filtered rows using template columns and 
       INSERT INTO evaluation_rounds (ticket_id, round_no, status)
       VALUES (?, 1, 'Hoàn thành')
     `).run(otherTicket.lastInsertRowid);
+    const insertAnswer = db.prepare(`INSERT INTO evaluation_answers
+      (round_id, question_item_id, score, comment, calculated_score, answered_by)
+      VALUES (?, ?, ?, 'Summary finding', 75, 'admin@masangroup.com')`);
+    const legalAnswer = insertAnswer.run(round1.lastInsertRowid, legalQuestion, 'B').lastInsertRowid;
+    const qualityAnswer = insertAnswer.run(round1.lastInsertRowid, qualityQuestion, 'C').lastInsertRowid;
+    const round2Answer = insertAnswer.run(round2.lastInsertRowid, qualityQuestion, 'B').lastInsertRowid;
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, 'LEGAL-01', 'Hồ sơ pháp lý', 'Missing business license appendix', 'B', 'OPEN', 'admin@masangroup.com')
-    `).run(ticket.lastInsertRowid, round1.lastInsertRowid, legalQuestion);
+    `).run(ticket.lastInsertRowid, round1.lastInsertRowid, legalAnswer);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, 'QUALITY-01', 'Kiểm soát chất lượng', 'Quality control checklist incomplete', 'C', 'OPEN', 'admin@masangroup.com')
-    `).run(ticket.lastInsertRowid, round1.lastInsertRowid, qualityQuestion);
+    `).run(ticket.lastInsertRowid, round1.lastInsertRowid, qualityAnswer);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
-        ticket_id, round_id, question_id, clause_code, category, nonconformity_content, severity, status, created_by
+        ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
       VALUES (?, ?, ?, 'R2-ONLY', 'Kiểm soát chất lượng', 'Round 2 issue must not appear', 'B', 'OPEN', 'admin@masangroup.com')
-    `).run(ticket.lastInsertRowid, round2.lastInsertRowid, qualityQuestion);
+    `).run(ticket.lastInsertRowid, round2.lastInsertRowid, round2Answer);
 
     const appInfo = await startApp(evaluationsRouter);
     server = appInfo.server;

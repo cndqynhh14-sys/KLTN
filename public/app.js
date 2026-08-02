@@ -389,7 +389,6 @@ import { state } from './js/state.js';
       id: String(question.question_item_id || question.question_id || question.id),
       db_id: question.db_id || question.id,
       question_item_id: question.question_item_id || null,
-      legacy_question_id: question.legacy_question_id || question.question_id || question.id,
       template_id: question.template_id,
       template_code: question.template_code || '',
       question_template_version_id: question.question_template_version_id || null,
@@ -10776,7 +10775,7 @@ import { state } from './js/state.js';
     const existing = (state.questionVersionDetail?.items || []).find((item) => String(item.id) === String(state.questionEditorItemId));
     const elimination = $('question-editor-elimination').checked;
     const item = {
-      ...(existing || {}), legacy_question_id: existing?.legacy_question_id || null,
+      ...(existing || {}),
       facility_type: $('question-editor-facility').value.trim(), supplier_scale: $('question-editor-scale').value,
       variant_code: $('question-editor-variant').value.trim() || null, category_code: $('question-editor-category-code').value.trim() || null,
       category: $('question-editor-category').value.trim(), question_code: $('question-editor-code').value.trim(), clause_code: $('question-editor-clause').value.trim() || null,

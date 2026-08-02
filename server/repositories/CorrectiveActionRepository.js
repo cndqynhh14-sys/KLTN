@@ -29,7 +29,8 @@ class CorrectiveActionRepository {
           q.version_item_id AS question_item_id
         FROM evaluation_nonconformities nc
         LEFT JOIN evaluation_rounds er ON er.id = nc.round_id
-        LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = nc.question_id
+        LEFT JOIN evaluation_answers a ON a.id=nc.evaluation_answer_id
+        LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = a.question_item_id
         WHERE nc.ticket_id = ?
         ORDER BY COALESCE(er.round_no, 0), nc.category, nc.clause_code, nc.created_at
       `),

@@ -30,19 +30,33 @@ function fixture() {
   const templateId = db.prepare(`INSERT INTO question_templates
     (template_code, template_name, active)
     VALUES ('STAGE3-TEMPLATE', 'Stage 3 Template', 1)`).run().lastInsertRowid;
+  const versionId = db.prepare(`INSERT INTO question_template_versions
+    (template_id, version_no, status, checksum, lock_version, created_by)
+    VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(templateId, 'f'.repeat(64)).lastInsertRowid;
+  const questionItemId = db.prepare(`INSERT INTO question_items
+    (question_template_version_id, facility_type, supplier_scale, question_code,
+     question_text, category, order_index, active)
+    VALUES (?, 'CHUNG', 'LARGE', 'STAGE3-Q1', 'Canonical criterion', 'Quality', 1, 1)`)
+    .run(versionId).lastInsertRowid;
+  db.prepare("UPDATE question_template_versions SET status='PUBLISHED' WHERE id=?").run(versionId);
   const ticketId = db.prepare(`INSERT INTO evaluation_tickets
-    (ticket_code, supplier_id, evaluation_type, template_id, facility_type, supplier_scale,
+    (ticket_code, supplier_id, evaluation_type, template_id, question_template_version_id, facility_type, supplier_scale,
      current_status, assigned_specialist_id, created_by)
-    VALUES ('STAGE3-TICKET', ?, 'Periodic', ?, 'CHUNG', 'LARGE', 'Khởi tạo',
+    VALUES ('STAGE3-TICKET', ?, 'Periodic', ?, ?, 'CHUNG', 'LARGE', 'Khởi tạo',
       'lead@example.invalid', 'owner@example.invalid')`).run(
     supplierId,
     templateId,
+    versionId,
   ).lastInsertRowid;
   const roundId = db.prepare(`INSERT INTO evaluation_rounds
     (ticket_id, round_no, status)
     VALUES (?, 1, 'Khởi tạo')`).run(
     ticketId,
   ).lastInsertRowid;
+  const answerId = db.prepare(`INSERT INTO evaluation_answers
+    (round_id, question_item_id, score, comment, answered_by)
+    VALUES (?, ?, 'B', 'Canonical finding', 'owner@example.invalid')`)
+    .run(roundId, questionItemId).lastInsertRowid;
   db.prepare(`INSERT INTO evaluation_participants
     (ticket_id, user_id, display_name, participant_role)
     VALUES (?, 'owner@example.invalid', 'Canonical Owner', 'OWNER')`).run(ticketId);
@@ -61,11 +75,11 @@ function fixture() {
   db.prepare(`INSERT INTO evaluation_participants
     (round_id, display_name, participant_role, opening_meeting, closing_meeting)
     VALUES (?, 'Canonical Attendee', 'ATTENDEE', 1, 0)`).run(roundId);
-  return { db, roundId, ticketId };
+  return { answerId, db, roundId, ticketId };
 }
 
 test('participant reads use canonical rows exclusively without fallback mutation', () => {
-  const { db, roundId, ticketId } = fixture();
+  const { answerId, db, roundId, ticketId } = fixture();
   try {
     const repository = new EvaluationParticipantRepository(db);
     const ticket = repository.resolveTicketParticipants(ticketId);
@@ -87,12 +101,12 @@ test('participant reads use canonical rows exclusively without fallback mutation
 });
 
 test('nonconformity reads expose canonical content through response compatibility aliases', () => {
-  const { db, roundId, ticketId } = fixture();
+  const { answerId, db, roundId, ticketId } = fixture();
   try {
     const id = db.prepare(`INSERT INTO evaluation_nonconformities
-      (ticket_id, round_id, nonconformity_content, remediation_content, due_date, status, created_by)
-      VALUES (?, ?, 'Canonical finding', 'Canonical remediation',
-        '2026-12-31', 'OPEN', 'owner@example.invalid')`).run(ticketId, roundId).lastInsertRowid;
+      (ticket_id, round_id, evaluation_answer_id, nonconformity_content, remediation_content, due_date, status, created_by)
+      VALUES (?, ?, ?, 'Canonical finding', 'Canonical remediation',
+        '2026-12-31', 'OPEN', 'owner@example.invalid')`).run(ticketId, roundId, answerId).lastInsertRowid;
     const repository = new CorrectiveActionRepository(db);
     const row = repository.listNonconformitiesByTicket(ticketId).find((item) => item.id === id);
     assert.equal(row.nonconformity_content, 'Canonical finding');

@@ -269,7 +269,6 @@ function validateCanonicalRows(workbook, templateCode) {
       is_critical_clause: critical,
       is_elimination_clause: elimination,
       requires_attachment: elimination === 1 ? 0 : evidence,
-      legacy_question_id: null,
     };
     const key = stableKey(item);
     if (!errors.length && seen.has(key)) addError('question_code', 'question_item_duplicate');
@@ -293,7 +292,6 @@ function validateLegacyRows(buffer, templateCode) {
         category_code: legacyCategoryCode(item.category),
         question_code: questionCode,
         clause_code: questionCode,
-        legacy_question_id: null,
       };
       const errors = [];
       const addError = (column_name, error_code) => errors.push({

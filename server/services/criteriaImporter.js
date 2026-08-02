@@ -169,11 +169,6 @@ function tableExists(db, tableName) {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(tableName);
 }
 
-function hasQuestionCategoryMetadata(db) {
-  return db.prepare('PRAGMA table_info(evaluation_questions)').all()
-    .some((column) => column.name === 'category_code');
-}
-
 function recordScoringCategoryReconciliation(db, questionId, item) {
   // The controlled pre-ledger upgrade imports into RUN-01 before RUN-19 adds
   // reconciliation storage. Category metadata is populated after migration.
@@ -182,90 +177,110 @@ function recordScoringCategoryReconciliation(db, questionId, item) {
   const updated = db.prepare(`
     UPDATE scoring_policy_reconciliations SET
       category_label_snapshot=?, category_code=?, status=?, created_at=datetime('now')
-    WHERE migration_id='RUN-19-RUNTIME' AND source_type='EVALUATION_QUESTION' AND source_id=?
+      WHERE migration_id='RUN-28-RUNTIME' AND source_type='QUESTION_ITEM' AND source_id=?
   `).run(item.category_label_snapshot || item.category, item.category_code || null, status, String(questionId));
   if (updated.changes) return;
   db.prepare(`
     INSERT INTO scoring_policy_reconciliations (
       migration_id, source_type, source_id, category_label_snapshot, category_code, status
-    ) VALUES ('RUN-19-RUNTIME', 'EVALUATION_QUESTION', ?, ?, ?, ?)
+    ) VALUES ('RUN-28-RUNTIME', 'QUESTION_ITEM', ?, ?, ?, ?)
   `).run(String(questionId), item.category_label_snapshot || item.category, item.category_code || null, status);
 }
 
 function importCriteriaWorkbook(db, input = DEFAULT_CRITERIA_WORKBOOK) {
   const parsed = parseCriteriaWorkbook(input);
-  const upsert = db.prepare(hasQuestionCategoryMetadata(db) ? `
-    INSERT INTO evaluation_questions (
-      template_id, facility_type, supplier_scale, question_code, question_text, category,
-      category_code, category_label_snapshot,
-      is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-      weight, order_index, active, updated_at
-    )
-    VALUES (
-      @template_id, @facility_type, @supplier_scale, @question_code, @question_text, @category,
-      @category_code, @category_label_snapshot,
-      @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
-      @weight, @order_index, @active, datetime('now')
-    )
-    ON CONFLICT(template_id, facility_type, supplier_scale, question_code) DO UPDATE SET
-      question_text = excluded.question_text,
-      category = excluded.category,
-      category_code = excluded.category_code,
-      category_label_snapshot = excluded.category_label_snapshot,
-      is_elimination_clause = excluded.is_elimination_clause,
-      is_critical_clause = excluded.is_critical_clause,
-      requires_attachment = CASE
-        WHEN excluded.is_elimination_clause = 1 THEN 0
-        ELSE evaluation_questions.requires_attachment
-      END,
-      allowed_scores = excluded.allowed_scores,
-      weight = excluded.weight,
-      order_index = excluded.order_index,
-      active = 1,
-      updated_at = datetime('now')
-  ` : `
-    INSERT INTO evaluation_questions (
-      template_id, facility_type, supplier_scale, question_code, question_text, category,
-      is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-      weight, order_index, active, updated_at
-    )
-    VALUES (
-      @template_id, @facility_type, @supplier_scale, @question_code, @question_text, @category,
-      @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
-      @weight, @order_index, @active, datetime('now')
-    )
-    ON CONFLICT(template_id, facility_type, supplier_scale, question_code) DO UPDATE SET
-      question_text = excluded.question_text,
-      category = excluded.category,
-      is_elimination_clause = excluded.is_elimination_clause,
-      is_critical_clause = excluded.is_critical_clause,
-      requires_attachment = CASE
-        WHEN excluded.is_elimination_clause = 1 THEN 0
-        ELSE evaluation_questions.requires_attachment
-      END,
-      allowed_scores = excluded.allowed_scores,
-      weight = excluded.weight,
-      order_index = excluded.order_index,
-      active = 1,
-      updated_at = datetime('now')
-  `);
+  return { ...parsed, imported: upsertCanonicalCriteria(db, parsed, { seedOnly: false }) };
+}
 
-  const tx = db.transaction(() => {
+function canonicalVersionForTemplate(db, templateId, seedOnly) {
+  const existing = db.prepare(`
+    SELECT * FROM question_template_versions
+    WHERE template_id=? AND status='DRAFT'
+    ORDER BY version_no DESC LIMIT 1
+  `).get(templateId);
+  if (existing) return existing;
+  const next = db.prepare(`SELECT COALESCE(MAX(version_no), 0) + 1 AS n
+    FROM question_template_versions WHERE template_id=?`).get(templateId).n;
+  const info = db.prepare(`INSERT INTO question_template_versions (
+      template_id, version_no, status, version_note, effective_from,
+      lock_version, created_by, updated_by
+    ) VALUES (?, ?, 'DRAFT', 'Canonical seed', '1970-01-01', 1, 'seed', 'seed')`)
+    .run(templateId, next);
+  return db.prepare('SELECT * FROM question_template_versions WHERE id=?').get(info.lastInsertRowid);
+}
+
+function upsertCanonicalCriteria(db, parsed, { seedOnly }) {
+  const insertItem = db.prepare(`
+    INSERT INTO question_items (
+      question_template_version_id, variant_code, facility_type, supplier_scale,
+      category_code, category_label_snapshot, question_code, clause_code,
+      question_text, category, is_elimination_clause, is_critical_clause,
+      requires_attachment, allowed_scores, weight, order_index, active
+    ) VALUES (
+      @version_id, @variant_code, @facility_type, @supplier_scale,
+      @category_code, @category_label_snapshot, @question_code, @question_code,
+      @question_text, @category, @is_elimination_clause, @is_critical_clause,
+      @requires_attachment, @allowed_scores, @weight, @order_index, @active
+    )
+    ON CONFLICT(question_template_version_id, facility_type, supplier_scale, question_code)
+    DO UPDATE SET
+      question_text=excluded.question_text,
+      category=excluded.category,
+      category_code=excluded.category_code,
+      category_label_snapshot=excluded.category_label_snapshot,
+      is_elimination_clause=excluded.is_elimination_clause,
+      is_critical_clause=excluded.is_critical_clause,
+      requires_attachment=CASE WHEN excluded.is_elimination_clause=1 THEN 0
+        ELSE question_items.requires_attachment END,
+      allowed_scores=excluded.allowed_scores,
+      weight=excluded.weight,
+      order_index=excluded.order_index,
+      active=excluded.active
+  `);
+  return db.transaction(() => {
+    const versions = new Map();
     let imported = 0;
     for (const item of parsed.criteria) {
       const templateId = ensureTemplate(db, item.template_code);
-      upsert.run({ ...item, template_id: templateId });
-      const question = db.prepare(`
-        SELECT id FROM evaluation_questions
-        WHERE template_id=? AND facility_type=? AND supplier_scale=? AND question_code=?
-      `).get(templateId, item.facility_type, item.supplier_scale, item.question_code);
+      let version = versions.get(templateId);
+      if (!version) {
+        version = canonicalVersionForTemplate(db, templateId, seedOnly);
+        versions.set(templateId, version);
+      }
+      const variantCode = `${item.template_code}-${item.facility_type}-${item.supplier_scale}`.slice(0, 64);
+      insertItem.run({ ...item, version_id: version.id, variant_code: variantCode });
+      const question = db.prepare(`SELECT id FROM question_items
+        WHERE question_template_version_id=? AND facility_type=? AND supplier_scale=? AND question_code=?`)
+        .get(version.id, item.facility_type, item.supplier_scale, item.question_code);
       recordScoringCategoryReconciliation(db, question.id, item);
       imported += 1;
     }
+    for (const [templateId, version] of versions) {
+      db.prepare(`INSERT INTO question_template_variants (
+          question_template_version_id, facility_type, supplier_scale, source_sheet, active
+        )
+        SELECT ?, facility_type, supplier_scale, MIN(source_sheet), 1
+        FROM (SELECT facility_type, supplier_scale, NULL AS source_sheet FROM question_items WHERE question_template_version_id=?)
+        GROUP BY facility_type, supplier_scale
+        ON CONFLICT(question_template_version_id, facility_type, supplier_scale)
+        DO UPDATE SET active=1`).run(version.id, version.id);
+      if (seedOnly) {
+        const { QuestionVersionService } = require('./QuestionVersionService');
+        const checksum = new QuestionVersionService(db).checksumForVersion(version.id);
+        db.prepare(`UPDATE question_template_versions SET status='PUBLISHED', checksum=?,
+          submitted_at=datetime('now'), published_at=datetime('now'), submitted_by='seed', published_by='seed'
+          WHERE id=? AND status='DRAFT'`).run(checksum, version.id);
+        db.prepare(`INSERT INTO question_template_assignments (
+          template_id, question_template_version_id, facility_type, supplier_scale,
+          effective_from, is_default, active, created_by
+        ) SELECT ?, ?, facility_type, supplier_scale, '1970-01-01', 1, 1, 'seed'
+          FROM question_template_variants WHERE question_template_version_id=?
+          ON CONFLICT(question_template_version_id, facility_type, supplier_scale)
+          DO UPDATE SET is_default=1, active=1`).run(templateId, version.id, version.id);
+      }
+    }
     return imported;
-  });
-
-  return { ...parsed, imported: tx() };
+  })();
 }
 
 function inputBuffer(input) {
@@ -297,40 +312,9 @@ function seedCriteriaWorkbook(db, input, { expectedChecksum } = {}) {
     throw Object.assign(new Error(verified.code), { code: verified.code, readiness: verified });
   }
   const parsed = parseCriteriaWorkbook(inputBuffer(input));
-  const insert = db.prepare(hasQuestionCategoryMetadata(db) ? `
-    INSERT INTO evaluation_questions (
-      template_id, facility_type, supplier_scale, question_code, question_text, category,
-      category_code, category_label_snapshot,
-      is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-      weight, order_index, active, updated_at
-    ) VALUES (
-      @template_id, @facility_type, @supplier_scale, @question_code, @question_text, @category,
-      @category_code, @category_label_snapshot,
-      @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
-      @weight, @order_index, @active, datetime('now')
-    )
-  ` : `
-    INSERT INTO evaluation_questions (
-      template_id, facility_type, supplier_scale, question_code, question_text, category,
-      is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-      weight, order_index, active, updated_at
-    ) VALUES (
-      @template_id, @facility_type, @supplier_scale, @question_code, @question_text, @category,
-      @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
-      @weight, @order_index, @active, datetime('now')
-    )
-  `);
-  const imported = db.transaction(() => {
-    const existing = db.prepare('SELECT COUNT(*) AS n FROM evaluation_questions').get().n;
-    if (existing !== 0) throw Object.assign(new Error('criteria_seed_requires_empty_target'), { code: 'criteria_seed_requires_empty_target' });
-    let count = 0;
-    parsed.criteria.forEach((item) => {
-      const info = insert.run({ ...item, template_id: ensureTemplate(db, item.template_code) });
-      recordScoringCategoryReconciliation(db, info.lastInsertRowid, item);
-      count += 1;
-    });
-    return count;
-  })();
+  const existing = db.prepare('SELECT COUNT(*) AS n FROM question_items').get().n;
+  if (existing !== 0) throw Object.assign(new Error('criteria_seed_requires_empty_target'), { code: 'criteria_seed_requires_empty_target' });
+  const imported = upsertCanonicalCriteria(db, parsed, { seedOnly: true });
   return { ...parsed, imported, source_sha256: verified.actual_sha256, mode: 'INSERT_ONLY_EMPTY_DATABASE' };
 }
 

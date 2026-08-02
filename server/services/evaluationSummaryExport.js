@@ -276,7 +276,8 @@ function nonconformitiesByTicket(db, ticketIds) {
       q.order_index
     FROM evaluation_nonconformities nc
     JOIN evaluation_rounds er ON er.id = nc.round_id AND er.round_no = 1
-    LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = nc.question_id
+    LEFT JOIN evaluation_answers a ON a.id=nc.evaluation_answer_id
+    LEFT JOIN pinned_evaluation_questions q ON q.ticket_id = nc.ticket_id AND q.id = a.question_item_id
     WHERE nc.ticket_id IN (${placeholders})
       AND nc.status != 'CANCELLED'
     ORDER BY nc.ticket_id, COALESCE(q.order_index, 999999), nc.clause_code, nc.id
