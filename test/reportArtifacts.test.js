@@ -8,6 +8,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function freshDb(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -19,10 +20,9 @@ function freshDb(dbPath) {
 
 function createFixture(db) {
   const actor = 'run18-exporter@synthetic.invalid';
-  db.prepare(`
-    INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-    VALUES (?, 1, 'Admin', 1, 'RUN-18 Synthetic Exporter', 'RUN-18')
-  `).run(actor);
+  upsertCanonicalUser(db, {
+    email: actor, role: 'Admin', isAdmin: true, displayName: 'RUN-18 Synthetic Exporter',
+  });
   const supplier = db.prepare(`
     INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
     VALUES ('RUN18-NCC', 'RUN-18 Synthetic Supplier', 'ACTIVE', 'MANUAL')
@@ -371,10 +371,9 @@ test('RUN-18 history download rechecks auth/scope and verifies the same stored b
     const { actor, ticket } = createFixture(db);
     const deniedUser = 'run18-denied@synthetic.invalid';
     const { ROLES } = require('../server/domain/roles');
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-      VALUES (?, 0, ?, 1, 'RUN-18 Denied Scope', 'RUN-18')
-    `).run(deniedUser, ROLES.SPECIALIST);
+    upsertCanonicalUser(db, {
+      email: deniedUser, role: ROLES.SPECIALIST, displayName: 'RUN-18 Denied Scope',
+    });
     const dbModule = require('../server/db');
     const { LocalArtifactStorage } = require('../server/reporting/artifacts/LocalArtifactStorage');
     const { ReportExportJobService } = require('../server/reporting/artifacts/ReportExportJobService');
@@ -410,7 +409,7 @@ test('RUN-18 history download rechecks auth/scope and verifies the same stored b
       server = app.listen(0, '127.0.0.1', resolve);
     });
     const baseUrl = `http://127.0.0.1:${server.address().port}/report-exports`;
-    const actorToken = signToken({ email: actor }, 3600);
+    const actorToken = signToken({ email: actor, isAdmin: true, role: 'Admin' }, 3600);
     const deniedToken = signToken({ email: deniedUser }, 3600);
 
     assert.equal((await fetch(`${baseUrl}/${exported.id}/download`)).status, 401);

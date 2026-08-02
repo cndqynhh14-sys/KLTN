@@ -18,19 +18,17 @@ const {
 const { createAuthorizationAdminRouter } = require('../server/routes/authorizationAdmin');
 const { PERMISSIONS, ROLE_CODES, LEGACY_ROLE_TO_CODE } = require('../server/authorization/permissionCatalog');
 const { ROLES } = require('../server/domain/roles');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
 const ACTOR = 'run10-admin@example.invalid';
 const TARGET = 'run10-designer@example.invalid';
 
 function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
-  db.prepare(`INSERT INTO users
-    (email, is_admin, role, is_active, display_name, created_at, created_by)
-    VALUES (?, ?, ?, 1, 'SYNTHETIC RUN-10 USER', datetime('now'), 'fixture')`
-  ).run(email, isAdmin ? 1 : 0, role);
   const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
-  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
-    SELECT ?, id, 'MANUAL' FROM roles WHERE role_code = ?`).run(email, roleCode);
+  upsertCanonicalUser(db, {
+    email, roleCode, displayName: 'SYNTHETIC RUN-10 USER', createdBy: 'fixture',
+  });
   const scopes = roleCode === ROLE_CODES.QLCL_SPECIALIST
     ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
     : [['GLOBAL', null]];

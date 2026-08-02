@@ -7,6 +7,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const DB_MODULES = [
   '../server/db',
@@ -84,12 +85,7 @@ test('generic evaluation PATCH requires the active assignment for each approval 
         ['tbp-stage@example.invalid', ROLES.TBP],
         ['gdk-stage@example.invalid', ROLES.GDK],
       ];
-      const insertUser = db.prepare(`
-        INSERT INTO users (email, is_admin, role, is_active)
-        VALUES (?, 0, ?, 1)
-        ON CONFLICT(email) DO UPDATE SET role=excluded.role, is_admin=0, is_active=1
-      `);
-      users.forEach((row) => insertUser.run(...row));
+      users.forEach(([email, role]) => upsertCanonicalUser(db, { email, role }));
 
       const supplier = db.prepare(`
         INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
@@ -225,13 +221,8 @@ test('RUN-18 specialist reads the full supplier master while supplier writes rem
       const { ROLES } = require('../server/domain/roles');
       const { MCH2_VALUES, MCH3_BY_MCH2 } = require('../server/domain/merchandising');
       const { BUSINESS_TYPE_OPTIONS, PROVINCES_BY_REGION } = require('../server/domain/masterData');
-      db.prepare(`
-        INSERT INTO users (email, is_admin, role, is_active)
-        VALUES
-          ('supplier-owner@example.invalid', 0, @specialist, 1),
-          ('supplier-other@example.invalid', 0, @specialist, 1)
-        ON CONFLICT(email) DO UPDATE SET role=excluded.role, is_admin=0, is_active=1
-      `).run({ specialist: ROLES.SPECIALIST });
+      upsertCanonicalUser(db, { email: 'supplier-owner@example.invalid', role: ROLES.SPECIALIST });
+      upsertCanonicalUser(db, { email: 'supplier-other@example.invalid', role: ROLES.SPECIALIST });
       const token = signToken({
         email: 'supplier-owner@example.invalid',
         isAdmin: false,

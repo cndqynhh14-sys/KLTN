@@ -12,7 +12,7 @@ const Database = require('better-sqlite3');
 const { createRehearsalDatabase, isInside, THROUGH_ID } = require('./create-rehearsal-database');
 const { migrateDatabase, migrationStatus } = require('../server/database/migrationRunner');
 const { runParity: runStage4cParity } = require('./check-stage4c-parity');
-const { runParity: runStage4eParity } = require('./check-stage4e-parity');
+const { runParity: runStage5Parity } = require('./check-stage5-parity');
 const { LegacyReportArtifactReconciler } = require('../server/reporting/artifacts/LegacyReportArtifactReconciler');
 const { AuthorizationService } = require('../server/services/AuthorizationService');
 
@@ -198,7 +198,7 @@ function markdown(report) {
     row('Migration retry', `${report.migration.retry_pending_count} pending`),
     row('Stage 4C parity', report.parity.stage4c.status),
     row('Stage 4D provenance', report.parity.stage4d.status),
-    row('Stage 4E parity', report.parity.stage4e.status),
+    row('Stage 5 parity', report.parity.stage5.status),
     row('Integrity check', report.database.integrity_check),
     row('Foreign-key violations', report.database.foreign_key_violations),
     row('Startup health', report.startup.map((item) => item.health_status).join(', ')),
@@ -217,9 +217,9 @@ function markdown(report) {
 }
 
 async function runRehearsal({ outputDir, withUat = false }) {
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'qlcl-stage4-rehearsal-'));
-  const sourceDbPath = path.join(workspace, 'source-through-0027.db');
-  const backupPath = path.join(workspace, 'backup-through-0027.db');
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'qlcl-stage5-rehearsal-'));
+  const sourceDbPath = path.join(workspace, `source-through-${THROUGH_ID}.db`);
+  const backupPath = path.join(workspace, `backup-through-${THROUGH_ID}.db`);
   const rehearsalDbPath = path.join(workspace, 'rehearsal.db');
   const restoredPath = path.join(workspace, 'restored.db');
   try {
@@ -246,10 +246,10 @@ async function runRehearsal({ outputDir, withUat = false }) {
     let parity;
     let authentication;
     try {
-      migrated = migrateDatabase(db, { migrationsDir: MIGRATIONS_DIR, appVersion: 'stage4-rehearsal' });
-      retry = migrateDatabase(db, { migrationsDir: MIGRATIONS_DIR, appVersion: 'stage4-rehearsal-retry' });
+      migrated = migrateDatabase(db, { migrationsDir: MIGRATIONS_DIR, appVersion: 'stage5-rehearsal' });
+      retry = migrateDatabase(db, { migrationsDir: MIGRATIONS_DIR, appVersion: 'stage5-rehearsal-retry' });
       const stage4d = new LegacyReportArtifactReconciler({ db, legacyRoot: source.legacyRoot }).stage4dReport();
-      parity = { stage4c: runStage4cParity(db), stage4d, stage4e: runStage4eParity(db) };
+      parity = { stage4c: runStage4cParity(db), stage4d, stage5: runStage5Parity(db) };
       const oldSessions = source.fixture.sessions.map((item) => db.prepare(`SELECT revoked_at, revoke_reason
         FROM auth_sessions WHERE session_id=?`).get(item.sessionId));
       const authz = new AuthorizationService(db);
@@ -295,11 +295,11 @@ async function runRehearsal({ outputDir, withUat = false }) {
     const retryPending = retry.results.filter((item) => item.state !== 'already-applied').length;
     const hardPass = backupChecks.integrity_check === 'ok'
       && backupChecks.foreign_key_violations === 0
-      && JSON.stringify(appliedIds) === JSON.stringify(['0028', '0029'])
+      && JSON.stringify(appliedIds) === JSON.stringify(['0030'])
       && retryPending === 0
       && parity.stage4c.status === 'PASS'
       && parity.stage4d.status !== 'FAILED'
-      && parity.stage4e.status === 'CANONICAL_RUNTIME_COMPLETE_COLUMN_CLEANUP_DEFERRED'
+      && parity.stage5.status !== 'FAIL'
       && after.integrity_check === 'ok'
       && after.foreign_key_violations === 0
       && startup.every((item) => item.health_status === 200)

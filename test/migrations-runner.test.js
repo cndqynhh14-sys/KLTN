@@ -248,9 +248,12 @@ test('backup and restored fixture retain ledger, row counts and foreign-key inte
   try {
     migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'test-version' });
     db.prepare(`INSERT INTO users
-      (email, is_admin, role, is_active, display_name, created_at, created_by)
-      VALUES ('backup-001@example.invalid', 0, 'Chuyên viên', 1, 'SYNTHETIC BACKUP USER',
-      '2026-01-01 00:00:00', 'fixture')`).run();
+      (email, is_active, display_name, created_at, created_by)
+      VALUES ('backup-001@example.invalid', 1, 'SYNTHETIC BACKUP USER',
+      '2026-01-01 00:00:00', NULL)`).run();
+    db.prepare(`INSERT INTO user_roles (user_id, role_id, active, source, created_by)
+      SELECT 'backup-001@example.invalid', id, 1, 'MANUAL', NULL
+      FROM roles WHERE role_code='QLCL_SPECIALIST'`).run();
     await db.backup(backupPath);
     db.close();
 

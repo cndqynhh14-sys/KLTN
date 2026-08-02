@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function freshModules(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -91,11 +92,7 @@ test('manual supplier creation requires business fields before insert', async ()
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const appInfo = await startApp(suppliersRouter);
     server = appInfo.server;
     const token = signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
@@ -146,11 +143,7 @@ test('manual supplier creation succeeds after required fields are provided', asy
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const appInfo = await startApp(suppliersRouter);
     server = appInfo.server;
     const token = signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
@@ -209,11 +202,7 @@ test('manual supplier creation rejects non-standard master data values', async (
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const appInfo = await startApp(suppliersRouter);
     server = appInfo.server;
     const token = signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
@@ -274,12 +263,9 @@ test('supplier detail and history support internal read and specialist edit perm
       ['lead@masangroup.com', 0, roles.ROLES.LEAD, 'Lead User'],
       ['ncc@partner.com', 0, roles.ROLES.SUPPLIER, 'Supplier Portal'],
     ];
-    const upsertUser = db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active, display_name)
-      VALUES (?, ?, ?, 1, ?)
-      ON CONFLICT(email) DO UPDATE SET is_admin=excluded.is_admin, role=excluded.role, is_active=1, display_name=excluded.display_name
-    `);
-    users.forEach((row) => upsertUser.run(...row));
+    users.forEach(([email, isAdmin, role, displayName]) => upsertCanonicalUser(db, {
+      email, role, isAdmin: Boolean(isAdmin), displayName,
+    }));
     const appInfo = await startApp(suppliersRouter);
     server = appInfo.server;
     const specialistToken = signToken({ email: 'specialist@masangroup.com', isAdmin: false, role: roles.ROLES.SPECIALIST }, 3600);

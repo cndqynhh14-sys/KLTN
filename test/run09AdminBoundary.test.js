@@ -17,6 +17,7 @@ const { createAuthorizationAdminRouter } = require('../server/routes/authorizati
 const { PERMISSIONS, ROLE_CODES, ADMIN_PERMISSIONS, LEGACY_ROLE_TO_CODE } = require('../server/authorization/permissionCatalog');
 const { ROLES } = require('../server/domain/roles');
 const navigation = require('../public/js/navigation-manifest');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
 const TARGETS = Object.freeze([
@@ -52,13 +53,10 @@ function rolePermissions(db, roleCode) {
 }
 
 function addUser(db, email, role, isAdmin = false) {
-  db.prepare(`INSERT INTO users
-    (email, is_admin, role, is_active, display_name, created_at, created_by)
-    VALUES (?, ?, ?, 1, 'SYNTHETIC RUN-09 USER', datetime('now'), 'run-09')`
-  ).run(email, isAdmin ? 1 : 0, role);
   const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
-  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
-    SELECT ?, id, 'MANUAL' FROM roles WHERE role_code=?`).run(email, roleCode);
+  upsertCanonicalUser(db, {
+    email, roleCode, displayName: 'SYNTHETIC RUN-09 USER', createdBy: 'run-09',
+  });
   db.prepare(`INSERT INTO user_scope_assignments
     (user_id, role_id, scope_type, scope_value, effect, source)
     SELECT ?, id, 'GLOBAL', NULL, 'ALLOW', 'MANUAL' FROM roles WHERE role_code=?`

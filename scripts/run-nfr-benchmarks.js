@@ -84,10 +84,12 @@ async function main() {
   const measuredAt = new Date().toISOString();
   const measurements = [];
   try {
-    db.prepare(`INSERT INTO users (email, is_admin, role, is_active, display_name, created_at, created_by)
-      VALUES ('nfr.admin@example.invalid', 1, 'Admin', 1, 'RUN23 NFR ADMIN', datetime('now'), 'fixture')`).run();
+    db.prepare(`INSERT INTO users (email, is_active, display_name, created_at, created_by)
+      VALUES ('nfr.admin@example.invalid', 1, 'RUN23 NFR ADMIN', datetime('now'), NULL)`).run();
+    db.prepare(`INSERT INTO user_roles (user_id, role_id, active, source, created_by)
+      SELECT 'nfr.admin@example.invalid', id, 1, 'MANUAL', NULL
+      FROM roles WHERE role_code='SYS_ADMIN'`).run();
     const authz = new AuthorizationService(db);
-    authz.syncLegacyUser('nfr.admin@example.invalid');
     const authTimings = [];
     for (let index = 0; index < 200; index += 1) {
       authz.cache.clear();

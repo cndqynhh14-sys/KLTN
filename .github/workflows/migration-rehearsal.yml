@@ -11,6 +11,7 @@ on:
       - scripts/rehearse-database-migrations.js
       - scripts/check-stage4c-parity.js
       - scripts/check-stage4e-parity.js
+      - scripts/check-stage5-parity.js
       - server/reporting/artifacts/**
       - server/services/AuthorizationService.js
       - test/migrationRehearsal.test.js
@@ -49,7 +50,7 @@ jobs:
 
       - name: Rehearse migrations, startup, auth and restore
         run: >-
-          npm run rehearsal:stage4 --
+          npm run rehearsal:stage5 --
           --with-uat
           --output-dir artifacts/migration-rehearsal/${{ github.run_id }}
 

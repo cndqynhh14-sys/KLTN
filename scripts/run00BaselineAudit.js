@@ -370,10 +370,13 @@ async function startAuditApp() {
 function insertSyntheticFixtures(db) {
   const actor = 'run00-admin@example.invalid';
   db.prepare(`
-    INSERT INTO users (email, is_admin, role, is_active, display_name)
-    VALUES (?, 1, 'Admin', 1, 'RUN00 Synthetic Admin')
-    ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1, display_name='RUN00 Synthetic Admin'
+    INSERT INTO users (email, is_active, display_name)
+    VALUES (?, 1, 'RUN00 Synthetic Admin')
+    ON CONFLICT(email) DO UPDATE SET is_active=1, display_name='RUN00 Synthetic Admin'
   `).run(actor);
+  db.prepare(`INSERT INTO user_roles (user_id, role_id, active, source, created_by)
+    SELECT ?, id, 1, 'MANUAL', NULL FROM roles WHERE role_code='SYS_ADMIN'
+    ON CONFLICT(user_id, role_id) DO UPDATE SET active=1, source='MANUAL'`).run(actor);
   const supplier = db.prepare(`
     INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
     VALUES ('RUN00-NCC', 'RUN00 Synthetic Supplier', 'ACTIVE', 'MANUAL')

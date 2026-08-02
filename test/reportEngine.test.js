@@ -7,6 +7,7 @@ const XLSX = require('xlsx');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function freshDb(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -123,16 +124,8 @@ test('RUN-17 Draft preview, publish, parity, immutability and rollback use one v
   const oldDbPath = process.env.DB_PATH;
   const db = freshDb(dbPath);
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active, created_by)
-      VALUES (?, 1, 'Admin', 1, 'RUN-17')
-      ON CONFLICT(email) DO UPDATE SET is_active=1
-    `).run('run17-agent@synthetic.invalid');
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active, created_by)
-      VALUES (?, 1, 'Admin', 1, 'RUN-17')
-      ON CONFLICT(email) DO UPDATE SET is_active=1
-    `).run('run17-publisher@synthetic.invalid');
+    upsertCanonicalUser(db, { email: 'run17-agent@synthetic.invalid', role: 'Admin', isAdmin: true });
+    upsertCanonicalUser(db, { email: 'run17-publisher@synthetic.invalid', role: 'Admin', isAdmin: true });
     const ReportTemplateVersionRepository = require('../server/reporting/ReportTemplateVersionRepository');
     const { ReportOrchestrator } = require('../server/reporting/ReportOrchestrator');
     const repository = new ReportTemplateVersionRepository(db);
@@ -268,10 +261,9 @@ test('RUN-19 canonical export pins template, question, and scoring policy versio
   const db = freshDb(dbPath);
   try {
     const actor = 'run17-exporter@synthetic.invalid';
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-      VALUES (?, 1, 'Admin', 1, 'RUN-17 Synthetic Exporter', 'RUN-17')
-    `).run(actor);
+    upsertCanonicalUser(db, {
+      email: actor, role: 'Admin', isAdmin: true, displayName: 'RUN-17 Synthetic Exporter',
+    });
     const supplier = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('RUN17-NCC', 'RUN-17 Synthetic Supplier', 'ACTIVE', 'MANUAL')
@@ -354,10 +346,7 @@ test('RUN-17 version API denies unauthenticated/unprivileged mutations and enfor
       ['run17-admin@synthetic.invalid', 1, 'Admin'],
       ['run17-viewer@synthetic.invalid', 0, 'NCC'],
     ]) {
-      db.prepare(`
-        INSERT INTO users (email, is_admin, role, is_active, created_by)
-        VALUES (?, ?, ?, 1, 'RUN-17')
-      `).run(email, isAdmin, role);
+      upsertCanonicalUser(db, { email, role, isAdmin: Boolean(isAdmin) });
     }
     for (const modulePath of ['../server/middleware/auth', '../server/routes/reportTemplates']) {
       delete require.cache[require.resolve(modulePath)];

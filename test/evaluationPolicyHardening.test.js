@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const XLSX = require('xlsx');
 const { MCH2_VALUES, MCH3_BY_MCH2 } = require('../server/domain/merchandising');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const MODULES = [
   '../server/config/paths',
@@ -90,17 +91,9 @@ async function withEvaluationFixture(prefix, run) {
 }
 
 function grantRoleAndScope(db, email, roleCode, scopeType, scopeValue = null) {
-  db.prepare(`
-    INSERT INTO users (email, is_admin, role, is_active)
-    VALUES (?, 0, 'Chuyên viên', 1)
-    ON CONFLICT(email) DO UPDATE SET is_admin = 0, is_active = 1
-  `).run(email);
+  upsertCanonicalUser(db, { email, roleCode });
   const role = db.prepare('SELECT id FROM roles WHERE role_code = ? AND active = 1').get(roleCode);
   assert.ok(role?.id, `role fixture ${roleCode} must exist`);
-  db.prepare(`
-    INSERT INTO user_roles (user_id, role_id, active, source)
-    VALUES (?, ?, 1, 'MANUAL')
-  `).run(email, role.id);
   db.prepare(`
     INSERT INTO user_scope_assignments (
       user_id, role_id, scope_type, scope_value, effect, active, source

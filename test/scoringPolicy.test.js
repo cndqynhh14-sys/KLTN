@@ -9,6 +9,7 @@ const Database = require('better-sqlite3');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 const { migrateDatabase } = require('../server/database/migrationRunner');
 
 const legacy = require('../server/domain/evaluationRules');
@@ -275,10 +276,7 @@ test('scoring policy API denies anonymous/unprivileged access and exposes Draft 
       ['prompt11-publisher@synthetic.invalid', 0, 'NCC'],
       ['run19-viewer@synthetic.invalid', 0, 'NCC'],
     ]) {
-      db.prepare(`
-        INSERT INTO users (email, is_admin, role, is_active, created_by)
-        VALUES (?, ?, ?, 1, 'RUN-19')
-      `).run(email, isAdmin, role);
+      upsertCanonicalUser(db, { email, role, isAdmin: Boolean(isAdmin) });
     }
     for (const [roleCode, permissionCodes] of [
       ['PROMPT11_MANAGER', ['SCORING_POLICY.MANAGE']],

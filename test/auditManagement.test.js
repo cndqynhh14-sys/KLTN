@@ -19,17 +19,16 @@ const { PERMISSIONS, ROLE_CODES } = require('../server/authorization/permissionC
 const { requestContext } = require('../server/middleware/requestContext');
 const { createAuditEventsRouter } = require('../server/routes/auditEvents');
 const navigation = require('../public/js/navigation-manifest');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const root = path.resolve(__dirname, '..');
 const migrationsDir = path.join(root, 'migrations');
 
 function addUser(db, email, roleCode, scopeType = 'GLOBAL') {
-  db.prepare(`INSERT INTO users
-    (email, is_admin, role, is_active, display_name, created_by)
-    VALUES (?, 0, 'Chuyên viên', 1, 'SYNTHETIC RUN-08 USER', 'fixture')`).run(email);
+  upsertCanonicalUser(db, {
+    email, roleCode, displayName: 'SYNTHETIC RUN-08 USER', createdBy: 'fixture',
+  });
   const role = db.prepare('SELECT id FROM roles WHERE role_code = ?').get(roleCode);
-  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
-    VALUES (?, ?, 'MANUAL')`).run(email, role.id);
   db.prepare(`INSERT INTO user_scope_assignments
     (user_id, role_id, scope_type, scope_value, effect, source)
     VALUES (?, ?, ?, ?, 'ALLOW', 'MANUAL')`

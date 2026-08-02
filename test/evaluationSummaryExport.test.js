@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 const XLSX = require('xlsx');
 
 const SUMMARY_HEADERS = [
@@ -117,16 +118,8 @@ test('evaluation summary route exports filtered rows using template columns and 
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('qa.lead@masangroup.com', 0, 'Chuyên viên', 1)
-      ON CONFLICT(email) DO UPDATE SET role='Chuyên viên', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
+    upsertCanonicalUser(db, { email: 'qa.lead@masangroup.com', role: 'Chuyên viên' });
     const supplier = db.prepare(`
       INSERT INTO supplier_master (
         supplier_code, supplier_name, address, evaluation_address, linked_facility_address,

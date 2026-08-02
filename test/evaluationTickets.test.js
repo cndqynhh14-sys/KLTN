@@ -7,6 +7,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function freshModules(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -71,11 +72,7 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (
         supplier_code, supplier_name, tax_code, address, production_address, evaluation_address,
@@ -256,11 +253,7 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
   const processingStatus = '\u0110ang x\u1eed l\u00fd';
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-DRAFT', 'Draft Supplier', 'ACTIVE', 'MANUAL')
@@ -364,11 +357,7 @@ test('round 2 inherits A/NA answers as readonly and rejects bypass changes', asy
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-R2', 'Round 2 Supplier', 'ACTIVE', 'MANUAL')
@@ -561,11 +550,7 @@ test('nonconformities are generated from B/C/D answers and keep correction field
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-NC', 'Nonconformity Supplier', 'ACTIVE', 'MANUAL')
@@ -715,11 +700,7 @@ test('round completion requires remediation and due date for nonconformities', a
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-NC-REQ', 'Required NC Supplier', 'ACTIVE', 'MANUAL')
@@ -916,11 +897,7 @@ test('submit to lead requires locked scoring and rejects clean passing assessmen
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-LEAD', 'Lead Supplier', 'ACTIVE', 'MANUAL')
@@ -1036,11 +1013,7 @@ test('correction extension records required fields, due-date history, and workfl
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-EXT', 'Extension Supplier', 'ACTIVE', 'MANUAL')
@@ -1166,11 +1139,7 @@ test('round 2 can be locked then optionally submitted to lead approval', async (
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-R2-LEAD', 'Round 2 Lead Supplier', 'ACTIVE', 'MANUAL')
@@ -1301,11 +1270,7 @@ test('round 1 approval with nonconformities enters correction state before final
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-WF', 'Workflow Supplier', 'ACTIVE', 'MANUAL')
@@ -1445,11 +1410,7 @@ test('rejection comments are required and persisted to approval task, workflow h
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-REJ', 'Rejected Supplier', 'ACTIVE', 'MANUAL')
@@ -1533,13 +1494,8 @@ test('soft delete requires reason, enforces permissions, hides default list, and
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES
-        ('admin@masangroup.com', 1, 'Admin', 1),
-        ('lead@masangroup.com', 0, 'Lead miền', 1)
-      ON CONFLICT(email) DO UPDATE SET is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
+    upsertCanonicalUser(db, { email: 'lead@masangroup.com', role: 'Lead miền', isAdmin: false });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-DEL', 'Delete Supplier', 'ACTIVE', 'MANUAL')
@@ -1640,14 +1596,9 @@ test('specialists only access evaluation tickets they both created and are assig
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES
-        ('owner@masangroup.com', 0, 'Chuyên viên', 1),
-        ('other@masangroup.com', 0, 'Chuyên viên', 1),
-        ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET role=excluded.role, is_admin=excluded.is_admin, is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'owner@masangroup.com', role: 'Chuyên viên', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'other@masangroup.com', role: 'Chuyên viên', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplier = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-OWN', 'Owner Supplier', 'ACTIVE', 'MANUAL')
@@ -1696,7 +1647,7 @@ test('specialists only access evaluation tickets they both created and are assig
     const appInfo = await startApp(evaluationsRouter);
     server = appInfo.server;
     const ownerToken = signToken({ email: 'owner@masangroup.com', isAdmin: false, role: 'Chuyên viên' }, 3600);
-    const otherToken = signToken({ email: 'other@masangroup.com', isAdmin: false, role: 'ChuyÃªn viÃªn' }, 3600);
+    const otherToken = signToken({ email: 'other@masangroup.com', isAdmin: false, role: 'Chuyên viên' }, 3600);
     const adminToken = signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
 
     const listRes = await fetch(`${appInfo.baseUrl}/evaluations`, {
@@ -1824,16 +1775,11 @@ test('approval bootstrap only returns records pending the current approver role'
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES
-        ('lead@masangroup.com', 0, 'Lead miền', 1),
-        ('tbp@masangroup.com', 0, 'TBP', 1),
-        ('gdk@masangroup.com', 0, 'GĐK', 1),
-        ('specialist@masangroup.com', 0, 'Chuyên viên', 1),
-        ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET role=excluded.role, is_admin=excluded.is_admin, is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'lead@masangroup.com', role: 'Lead miền', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'tbp@masangroup.com', role: 'TBP', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'gdk@masangroup.com', role: 'GĐK', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'specialist@masangroup.com', role: 'Chuyên viên', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplier = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-APR', 'Approval Supplier', 'ACTIVE', 'MANUAL')
@@ -1942,11 +1888,7 @@ test('round 2 completion updates corrected result fields and next evaluation pla
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-CORR', 'Correction Supplier', 'ACTIVE', 'MANUAL')
@@ -2042,11 +1984,7 @@ test('ticket legal documents upload, validate type, and expose download links', 
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
 
     const appInfo = await startApp(evaluationsRouter);
     server = appInfo.server;

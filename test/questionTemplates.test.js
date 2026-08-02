@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function freshModules(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -43,11 +44,7 @@ test('admin question save keeps Loai evidence off and preserves non-Loai evidenc
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const template = db.prepare(`
       INSERT INTO question_templates (template_code, template_name, active)
       VALUES ('QT42', 'Prompt 42 Test', 1)

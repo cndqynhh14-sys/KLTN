@@ -10,6 +10,7 @@ const cookieParser = require('cookie-parser');
 const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const ROOT = path.resolve(__dirname, '..');
 const TEMPLATE_PATH = path.join(ROOT, 'database', 'templates', 'supplier-import-template.xlsx');
@@ -129,7 +130,7 @@ test('RUN-03 template endpoint downloads the canonical workbook with SUPPLIER.WR
   const fx = freshModules(dbPath);
   let server;
   try {
-    fx.db.prepare("INSERT INTO users (email, is_admin, role, is_active) VALUES ('admin@example.invalid', 1, 'Admin', 1)").run();
+    upsertCanonicalUser(fx.db, { email: 'admin@example.invalid', role: 'Admin', isAdmin: true });
     const app = await startApp(fx.suppliersRouter);
     server = app.server;
     const token = fx.signToken({ email: 'admin@example.invalid', isAdmin: true, role: 'Admin' }, 3600);
@@ -165,7 +166,7 @@ test('RUN-03 invalid row aborts the whole file and reports row plus column', asy
   const fx = freshModules(dbPath);
   let server;
   try {
-    fx.db.prepare("INSERT INTO users (email, is_admin, role, is_active) VALUES ('admin@example.invalid', 1, 'Admin', 1)").run();
+    upsertCanonicalUser(fx.db, { email: 'admin@example.invalid', role: 'Admin', isAdmin: true });
     const app = await startApp(fx.suppliersRouter);
     server = app.server;
     const token = fx.signToken({ email: 'admin@example.invalid', isAdmin: true, role: 'Admin' }, 3600);
@@ -196,7 +197,7 @@ test('RUN-03 wrong headers and duplicate supplier codes reject the whole workboo
   const fx = freshModules(dbPath);
   let server;
   try {
-    fx.db.prepare("INSERT INTO users (email, is_admin, role, is_active) VALUES ('admin@example.invalid', 1, 'Admin', 1)").run();
+    upsertCanonicalUser(fx.db, { email: 'admin@example.invalid', role: 'Admin', isAdmin: true });
     const app = await startApp(fx.suppliersRouter);
     server = app.server;
     const token = fx.signToken({ email: 'admin@example.invalid', isAdmin: true, role: 'Admin' }, 3600);

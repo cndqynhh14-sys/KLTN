@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function hash(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -22,10 +23,9 @@ function freshDb(dbPath) {
 
 function createTicket(db) {
   const actor = 'stage4d-exporter@synthetic.invalid';
-  db.prepare(`
-    INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-    VALUES (?, 1, 'Admin', 1, 'Stage 4D Synthetic Exporter', 'STAGE4D')
-  `).run(actor);
+  upsertCanonicalUser(db, {
+    email: actor, roleCode: 'SYS_ADMIN', displayName: 'Stage 4D Synthetic Exporter', createdBy: 'STAGE4D',
+  });
   const supplier = db.prepare(`
     INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
     VALUES ('STAGE4D-NCC', 'Stage 4D Synthetic Supplier', 'ACTIVE', 'MANUAL')

@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 const XLSX = require('xlsx');
 
 function freshDb(dbPath) {
@@ -35,16 +36,12 @@ test('DOC-4 report context includes input columns, sections, category percentage
 
   try {
     const { buildReportContext, calculateNextEvaluationDate, renderInternalReportHtml, renderReportHtml, renderTemplate, renderWorkingMinutesHtml } = require('../server/services/reporting');
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active, display_name)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1, 'Nguyen Van Auditor')
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1, display_name='Nguyen Van Auditor'
-    `).run();
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active, display_name)
-      VALUES ('support@masangroup.com', 0, 'Chuyên viên', 1, 'Le Thi QA Support')
-      ON CONFLICT(email) DO UPDATE SET is_admin=0, role='Chuyên viên', is_active=1, display_name='Le Thi QA Support'
-    `).run();
+    upsertCanonicalUser(db, {
+      email: 'admin@masangroup.com', role: 'Admin', isAdmin: true, displayName: 'Nguyen Van Auditor',
+    });
+    upsertCanonicalUser(db, {
+      email: 'support@masangroup.com', role: 'Chuyên viên', displayName: 'Le Thi QA Support',
+    });
     const supplier = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-RPT', 'Report Supplier', 'ACTIVE', 'MANUAL')
@@ -324,11 +321,7 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     const evaluationsRouter = require('../server/routes/evaluations');
     const { exportReportHtml, exportReportPdf, exportReportXlsx } = require('../server/services/reporting');
 
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplier = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-EXP', 'Export Supplier', 'ACTIVE', 'MANUAL')

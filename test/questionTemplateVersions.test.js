@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -139,11 +140,7 @@ test('publishing v2 leaves a pinned v1 ticket and its report question text uncha
   const dbPath = tempDbPath('pin');
   const fx = freshModules(dbPath, { publishEnabled: true });
   try {
-    fx.db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(fx.db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const service = new fx.QuestionVersionService(fx.db, { publishEnabled: true });
     const template = fx.db.prepare("SELECT * FROM question_templates WHERE template_code='BM04'").get();
     const v1 = service.list({ templateId: template.id }).find((row) => row.version_no === 1);
@@ -253,11 +250,8 @@ test('version lifecycle API enforces auth, feature flag, optimistic lock and sin
   const fx = freshModules(dbPath);
   let server;
   try {
-    fx.db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1), ('ncc@masangroup.com', 0, 'NCC', 1)
-      ON CONFLICT(email) DO UPDATE SET is_active=1
-    `).run();
+    upsertCanonicalUser(fx.db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
+    upsertCanonicalUser(fx.db, { email: 'ncc@masangroup.com', role: 'NCC' });
     const appInfo = await startApp(fx.questionTemplatesRouter);
     server = appInfo.server;
     const adminToken = fx.signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
