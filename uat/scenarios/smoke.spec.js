@@ -1123,11 +1123,15 @@ test.describe('@smoke QLCL foundation', () => {
     expect(mobileWidth.scroll).toBeLessThanOrEqual(mobileWidth.client + 1);
     const mobileActions = await page.locator('#personnel-import-cancel, #personnel-import-back, #personnel-import-validate').evaluateAll((buttons) => (
       buttons.filter((button) => getComputedStyle(button).display !== 'none').map((button) => ({
+        id: button.id,
         width: button.getBoundingClientRect().width,
         height: button.getBoundingClientRect().height,
       }))
     ));
-    expect(mobileActions.every((target) => target.width >= 44 && target.height >= 44)).toBeTruthy();
+    expect(
+      mobileActions.every((target) => target.width >= 44 && target.height >= 44),
+      `Mobile personnel-import targets: ${JSON.stringify(mobileActions)}`,
+    ).toBeTruthy();
     const mobileScreenshot = path.join(uat.trace.scenarioDir, 'personnel-import-mobile-390x844.png');
     await page.screenshot({ path: mobileScreenshot, animations: 'disabled' });
     await testInfo.attach('personnel-import-mobile-390x844', { path: mobileScreenshot, contentType: 'image/png' });
@@ -1137,7 +1141,7 @@ test.describe('@smoke QLCL foundation', () => {
       const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
       return target === button || button.contains(target);
     });
-    expect(mobilePrimaryActionVisible).toBeTruthy();
+    expect(mobilePrimaryActionVisible, 'Mobile personnel-import primary action must remain reachable').toBeTruthy();
 
     await page.setViewportSize({ width: 1440, height: 1024 });
     validateResponse = page.waitForResponse((response) => response.request().method() === 'POST'

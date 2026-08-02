@@ -53,15 +53,15 @@ Verified on 2026-08-02 with Node.js 20 after `npm ci`:
 | Check | Result |
 |---|---|
 | Rehearsal evidence | `d059ec3e-b70a-4e06-9a46-ebdd6becb586` (verified) |
-| Full-suite evidence | `72fb2731-6dc0-4a6f-adef-fb5f38c8b106` (verified) |
-| Synthetic UAT | PASS, run `15617474-e83b-4cfe-8a9f-babe23fab5e9` |
+| Clean-checkout full-suite evidence | `f643bdb0-a0d9-46c5-bc5a-cea1fb4f1140` (verified) |
+| Clean-checkout synthetic UAT | PASS, run `13ca677f-e9e1-4ddd-b39d-836a5ae6713a` |
 | Applied migrations | 0028, 0029 |
 | Second migration run | 0 pending |
 | Integrity check | `ok` |
 | Foreign-key violations | 0 |
 | Startup health | HTTP 200, HTTP 200 |
 | Backup restore | PASS |
-| Full test suite | 1,433 tests; 1,429 passed; 0 failed; 4 skipped |
+| Full test suite | 374 tests; 373 passed; 0 failed; 1 skipped |
 
 The generated local report is intentionally ignored by Git. GitHub Actions publishes the equivalent sanitized report as a short-lived workflow artifact.
 

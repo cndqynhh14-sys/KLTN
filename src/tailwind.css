@@ -1389,7 +1389,12 @@
   }
   .admin-sticky-action-bar .btn-primary,
   .admin-sticky-action-bar .btn-ghost,
-  .admin-sticky-action-bar .btn-danger { flex: 1 1 100%; justify-content: center; }
+  .admin-sticky-action-bar .btn-danger {
+    flex: 1 1 100%;
+    min-height: 44px;
+    justify-content: center;
+    transition-property: background-color, border-color, color, opacity;
+  }
   .admin-disabled-reason { flex-basis: 100%; }
   .personnel-import-heading { align-items: stretch; flex-direction: column; }
   .personnel-import-heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
