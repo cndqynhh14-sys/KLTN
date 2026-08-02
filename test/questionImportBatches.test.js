@@ -9,6 +9,7 @@ const XLSX = require('xlsx');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -318,16 +319,8 @@ test('two-phase import API enforces authorization and exposes preview, detail, c
   const fx = freshModules(dbPath);
   let server;
   try {
-    fx.db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
-    fx.db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('specialist@masangroup.com', 0, 'Chuyên viên', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=0, role='Chuyên viên', is_active=1
-    `).run();
+    upsertCanonicalUser(fx.db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
+    upsertCanonicalUser(fx.db, { email: 'specialist@masangroup.com', role: 'Chuyên viên' });
     const { template, draft } = draftFixture(fx);
     const app = await startApp(fx.questionTemplatesRouter);
     server = app.server;

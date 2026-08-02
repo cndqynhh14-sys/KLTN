@@ -7,7 +7,8 @@ const { migrateDatabase } = require('../server/database/migrationRunner');
 
 const ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'migrations');
-const THROUGH_ID = '0027';
+const SEED_THROUGH_ID = '0027';
+const THROUGH_ID = '0029';
 
 function isInside(parent, candidate) {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate));
@@ -146,14 +147,21 @@ function createRehearsalDatabase({ dbPath, workspace, migrationsDir = MIGRATIONS
   if (fs.existsSync(resolvedDb)) throw new Error('rehearsal_database_already_exists');
   fs.mkdirSync(resolvedWorkspace, { recursive: true });
   fs.mkdirSync(path.dirname(resolvedDb), { recursive: true });
-  const historicalDir = path.join(resolvedWorkspace, 'migrations-through-0027');
-  const migrationIds = copyHistoricalMigrations({ sourceDir: migrationsDir, targetDir: historicalDir });
+  const seedMigrationsDir = path.join(resolvedWorkspace, `migrations-through-${SEED_THROUGH_ID}`);
+  copyHistoricalMigrations({
+    sourceDir: migrationsDir, targetDir: seedMigrationsDir, throughId: SEED_THROUGH_ID,
+  });
+  const sourceMigrationsDir = path.join(resolvedWorkspace, `migrations-through-${THROUGH_ID}`);
+  const migrationIds = copyHistoricalMigrations({
+    sourceDir: migrationsDir, targetDir: sourceMigrationsDir, throughId: THROUGH_ID,
+  });
   const legacyRoot = path.join(resolvedWorkspace, 'legacy-report-files');
   const db = new Database(resolvedDb);
   db.pragma('foreign_keys = ON');
   try {
-    migrateDatabase(db, { migrationsDir: historicalDir, appVersion: 'synthetic-rehearsal-0027' });
+    migrateDatabase(db, { migrationsDir: seedMigrationsDir, appVersion: `synthetic-rehearsal-${SEED_THROUGH_ID}` });
     const fixture = seedRepresentativeData(db, { legacyRoot });
+    migrateDatabase(db, { migrationsDir: sourceMigrationsDir, appVersion: `synthetic-rehearsal-${THROUGH_ID}` });
     const integrity = db.pragma('integrity_check', { simple: true });
     const foreignKeys = db.pragma('foreign_key_check').length;
     if (integrity !== 'ok' || foreignKeys !== 0) throw new Error('synthetic_rehearsal_database_invalid');
@@ -194,6 +202,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  SEED_THROUGH_ID,
   THROUGH_ID,
   copyHistoricalMigrations,
   createRehearsalDatabase,

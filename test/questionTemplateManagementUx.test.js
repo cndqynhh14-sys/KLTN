@@ -7,6 +7,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const XLSX = require('xlsx');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -126,11 +127,7 @@ test('create template API atomically creates Draft and exposes catalog, import h
   const fx = freshModules(dbPath);
   let server;
   try {
-    fx.db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(fx.db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const token = fx.signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
     const cookie = { Cookie: `qlcl_token=${token}` };
     const app = await startApp(fx.questionTemplatesRouter);
@@ -275,11 +272,7 @@ test('HTTP E2E creates Draft, edits a question, previews and commits import, rev
   const fx = freshModules(dbPath, { publishEnabled: true });
   let server;
   try {
-    fx.db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET is_admin=1, role='Admin', is_active=1
-    `).run();
+    upsertCanonicalUser(fx.db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const token = fx.signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
     const headers = { Cookie: `qlcl_token=${token}` };
     const app = await startApp(fx.questionTemplatesRouter);

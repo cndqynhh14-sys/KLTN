@@ -20,6 +20,7 @@ const { auditMutations } = require('../server/middleware/audit');
 const { requestContext } = require('../server/middleware/requestContext');
 const { mapLegacyAccessAction } = require('../server/audit/compatibilityMap');
 const { ACTION_FIELDS, NO_DETAIL_ACTIONS } = require('../server/observability/accessLog');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
 
@@ -27,11 +28,11 @@ function createDb() {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   migrateDatabase(db, { migrationsDir, appVersion: 'run-07-test' });
-  db.prepare(`INSERT INTO users (email, is_admin, role, is_active, created_by)
-    VALUES ('run07.actor@example.test', 0, 'Chuyên viên', 1, 'test')`).run();
-  const role = db.prepare("SELECT id FROM roles WHERE role_code = 'QLCL_SPECIALIST'").get();
-  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
-    VALUES ('run07.actor@example.test', ?, 'MANUAL')`).run(role.id);
+  upsertCanonicalUser(db, {
+    email: 'run07.actor@example.test',
+    roleCode: 'QLCL_SPECIALIST',
+    createdBy: 'test',
+  });
   return db;
 }
 

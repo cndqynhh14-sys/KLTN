@@ -8,6 +8,7 @@ const Database = require('better-sqlite3');
 const { migrateDatabase } = require('../server/database/migrationRunner');
 const EvaluationParticipantRepository = require('../server/repositories/EvaluationParticipantRepository');
 const CorrectiveActionRepository = require('../server/repositories/CorrectiveActionRepository');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
 
@@ -21,8 +22,9 @@ function fixture() {
     ['round@example.invalid', 'Canonical Evaluator'],
     ['legacy-round@example.invalid', 'Legacy Round Evaluator'],
   ]) {
-    db.prepare(`INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-      VALUES (?, 0, 'Chuyên viên', 1, ?, 'fixture')`).run(email, name);
+    upsertCanonicalUser(db, {
+      email, roleCode: 'QLCL_SPECIALIST', displayName: name, createdBy: 'fixture',
+    });
   }
   const supplierId = db.prepare(`INSERT INTO supplier_master
     (supplier_code, supplier_name, status, source_type, created_by)

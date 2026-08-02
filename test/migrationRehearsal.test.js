@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 
-test('migration rehearsal upgrades a representative pre-0028 database without publishing database bytes', () => {
+test('migration rehearsal upgrades a representative 0029 database without publishing database bytes', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'qlcl-rehearsal-contract-'));
   const outputDir = path.join(temp, 'public-report');
   try {
@@ -38,22 +38,22 @@ test('migration rehearsal upgrades a representative pre-0028 database without pu
 
     assert.equal(report.status, 'PASS');
     assert.equal(report.source.synthetic, true);
-    assert.equal(report.source.schema_through, '0027');
+    assert.equal(report.source.schema_through, '0029');
     assert.match(report.backup.sha256, /^[a-f0-9]{64}$/);
     assert.equal(report.backup.integrity_check, 'ok');
     assert.equal(report.backup.foreign_key_violations, 0);
-    assert.deepEqual(report.migration.applied_ids, ['0028', '0029']);
+    assert.deepEqual(report.migration.applied_ids, ['0030']);
     assert.equal(report.migration.retry_pending_count, 0);
     assert.equal(report.parity.stage4c.status, 'PASS');
     assert.notEqual(report.parity.stage4d.status, 'FAILED');
-    assert.equal(report.parity.stage4e.status, 'CANONICAL_RUNTIME_COMPLETE_COLUMN_CLEANUP_DEFERRED');
+    assert.notEqual(report.parity.stage5.status, 'FAIL');
     assert.equal(report.database.integrity_check, 'ok');
     assert.equal(report.database.foreign_key_violations, 0);
     assert.deepEqual(report.startup.map((item) => item.health_status), [200, 200]);
     assert.equal(report.authentication.pre_cutover_session_revoked, true);
     assert.equal(report.authentication.canonical_session_resolved, true);
     assert.equal(report.restore.sha256_matches_backup, true);
-    assert.equal(report.restore.last_migration_id, '0027');
+    assert.equal(report.restore.last_migration_id, '0029');
 
     const publishedFiles = fs.readdirSync(outputDir, { recursive: true })
       .map(String).filter((name) => /\.(?:db|db-wal|db-shm)$/i.test(name));
@@ -73,6 +73,7 @@ test('migration rehearsal workflow is isolated from production and publishes rep
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npx playwright install --with-deps chromium/);
   assert.match(workflow, /--with-uat/);
+  assert.match(workflow, /npm run rehearsal:stage5/);
   assert.match(workflow, /report\.json/);
   assert.match(workflow, /report\.md/);
   assert.match(workflow, /Reject database bytes[\s\S]*?if: always\(\)/);
@@ -80,4 +81,5 @@ test('migration rehearsal workflow is isolated from production and publishes rep
   assert.match(workflow, /artifacts\/uat-runs\/\*\*\/report\.json/);
   assert.doesNotMatch(workflow, /railway|production database/i);
   assert.equal(pkg.scripts['rehearsal:stage4'], 'node scripts/rehearse-database-migrations.js');
+  assert.equal(pkg.scripts['rehearsal:stage5'], 'node scripts/rehearse-database-migrations.js');
 });

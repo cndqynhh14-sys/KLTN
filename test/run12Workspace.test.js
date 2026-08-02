@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -65,10 +66,9 @@ function startApp({ workspaceRouter, evaluationsRouter }) {
 }
 
 function addUser(db, email, role, isAdmin = false) {
-  db.prepare(`
-    INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-    VALUES (?, ?, ?, 1, ?, 'run-12-test')
-  `).run(email, isAdmin ? 1 : 0, role, `RUN-12 ${role}`);
+  upsertCanonicalUser(db, {
+    email, role, isAdmin, displayName: `RUN-12 ${role}`, createdBy: 'run-12-test',
+  });
 }
 
 function seedEvaluation(db, {

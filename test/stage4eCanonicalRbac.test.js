@@ -105,15 +105,16 @@ test('Stage 4E cutover fails closed when an active account has no canonical role
   }
 });
 
-test('Stage 4E keeps legacy user columns until the separate UAT cleanup gate', () => {
+test('Stage 5 closes the Stage 4E compatibility window after canonical cutover', () => {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   try {
     migrateDatabase(db, { migrationsDir, appVersion: 'stage4e-test' });
     const columns = new Set(db.pragma("table_info('users')").map((row) => row.name));
-    assert.equal(columns.has('role'), true);
-    assert.equal(columns.has('is_admin'), true);
+    assert.equal(columns.has('role'), false);
+    assert.equal(columns.has('is_admin'), false);
     assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0029'").pluck().get(), 1);
+    assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0030'").pluck().get(), 1);
   } finally {
     db.close();
   }

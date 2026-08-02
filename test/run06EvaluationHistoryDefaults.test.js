@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function freshModules(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -53,14 +54,9 @@ test('RUN-06 returns deterministic, scoped and partial defaults from prior valid
   let server;
 
   try {
-    db.prepare(`
-      INSERT INTO users (email, is_admin, role, is_active)
-      VALUES
-        ('owner@masangroup.com', 0, 'Chuy\u00ean vi\u00ean', 1),
-        ('other@masangroup.com', 0, 'Chuy\u00ean vi\u00ean', 1),
-        ('admin@masangroup.com', 1, 'Admin', 1)
-      ON CONFLICT(email) DO UPDATE SET role=excluded.role, is_admin=excluded.is_admin, is_active=1
-    `).run();
+    upsertCanonicalUser(db, { email: 'owner@masangroup.com', role: 'Chuy\u00ean vi\u00ean', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'other@masangroup.com', role: 'Chuy\u00ean vi\u00ean', isAdmin: false });
+    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
 
     const supplier = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)

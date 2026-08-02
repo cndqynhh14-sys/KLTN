@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const XLSX = require('xlsx');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function freshDb(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -41,10 +42,9 @@ function externalReferences(buffer) {
 
 function createTicket(db, suffix = 'PRIMARY', { withRound = true } = {}) {
   const actor = `run21-${suffix.toLowerCase()}@synthetic.invalid`;
-  db.prepare(`
-    INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-    VALUES (?, 1, 'Admin', 1, 'RUN-21 Synthetic QA', 'RUN-21')
-  `).run(actor);
+  upsertCanonicalUser(db, {
+    email: actor, roleCode: 'SYS_ADMIN', displayName: 'RUN-21 Synthetic QA', createdBy: 'RUN-21',
+  });
   const supplier = db.prepare(`
     INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
     VALUES (?, 'RUN-21 Synthetic Supplier', 'ACTIVE', 'MANUAL')

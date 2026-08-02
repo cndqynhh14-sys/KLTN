@@ -8,6 +8,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -69,8 +70,7 @@ function installSyntheticUsers(db) {
     ['run20-designer@synthetic.invalid', 0, 'Chuyên viên'],
     ['run20-auditor@synthetic.invalid', 0, 'Chuyên viên'],
   ]) {
-    db.prepare(`INSERT INTO users (email, is_admin, role, is_active, created_by)
-      VALUES (?, ?, ?, 1, 'RUN-20') ON CONFLICT(email) DO UPDATE SET is_admin=excluded.is_admin, role=excluded.role, is_active=1`).run(email, isAdmin, role);
+    upsertCanonicalUser(db, { email, role, isAdmin: Boolean(isAdmin), createdBy: 'RUN-20' });
   }
   for (const [code, label] of [['RUN20_DESIGNER', 'RUN-20 Designer'], ['RUN20_AUDITOR', 'RUN-20 Auditor']]) {
     db.prepare(`INSERT INTO roles (role_code, display_label, role_kind, active)

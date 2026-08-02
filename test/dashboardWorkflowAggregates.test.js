@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function clearServerModules() {
   [
@@ -61,14 +62,15 @@ function startApp(router) {
 }
 
 function seedUsers(db) {
-  db.prepare(`
-    INSERT INTO users (email, is_admin, role, is_active, display_name)
-    VALUES
-      ('admin@masangroup.com', 1, 'Admin', 1, 'Admin'),
-      ('qa.one@masangroup.com', 0, 'Chuyên viên', 1, 'QA One'),
-      ('qa.two@masangroup.com', 0, 'Chuyên viên', 1, 'QA Two')
-    ON CONFLICT(email) DO UPDATE SET is_active=1
-  `).run();
+  upsertCanonicalUser(db, {
+    email: 'admin@masangroup.com', roleCode: 'SYS_ADMIN', displayName: 'Admin',
+  });
+  upsertCanonicalUser(db, {
+    email: 'qa.one@masangroup.com', roleCode: 'QLCL_SPECIALIST', displayName: 'QA One',
+  });
+  upsertCanonicalUser(db, {
+    email: 'qa.two@masangroup.com', roleCode: 'QLCL_SPECIALIST', displayName: 'QA Two',
+  });
 }
 
 function insertSupplier(db, code, name, extra = {}) {
