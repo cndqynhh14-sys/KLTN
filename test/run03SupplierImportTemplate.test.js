@@ -9,6 +9,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 const ROOT = path.resolve(__dirname, '..');
 const TEMPLATE_PATH = path.join(ROOT, 'database', 'templates', 'supplier-import-template.xlsx');
@@ -45,6 +46,7 @@ function freshModules(dbPath) {
   return {
     ...dbModule,
     ...auth,
+    signToken: canonicalTokenFactory(dbModule, auth),
     suppliersRouter: require('../server/routes/suppliers'),
     SupplierRepository: require('../server/repositories/SupplierRepository'),
     merchandising: require('../server/domain/merchandising'),

@@ -27,6 +27,8 @@ function seedCanonicalQuestionFixture(db) {
   const user = 'stage4c@example.invalid';
   db.prepare(`INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
     VALUES (?, 0, 'Chuyên viên', 1, 'Stage 4C', 'fixture')`).run(user);
+  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
+    SELECT ?, id, 'MANUAL' FROM roles WHERE role_code='QLCL_SPECIALIST'`).run(user);
   const supplierId = Number(db.prepare(`INSERT INTO supplier_master
     (supplier_code, supplier_name, status, source_type, created_by)
     VALUES ('STAGE4C-NCC', 'Synthetic Stage 4C NCC', 'ACTIVE', 'MANUAL', ?)`)

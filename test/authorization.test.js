@@ -8,7 +8,7 @@ const { migrateDatabase } = require('../server/database/migrationRunner');
 const { AuthorizationService, AuthorizationError } = require('../server/services/AuthorizationService');
 const { ApprovalAssignmentService } = require('../server/services/ApprovalAssignmentService');
 const { PolicyService } = require('../server/services/PolicyService');
-const { ROLE_CODES, PERMISSIONS, ACTIVE_PERMISSION_CODES } = require('../server/authorization/permissionCatalog');
+const { ROLE_CODES, PERMISSIONS, ACTIVE_PERMISSION_CODES, LEGACY_ROLE_TO_CODE } = require('../server/authorization/permissionCatalog');
 const { ROLES } = require('../server/domain/roles');
 
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
@@ -27,6 +27,20 @@ function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
     (email, is_admin, role, is_active, display_name, created_at, created_by)
     VALUES (?, ?, ?, 1, 'SYNTHETIC RUN-05 USER', datetime('now'), 'fixture')`
   ).run(email, isAdmin ? 1 : 0, role);
+  const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
+  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
+    SELECT ?, id, 'MANUAL' FROM roles WHERE role_code = ?`).run(email, roleCode);
+  const scopes = roleCode === ROLE_CODES.SUPPLIER_USER
+    ? [['SUPPLIER', email]]
+    : roleCode === ROLE_CODES.QLCL_SPECIALIST
+      ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
+      : [['GLOBAL', null]];
+  for (const [scopeType, scopeValue] of scopes) {
+    db.prepare(`INSERT INTO user_scope_assignments
+      (user_id, role_id, scope_type, scope_value, effect, source)
+      SELECT ?, id, ?, ?, 'ALLOW', 'MANUAL' FROM roles WHERE role_code = ?`
+    ).run(email, scopeType, scopeValue, roleCode);
+  }
 }
 
 function close(db) {
@@ -50,7 +64,7 @@ test('fresh seed has immutable policy keys and the supplier-evaluation authoriza
   } finally { close(db); }
 });
 
-test('legacy users map to stable role codes without exposing retired runtime permissions', () => {
+test('canonical users expose stable role codes without retired runtime permissions', () => {
   const { db, authz } = fixture();
   try {
     assert.equal(ACTIVE_PERMISSION_CODES.includes('UPLOAD.MANAGE'), false);

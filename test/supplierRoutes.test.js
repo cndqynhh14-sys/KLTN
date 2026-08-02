@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 function freshModules(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -22,7 +23,7 @@ function freshModules(dbPath) {
   const suppliersRouter = require('../server/routes/suppliers');
   const merchandising = require('../server/domain/merchandising');
   const roles = require('../server/domain/roles');
-  return { ...dbModule, ...auth, suppliersRouter, merchandising, roles };
+  return { ...dbModule, ...auth, signToken: canonicalTokenFactory(dbModule, auth), suppliersRouter, merchandising, roles };
 }
 
 function startApp(router) {

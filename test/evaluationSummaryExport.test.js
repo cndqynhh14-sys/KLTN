@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 const XLSX = require('xlsx');
 
 const SUMMARY_HEADERS = [
@@ -86,7 +87,7 @@ function freshModules(dbPath, templatePath, exportDir) {
   const dbModule = require('../server/db');
   const auth = require('../server/middleware/auth');
   const evaluationsRouter = require('../server/routes/evaluations');
-  return { ...dbModule, ...auth, evaluationsRouter };
+  return { ...dbModule, ...auth, signToken: canonicalTokenFactory(dbModule, auth), evaluationsRouter };
 }
 
 function startApp(router) {

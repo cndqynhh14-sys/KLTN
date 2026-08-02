@@ -23,7 +23,7 @@ const { requestContext } = require('../server/middleware/requestContext');
 const {
   buildPersonnelImportWorkbook,
 } = require('../scripts/generate-personnel-import-workbooks');
-const { PERMISSIONS, ROLE_CODES } = require('../server/authorization/permissionCatalog');
+const { PERMISSIONS, ROLE_CODES, LEGACY_ROLE_TO_CODE } = require('../server/authorization/permissionCatalog');
 const { ROLES } = require('../server/domain/roles');
 
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
@@ -34,6 +34,18 @@ function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false, displayNam
     (email, is_admin, role, is_active, display_name, created_at, created_by)
     VALUES (?, ?, ?, 1, ?, datetime('now'), 'fixture')`
   ).run(email, isAdmin ? 1 : 0, role, displayName);
+  const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
+  db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
+    SELECT ?, id, 'MANUAL' FROM roles WHERE role_code = ?`).run(email, roleCode);
+  const scopes = roleCode === ROLE_CODES.QLCL_SPECIALIST
+    ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
+    : [['GLOBAL', null]];
+  for (const [scopeType, scopeValue] of scopes) {
+    db.prepare(`INSERT INTO user_scope_assignments
+      (user_id, role_id, scope_type, scope_value, effect, source)
+      SELECT ?, id, ?, ?, 'ALLOW', 'MANUAL' FROM roles WHERE role_code = ?`
+    ).run(email, scopeType, scopeValue, roleCode);
+  }
 }
 
 function fixture() {
@@ -44,7 +56,7 @@ function fixture() {
   const audit = new AuditEventService(db);
   const authz = new AuthorizationService(db, { auditEventService: audit });
   const approvals = new ApprovalAssignmentService(db, authz);
-  authz.syncLegacyUser(ACTOR);
+  authz.identityForUser(ACTOR);
   const authorizationAdmin = new AuthorizationAdminService(db, authz, approvals, audit);
   const personnelImport = new PersonnelImportService(db, authorizationAdmin, authz, audit, {
     clock: () => new Date('2026-07-18T08:00:00.000Z'),
@@ -339,7 +351,7 @@ test('blank active is a no-op for updates and does not reactivate an inactive ac
   } finally { fx.db.close(); }
 });
 
-test('role desired state distinguishes MANUAL windows from LEGACY_COMPAT source', async () => {
+test('role desired state reconciles a historical LEGACY_COMPAT source into canonical MANUAL state', async () => {
   const fx = fixture();
   try {
     addUser(fx.db, 'manual-window@example.test', ROLES.SPECIALIST, false, 'Synthetic imported person');
@@ -347,7 +359,8 @@ test('role desired state distinguishes MANUAL windows from LEGACY_COMPAT source'
     fx.db.prepare(`UPDATE user_roles SET source='MANUAL', valid_from='2026-08-01 00:00:00',
       valid_until='2031-01-01 00:00:00' WHERE user_id=?`).run('manual-window@example.test');
     addUser(fx.db, 'legacy-source@example.test', ROLES.SPECIALIST, false, 'Synthetic imported person');
-    fx.authz.syncLegacyUser('legacy-source@example.test');
+    fx.db.prepare("UPDATE user_roles SET source='LEGACY_COMPAT' WHERE user_id=?")
+      .run('legacy-source@example.test');
 
     const buffer = workbookBuffer([
       canonicalRow({ email: 'manual-window@example.test', role_codes: ROLE_CODES.QLCL_SPECIALIST,

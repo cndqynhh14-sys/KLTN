@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const XLSX = require('xlsx');
+const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -37,6 +38,7 @@ function freshModules(dbPath, { publishEnabled = false } = {}) {
   return {
     ...dbModule,
     ...auth,
+    signToken: canonicalTokenFactory(dbModule, auth),
     questionTemplatesRouter,
     QuestionVersionService,
     QuestionImportService,

@@ -16,8 +16,22 @@ const { sanitizeString } = require('../observability/redact');
 const logger = require('../logger');
 
 const router = express.Router();
-const getUserAuditRow = db.prepare(`SELECT email, is_admin, role, is_active, display_name, authz_version
+const getUserAuditRow = db.prepare(`SELECT email, is_active, display_name, authz_version
   FROM users WHERE email = ?`);
+const getPrimaryRoleCode = db.prepare(`SELECT r.role_code
+  FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+  WHERE ur.user_id = ? AND ur.active = 1 AND r.active = 1
+    AND r.role_code IN (
+      'SYS_ADMIN', 'BLOCK_DIRECTOR_APPROVER', 'DEPARTMENT_HEAD_APPROVER',
+      'REGIONAL_LEAD_APPROVER', 'SUPPLIER_USER', 'QLCL_SPECIALIST'
+    )
+    AND (ur.valid_from IS NULL OR ur.valid_from <= datetime('now'))
+    AND (ur.valid_until IS NULL OR ur.valid_until > datetime('now'))
+  ORDER BY CASE r.role_code
+    WHEN 'SYS_ADMIN' THEN 1 WHEN 'BLOCK_DIRECTOR_APPROVER' THEN 2
+    WHEN 'DEPARTMENT_HEAD_APPROVER' THEN 3 WHEN 'REGIONAL_LEAD_APPROVER' THEN 4
+    WHEN 'SUPPLIER_USER' THEN 5 WHEN 'QLCL_SPECIALIST' THEN 6 ELSE 99 END
+  LIMIT 1`);
 const restoreUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: parseInt(process.env.MAINTENANCE_MAX_DB_MB || '64', 10) * 1024 * 1024 },
@@ -37,12 +51,11 @@ function normalizeChangeReason(value) {
 
 function userAuditSnapshot(row) {
   if (!row) return null;
+  const roleCode = getPrimaryRoleCode.get(row.email)?.role_code || null;
   return {
     active: Boolean(row.is_active),
     display_name: row.display_name || null,
-    role_code: row.is_admin
-      ? ROLE_CODES.SYS_ADMIN
-      : (LEGACY_ROLE_TO_CODE[row.role] || ROLE_CODES.QLCL_SPECIALIST),
+    role_code: roleCode,
   };
 }
 
@@ -102,6 +115,7 @@ router.post('/users', (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const role = normalizeRole(req.body?.role, req.body?.is_admin ? ROLES.ADMIN : ROLES.SPECIALIST);
   const is_admin = role === ROLES.ADMIN;
+  const roleCode = LEGACY_ROLE_TO_CODE[role];
   const display_name = String(req.body?.display_name || '').trim() || null;
   const reason = normalizeChangeReason(req.body?.reason);
 
@@ -118,8 +132,10 @@ router.post('/users', (req, res) => {
   const before = userAuditSnapshot(getUserAuditRow.get(email));
   let identity;
   try {
-    stmts.upsertUser.run({ email, is_admin: is_admin ? 1 : 0, role, display_name, created_by: req.user.email });
-    identity = authorizationService.syncLegacyUser(email, {
+    stmts.upsertUser.run({ email, display_name, created_by: req.user.email });
+    identity = authorizationService.setPrimaryRole({
+      userId: email,
+      roleCode,
       actor: req.user.email,
       requestId: req.requestId,
       correlationId: req.correlationId,
@@ -147,7 +163,7 @@ router.post('/users', (req, res) => {
     },
     ip: req.ip,
   });
-  res.json({ ok: true, email, role, is_admin, authz_version: Number(stored.authz_version) });
+  res.json({ ok: true, email, role: identity.role, is_admin: identity.isAdmin, authz_version: Number(stored.authz_version) });
 });
 
 // DELETE /admin/users/:email — deactivate (soft delete). Users giữ lại trong access_log.

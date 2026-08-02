@@ -29,7 +29,7 @@ class WorkflowHistoryRepository {
     return this.statements.insert.run({
       ticket_id: ticketId,
       actor_user_id: user.email,
-      actor_role: user.role,
+      actor_role: user.primaryRoleCode || user.roleCodes?.[0] || null,
       action,
       from_status: fromStatus || null,
       to_status: toStatus || null,

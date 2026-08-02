@@ -47,7 +47,7 @@ function runAuthMiddleware(token) {
   return { req, statusCode: res.statusCode, body: res.body, nextCalled };
 }
 
-test('legacy JWTs are rejected by default and accepted only with the explicit compatibility switch', () => {
+test('legacy JWTs are rejected even when the retired compatibility switch is set', () => {
   const legacyEmail = 'legacy-session@example.invalid';
   const token = jwt.sign(
     { email: legacyEmail, role: ROLES.ADMIN, isAdmin: true },
@@ -93,13 +93,10 @@ test('legacy JWTs are rejected by default and accepted only with the explicit co
     assert.equal(legacyIdentityCalls, 0);
 
     process.env.AUTHZ_ALLOW_LEGACY_SESSION = 'true';
-    const accepted = runAuthMiddleware(token);
-    assert.equal(accepted.statusCode, 200);
-    assert.equal(accepted.nextCalled, true);
-    assert.equal(accepted.req.user.email, legacyEmail);
-    assert.equal(accepted.req.user.role, ROLES.SPECIALIST);
-    assert.equal(accepted.req.user.isAdmin, false);
-    assert.equal(legacyIdentityCalls, 1);
+    const stillRejected = runAuthMiddleware(token);
+    assert.equal(stillRejected.statusCode, 401);
+    assert.equal(stillRejected.nextCalled, false);
+    assert.equal(legacyIdentityCalls, 0);
   } finally {
     if (originalDbModule) require.cache[dbModulePath] = originalDbModule;
     else delete require.cache[dbModulePath];
@@ -109,21 +106,27 @@ test('legacy JWTs are rejected by default and accepted only with the explicit co
 });
 
 test('requireRole returns 403 for users outside the allowed role set', () => {
-  const denied = runMiddleware(requireRole([ROLES.ADMIN]), { email: 'lead@masangroup.com', role: ROLES.LEAD });
+  const denied = runMiddleware(requireRole([ROLES.ADMIN]), {
+    email: 'lead@masangroup.com',
+    roleCodes: ['REGIONAL_LEAD_APPROVER'],
+  });
   assert.equal(denied.statusCode, 403);
   assert.deepEqual(denied.body, { error: 'forbidden' });
   assert.equal(denied.nextCalled, false);
 
-  const allowed = runMiddleware(requireRole([ROLES.ADMIN]), { email: 'admin@masangroup.com', role: ROLES.ADMIN });
+  const allowed = runMiddleware(requireRole([ROLES.ADMIN]), {
+    email: 'admin@masangroup.com',
+    roleCodes: ['SYS_ADMIN'],
+  });
   assert.equal(allowed.statusCode, 200);
   assert.equal(allowed.nextCalled, true);
 });
 
 test('requireInternal blocks NCC role from internal APIs', () => {
-  const denied = runMiddleware(requireInternal, { email: 'ncc@example.com', role: ROLES.SUPPLIER });
+  const denied = runMiddleware(requireInternal, { email: 'ncc@example.com', roleCodes: ['SUPPLIER_USER'] });
   assert.equal(denied.statusCode, 403);
   assert.deepEqual(denied.body, { error: 'forbidden' });
 
-  const allowed = runMiddleware(requireInternal, { email: 'spec@masangroup.com', role: ROLES.SPECIALIST });
+  const allowed = runMiddleware(requireInternal, { email: 'spec@masangroup.com', roleCodes: ['QLCL_SPECIALIST'] });
   assert.equal(allowed.nextCalled, true);
 });

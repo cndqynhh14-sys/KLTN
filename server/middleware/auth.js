@@ -3,7 +3,7 @@
 // audience=qlcl-app so cross-app tokens cannot be reused here.
 
 const jwt = require('jsonwebtoken');
-const { ROLES, normalizeRole } = require('../domain/roles');
+const { ROLE_CODES, LEGACY_ROLE_TO_CODE } = require('../authorization/permissionCatalog');
 const logger = require('../logger');
 const { setActor } = require('../observability/context');
 
@@ -27,7 +27,6 @@ function signToken(payload, ttlSeconds) {
   const authSecurityProfile = payload?.authSecurityProfile === 'development_relaxed'
     ? 'development_relaxed'
     : 'guarded';
-  authzService().syncLegacyUser(email, { actor: null });
   const session = authzService().createSession(email, { ttlSeconds: ttl });
   return jwt.sign({
     sub: email,
@@ -53,12 +52,6 @@ function requireAuth(req, res, next) {
       req.user.sessionId = decoded.sid;
       req.user.authDeliveryMode = decoded.am === 'screen' ? 'screen' : 'email';
       req.user.authSecurityProfile = decoded.asp === 'development_relaxed' ? 'development_relaxed' : 'guarded';
-    } else if (process.env.AUTHZ_ALLOW_LEGACY_SESSION === 'true' && decoded.email) {
-      // Compatibility window only: derive identity from RBAC and ignore legacy role/admin claims.
-      req.user = authzService().identityForLegacyRoutes(decoded.email);
-      req.user.sessionId = null;
-      req.user.authDeliveryMode = 'email';
-      req.user.authSecurityProfile = 'guarded';
     } else {
       return res.status(401).json({ error: 'invalid_token', code: 'AUTH_SESSION_INVALID', request_id: req.requestId });
     }
@@ -71,16 +64,17 @@ function requireAuth(req, res, next) {
 
 // Admin-only guard — mount after requireAuth.
 function requireAdmin(req, res, next) {
-  if (!req.user || (req.user.role !== ROLES.ADMIN && !req.user.isAdmin)) {
+  if (!req.user || !req.user.roleCodes?.includes(ROLE_CODES.SYS_ADMIN)) {
     return res.status(403).json({ error: 'forbidden' });
   }
   next();
 }
 
 function requireRole(roles) {
-  const allowed = Array.isArray(roles) ? roles : [roles];
+  const requested = Array.isArray(roles) ? roles : [roles];
+  const allowed = new Set(requested.map((role) => LEGACY_ROLE_TO_CODE[role] || role));
   return (req, res, next) => {
-    if (!req.user || !allowed.includes(req.user.role)) {
+    if (!req.user || !req.user.roleCodes?.some((roleCode) => allowed.has(roleCode))) {
       return res.status(403).json({ error: 'forbidden' });
     }
     next();
@@ -88,7 +82,7 @@ function requireRole(roles) {
 }
 
 function requireInternal(req, res, next) {
-  if (!req.user || req.user.role === ROLES.SUPPLIER) {
+  if (!req.user || req.user.roleCodes?.includes(ROLE_CODES.SUPPLIER_USER)) {
     return res.status(403).json({ error: 'forbidden' });
   }
   next();

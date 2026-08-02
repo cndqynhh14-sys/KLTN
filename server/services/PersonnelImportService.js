@@ -15,8 +15,6 @@ const {
   validityWindow,
 } = require('./AuthorizationAdminService');
 const {
-  LEGACY_PRIMARY_ROLE_PRIORITY,
-  LEGACY_ROLE_TO_CODE,
   ROLE_CODES,
   ROLE_CODE_TO_LEGACY,
 } = require('../authorization/permissionCatalog');
@@ -413,8 +411,21 @@ class PersonnelImportService {
   }
 
   _currentAccount(email) {
-    return this.db.prepare(`SELECT email, display_name, is_active, is_admin, role, authz_version
-      FROM users WHERE email = ?`).get(email) || null;
+    return this.db.prepare(`SELECT u.email, u.display_name, u.is_active, u.authz_version,
+      (SELECT r.role_code FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = u.email AND ur.active = 1 AND r.active = 1
+         AND r.role_code IN (
+           'SYS_ADMIN', 'BLOCK_DIRECTOR_APPROVER', 'DEPARTMENT_HEAD_APPROVER',
+           'REGIONAL_LEAD_APPROVER', 'SUPPLIER_USER', 'QLCL_SPECIALIST'
+         )
+         AND (ur.valid_from IS NULL OR ur.valid_from <= datetime('now'))
+         AND (ur.valid_until IS NULL OR ur.valid_until > datetime('now'))
+       ORDER BY CASE r.role_code
+         WHEN 'SYS_ADMIN' THEN 1 WHEN 'BLOCK_DIRECTOR_APPROVER' THEN 2
+         WHEN 'DEPARTMENT_HEAD_APPROVER' THEN 3 WHEN 'REGIONAL_LEAD_APPROVER' THEN 4
+         WHEN 'SUPPLIER_USER' THEN 5 WHEN 'QLCL_SPECIALIST' THEN 6 ELSE 99 END
+       LIMIT 1) AS primary_role_code
+      FROM users u WHERE u.email = ?`).get(email) || null;
   }
 
   _accountSnapshot(account) {
@@ -855,25 +866,12 @@ class PersonnelImportService {
     }
   }
 
-  _legacyProjection(roles, account) {
-    const codes = roles.map((item) => item.roleCode);
-    const primary = LEGACY_PRIMARY_ROLE_PRIORITY.find((roleCode) => codes.includes(roleCode));
-    if (primary) return { roleCode: primary, role: ROLE_CODE_TO_LEGACY[primary], isAdmin: primary === ROLE_CODES.SYS_ADMIN };
-    if (account) {
-      const roleCode = account.is_admin ? ROLE_CODES.SYS_ADMIN : (LEGACY_ROLE_TO_CODE[account.role] || ROLE_CODES.QLCL_SPECIALIST);
-      return { roleCode, role: account.role, isAdmin: Boolean(account.is_admin) };
-    }
-    throw new PersonnelImportError('legacy_projection_role_required', 409);
-  }
-
   _accountAudit(before, after, context, reason) {
     const changed = !before || before.display_name !== after.display_name || Boolean(before.is_active) !== Boolean(after.is_active)
-      || before.role !== after.role || Boolean(before.is_admin) !== Boolean(after.is_admin);
+      || before.primary_role_code !== after.primary_role_code;
     if (!changed) return;
     const eventName = before && before.is_active && !after.is_active
       ? 'user.account.deactivated' : 'user.account.upserted';
-    const stableRoleCode = (account) => account.is_admin
-      ? ROLE_CODES.SYS_ADMIN : (LEGACY_ROLE_TO_CODE[account.role] || ROLE_CODES.QLCL_SPECIALIST);
     this.auditEventService.record({
       eventName,
       actorUserId: context.actor,
@@ -886,25 +884,23 @@ class PersonnelImportService {
       correlationId: context.correlationId,
       metadata: {
         target_user_id: after.email,
-        role_code: stableRoleCode(after),
+        role_code: after.primary_role_code,
         reason,
         authz_version: after.authz_version,
       },
-      before: before ? { active: Boolean(before.is_active), display_name: before.display_name, role_code: stableRoleCode(before) } : {},
-      after: { active: Boolean(after.is_active), display_name: after.display_name, role_code: stableRoleCode(after) },
+      before: before ? { active: Boolean(before.is_active), display_name: before.display_name, role_code: before.primary_role_code } : {},
+      after: { active: Boolean(after.is_active), display_name: after.display_name, role_code: after.primary_role_code },
     });
   }
 
   _applyOperation(operation, context, reason) {
     if (operation.outcome === 'UNCHANGED') return;
     const before = this._currentAccount(operation.email);
-    const projection = this._legacyProjection(operation.roles, before);
     if (!before) {
       this.db.prepare(`INSERT INTO users
-        (email, is_admin, role, is_active, display_name, created_at, created_by)
-        VALUES (?, ?, ?, 1, ?, datetime('now'), ?)`).run(
-        operation.email, projection.isAdmin ? 1 : 0, projection.role,
-        operation.displayName, context.actor || null
+        (email, is_active, display_name, created_at, created_by)
+        VALUES (?, 1, ?, datetime('now'), ?)`).run(
+        operation.email, operation.displayName, context.actor || null
       );
     } else if (!before.is_active && (operation.rolesChanged || (operation.scope && operation.scopeChanged))) {
       this.db.prepare('UPDATE users SET is_active = 1 WHERE email = ?').run(operation.email);
@@ -916,14 +912,7 @@ class PersonnelImportService {
         reason,
         confirmation: requiredConfirmation('ASSIGN_ROLES', operation.email),
       }, context);
-      this.db.prepare('UPDATE users SET is_admin = ?, role = ? WHERE email = ?')
-        .run(projection.isAdmin ? 1 : 0, projection.role, operation.email);
       this.authorizationService.cache.delete(operation.email);
-      this.authorizationService.syncLegacyUser(operation.email, {
-        actor: context.actor,
-        requestId: context.requestId,
-        correlationId: context.correlationId,
-      });
     }
     if (operation.scope && operation.scopeChanged) {
       this.authorizationAdmin.upsertUserScope(operation.email, {

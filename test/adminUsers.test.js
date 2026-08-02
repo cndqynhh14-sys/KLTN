@@ -61,6 +61,7 @@ test('admin user upsert and deactivation require a bounded reason and record ver
   const { db, authorizationService } = require('../server/db');
   const { requestContext } = require('../server/middleware/requestContext');
   const { ROLES } = require('../server/domain/roles');
+  const { ROLE_CODES } = require('../server/authorization/permissionCatalog');
   const router = require('../server/routes/admin');
   const actor = 'admin-user-actor@example.invalid';
   const target = 'admin-user-target@example.invalid';
@@ -68,7 +69,7 @@ test('admin user upsert and deactivation require a bounded reason and record ver
     VALUES (?, 1, ?, 1, 'Synthetic admin actor', 'fixture')
     ON CONFLICT(email) DO UPDATE SET is_admin = 1, role = excluded.role, is_active = 1`)
     .run(actor, ROLES.ADMIN);
-  authorizationService.syncLegacyUser(actor);
+  authorizationService.setPrimaryRole({ userId: actor, roleCode: ROLE_CODES.SYS_ADMIN, source: 'MANUAL' });
   const token = tokenFor(authorizationService, actor);
   const app = express();
   app.use(requestContext({ logger: { info() {} } }));

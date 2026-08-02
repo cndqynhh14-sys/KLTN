@@ -1256,14 +1256,12 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.locator('#scoring-policy-pane-simulation')).toBeVisible();
     await expect(page.locator('#scoring-policy-simulation-tbody tr')).toHaveCount(6);
     const forbiddenQuestionPublishStatus = await page.evaluate(async () => {
-      const templates = await (await fetch('/qlcl/api/question-templates')).json();
-      const template = templates.items.find((item) => item.template_code === 'BM04');
-      const versions = await (await fetch(`/qlcl/api/question-templates/${template.id}/versions`)).json();
-      const version = versions.items.find((item) => item.status === 'IN_REVIEW') || versions.items[0];
-      const response = await fetch(`/qlcl/api/question-templates/${template.id}/versions/${version.id}/publish`, {
+      // Authorization runs before resource lookup. Fixed synthetic identifiers
+      // keep this denial check independent from QUESTION_TEMPLATE.READ.
+      const response = await fetch('/qlcl/api/question-templates/1/versions/1/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expected_lock_version: version.lock_version }),
+        body: JSON.stringify({ expected_lock_version: 1 }),
       });
       await response.text();
       return response.status;
@@ -1393,6 +1391,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator(`[data-authz-user-role="${cloneRole}"]`).check();
     await page.locator(`[data-authz-role-until="${cloneRole}"]`).fill('2027-12-31T23:00');
     await page.locator('#authz-user-role-reason').fill('Assign multiple synthetic roles with an explicit validity window');
+    await page.locator('#authz-user-role-confirm').fill(`ASSIGN ROLES ${targetEmail}`);
     const assignmentResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
       && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(targetEmail)}/roles`));
     await page.locator('#authz-save-user-roles').click();

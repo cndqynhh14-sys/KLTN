@@ -9,6 +9,7 @@ const packageInfo = require('../package.json');
 const { DB_PATH, MIGRATIONS_DIR, DEFAULT_SEED_PATH } = require('./config/paths');
 const { migrateDatabase } = require('./database/migrationRunner');
 const { ROLES } = require('./domain/roles');
+const { ROLE_CODES } = require('./authorization/permissionCatalog');
 const { seedCriteriaWorkbook, verifyCriteriaSeedSource } = require('./services/criteriaImporter');
 const { QuestionVersionService } = require('./services/QuestionVersionService');
 const { ensureDefaultReportTemplates, REPORT_TYPE_CODES } = require('./services/reporting');
@@ -115,14 +116,21 @@ function initSchema() {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   const upsertAdmin = db.prepare(
-    `INSERT INTO users (email, is_admin, role, is_active, created_by)
-     VALUES (?, 1, 'Admin', 1, 'seed')
-     ON CONFLICT(email) DO UPDATE SET is_admin = 1, role = 'Admin', is_active = 1`
+    `INSERT INTO users (email, is_active, created_by)
+     VALUES (?, 1, 'seed')
+     ON CONFLICT(email) DO UPDATE SET is_active = 1`
   );
   for (const e of adminEmails) upsertAdmin.run(e);
 
   authorizationService = new AuthorizationService(db);
-  for (const e of adminEmails) authorizationService.syncLegacyUser(e, { actor: null });
+  for (const e of adminEmails) {
+    authorizationService.setPrimaryRole({
+      userId: e,
+      roleCode: ROLE_CODES.SYS_ADMIN,
+      actor: null,
+      source: 'MIGRATION',
+    });
+  }
 }
 
 function ensureDoc3Criteria() {
@@ -607,20 +615,32 @@ authorizationService.setAuditEventService(auditEventService);
 // Prepared statements — created once, reused per request.
 const stmts = {
   // ---- Auth ----
-  getUser: db.prepare('SELECT email, is_admin, role, is_active, display_name FROM users WHERE email = ? AND is_active = 1'),
+  getUser: db.prepare('SELECT email, is_active, display_name, authz_version FROM users WHERE email = ? AND is_active = 1'),
   upsertUser: db.prepare(
-    `INSERT INTO users (email, is_admin, role, is_active, display_name, created_by)
-     VALUES (@email, @is_admin, @role, 1, @display_name, @created_by)
+    `INSERT INTO users (email, is_active, display_name, created_by)
+     VALUES (@email, 1, @display_name, @created_by)
      ON CONFLICT(email) DO UPDATE SET
-       is_admin = excluded.is_admin,
-       role = excluded.role,
        is_active = 1,
        display_name = COALESCE(excluded.display_name, users.display_name)`
   ),
   deactivateUser: db.prepare('UPDATE users SET is_active = 0 WHERE email = ?'),
-  listUsers: db.prepare(
-    'SELECT email, is_admin, role, is_active, display_name, created_at FROM users ORDER BY is_admin DESC, role, email'
-  ),
+  listUsers: db.prepare(`SELECT u.email,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+        WHERE ur.user_id = u.email AND ur.active = 1 AND r.active = 1
+          AND r.role_code = 'SYS_ADMIN'
+      ) THEN 1 ELSE 0 END AS is_admin,
+      CASE
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='SYS_ADMIN') THEN 'Admin'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='BLOCK_DIRECTOR_APPROVER') THEN 'GÄK'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='DEPARTMENT_HEAD_APPROVER') THEN 'TBP'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='REGIONAL_LEAD_APPROVER') THEN 'Lead miá»n'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='SUPPLIER_USER') THEN 'NCC'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='QLCL_SPECIALIST') THEN 'ChuyÃªn viÃªn'
+        ELSE NULL
+      END AS role,
+      u.is_active, u.display_name, u.created_at
+    FROM users u ORDER BY is_admin DESC, role, u.email`),
 
   // ---- Ack ----
   getAck: db.prepare('SELECT rules_version, acknowledged_at FROM usage_acknowledgements WHERE email = ?'),
