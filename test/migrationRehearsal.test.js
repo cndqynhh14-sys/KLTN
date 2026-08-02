@@ -71,9 +71,13 @@ test('migration rehearsal workflow is isolated from production and publishes rep
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /node-version: 20/);
   assert.match(workflow, /npm ci/);
+  assert.match(workflow, /npx playwright install --with-deps chromium/);
   assert.match(workflow, /--with-uat/);
   assert.match(workflow, /report\.json/);
   assert.match(workflow, /report\.md/);
+  assert.match(workflow, /Reject database bytes[\s\S]*?if: always\(\)/);
+  assert.match(workflow, /Upload sanitized rehearsal report[\s\S]*?if: always\(\)/);
+  assert.match(workflow, /artifacts\/uat-runs\/\*\*\/report\.json/);
   assert.doesNotMatch(workflow, /railway|production database/i);
   assert.equal(pkg.scripts['rehearsal:stage4'], 'node scripts/rehearse-database-migrations.js');
 });
