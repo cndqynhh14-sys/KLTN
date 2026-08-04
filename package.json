@@ -96,7 +96,7 @@
     "multer": "^2.2.0",
     "nodemailer": "9.0.3",
     "playwright": "^1.60.0",
-    "redis": "^4.7.0",
+    "redis": "^6.2.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
