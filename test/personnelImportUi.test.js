@@ -42,7 +42,7 @@ test('PROMPT-07 exposes the guarded four-step personnel import route', () => {
 });
 
 test('PROMPT-07 catalogues every personnel import CTA and preserves commit boundaries', () => {
-  assert.equal(actions.ACTION_VERSION, 13);
+  assert.equal(actions.ACTION_VERSION, 14);
   const expected = {
     'personnel_import.download_template': { mutation: false },
     'personnel_import.open_example': { mutation: false },

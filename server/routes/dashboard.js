@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/policy');
 const { PERMISSIONS } = require('../authorization/permissionCatalog');
 const NccEvaluationsAggregateRepository = require('../repositories/dashboard/nccEvaluationsAggregateRepository');
+const SupplierEvaluationStatisticsRepository = require('../repositories/dashboard/supplierEvaluationStatisticsRepository');
 const NccEvaluationsAggregateService = require('../services/dashboard/nccEvaluationsAggregateService');
 const StatisticalDashboardService = require('../services/dashboard/statisticalDashboardService');
 
@@ -12,11 +13,19 @@ const nccEvaluationsAggregateService = new NccEvaluationsAggregateService({
   repository: new NccEvaluationsAggregateRepository(db),
 });
 const statisticalDashboardService = new StatisticalDashboardService({
-  nccEvaluationsAggregateService,
+  repository: new SupplierEvaluationStatisticsRepository(db),
 });
 router.use(requireAuth, requirePermission(PERMISSIONS.DASHBOARD_READ));
 
 function sendDashboardError(err, res, next) {
+  if (err && err.status === 400 && err.code === 'INVALID_DASHBOARD_PERIOD') {
+    return res.status(400).json({
+      error: {
+        code: err.code,
+        message: err.publicMessage || 'Kỳ báo cáo không hợp lệ.',
+      },
+    });
+  }
   if (err && err.status === 400 && err.code === 'INVALID_MONTH') {
     return res.status(400).json({
       error: {
@@ -42,17 +51,50 @@ router.get('/months', (req, res) => {
 
 router.get('/statistics', (req, res, next) => {
   try {
-    res.json(statisticalDashboardService.get(req.query.period));
+    res.json(statisticalDashboardService.get({
+      periodType: req.query.periodType || 'MONTH',
+      periodValue: req.query.periodValue || req.query.period,
+      regions: req.query.regions,
+      evaluationTypes: req.query.evaluationTypes,
+      mch2: req.query.mch2,
+    }));
   } catch (err) {
-    if (err && err.status === 400 && err.code === 'INVALID_MONTH') {
-      return res.status(400).json({
-        error: {
-          code: err.code,
-          message: 'Query parameter period must use YYYY-MM.',
-        },
-      });
-    }
-    return next(err);
+    return sendDashboardError(err, res, next);
+  }
+});
+
+function csvCell(value) {
+  const text = String(value == null ? '' : value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+router.get('/statistics/export', (req, res, next) => {
+  try {
+    const payload = statisticalDashboardService.get({
+      periodType: req.query.periodType || 'MONTH',
+      periodValue: req.query.periodValue || req.query.period,
+      regions: req.query.regions,
+      evaluationTypes: req.query.evaluationTypes,
+      mch2: req.query.mch2,
+    });
+    const rows = [
+      ['BÁO CÁO DASHBOARD ĐÁNH GIÁ NCC', payload.period.label],
+      ['Chỉ số', 'Giá trị hiện tại', 'Kỳ trước', 'Thay đổi'],
+      ['Số lượng NCC được đánh giá', payload.kpis.evaluated_supplier_count.current_value, payload.kpis.evaluated_supplier_count.previous_value, payload.kpis.evaluated_supplier_count.absolute_change],
+      ['Số phiếu đánh giá NCC', payload.kpis.evaluation_ticket_count.current_value, payload.kpis.evaluation_ticket_count.previous_value, payload.kpis.evaluation_ticket_count.absolute_change],
+      ['Số phiếu đạt', payload.kpis.passed_ticket_count.current_value, payload.kpis.passed_ticket_count.previous_value, payload.kpis.passed_ticket_count.absolute_change],
+      ['Số phiếu không đạt', payload.kpis.failed_ticket_count.current_value, payload.kpis.failed_ticket_count.previous_value, payload.kpis.failed_ticket_count.absolute_change],
+      [],
+      ['Hạng', 'Mã NCC', 'Nhà cung cấp', 'Điểm bình quân', 'Xếp loại', 'Số phiếu'],
+      ...payload.top_suppliers.map((row) => [row.rank, row.supplier_code, row.supplier_name, row.average_final_score, row.classification, row.evaluation_count]),
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
+    const safePeriod = payload.period.value.replace(/[^0-9A-Z-]/gi, '-');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="dashboard-ncc-${safePeriod}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    return sendDashboardError(err, res, next);
   }
 });
 

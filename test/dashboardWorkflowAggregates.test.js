@@ -322,10 +322,18 @@ test('evaluation dashboard routes preserve auth, strict month errors and unmount
     assert.equal(malformedStatistics.status, 400);
     assert.deepEqual(await malformedStatistics.json(), {
       error: {
-        code: 'INVALID_MONTH',
-        message: 'Query parameter period must use YYYY-MM.',
+        code: 'INVALID_DASHBOARD_PERIOD',
+        message: 'Kỳ báo cáo không hợp lệ.',
       },
     });
+
+    const quarterStatistics = await fetch(`${appInfo.baseUrl}/dashboard/statistics?periodType=QUARTER&periodValue=2026-Q3`, { headers });
+    assert.equal(quarterStatistics.status, 200);
+    const quarterStatisticsJson = await quarterStatistics.json();
+    assert.equal(quarterStatisticsJson.period.value, '2026-Q3');
+    assert.equal(quarterStatisticsJson.period.start, '2026-07-01');
+    assert.equal(quarterStatisticsJson.trend.length, 6);
+    assert.ok(Array.isArray(quarterStatisticsJson.status_distribution.items));
 
     const docs = await fetch(`${appInfo.baseUrl}/dashboard/ncc-docs?month=2026-04`, { headers });
     assert.equal(docs.status, 404);
@@ -341,12 +349,12 @@ test('evaluation dashboard routes preserve auth, strict month errors and unmount
     const statistics = await fetch(`${appInfo.baseUrl}/dashboard/statistics?period=2026-04`, { headers });
     const statisticsJson = await statistics.json();
     assert.equal(statistics.status, 200, JSON.stringify(statisticsJson));
-    assert.equal(statisticsJson.period, '2026-04');
-    assert.equal(statisticsJson.data_source, 'workflow');
-    assert.equal(statisticsJson.status, 'empty');
-    assert.deepEqual(statisticsJson.trend.months, ['2026-02', '2026-03', '2026-04']);
-    assert.equal(statisticsJson.kpis.find((item) => item.id === 'supplier_evaluations').value, null);
-    assert.deepEqual(statisticsJson.kpis.map((item) => item.id), ['supplier_evaluations']);
+    assert.equal(statisticsJson.period.value, '2026-04');
+    assert.equal(statisticsJson.meta.data_source, 'workflow');
+    assert.equal(statisticsJson.status_distribution.total, 0);
+    assert.deepEqual(statisticsJson.trend.map((item) => item.period_value), ['2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04']);
+    assert.equal(statisticsJson.kpis.evaluated_supplier_count.current_value, 0);
+    assert.equal(statisticsJson.kpis.evaluation_ticket_count.current_value, 0);
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     closeDb(db);

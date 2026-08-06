@@ -635,7 +635,7 @@ import { state } from './js/state.js';
       if (index >= 0) Object.assign(demoEvaluations[index], updated);
       if (ticket) ticket.supplier_introduction = updated.supplier_introduction || '';
     }
-    if (r.data && r.data.nonconformities && ticket) {
+    if (ticket && Array.isArray(r.data && r.data.nonconformities)) {
       ticket.nonconformities = r.data.nonconformities;
       await applyDraftNonconformityRequirements(ticket);
     }
@@ -4107,6 +4107,20 @@ import { state } from './js/state.js';
     }
   }
 
+  async function loadScoringRoundAndRender(ticket) {
+    try {
+      await loadRoundData(ticket);
+    } catch (error) {
+      $('scoring-msg').textContent = 'Không tải được dữ liệu chấm điểm.';
+      return;
+    }
+    try {
+      renderScoring();
+    } catch (error) {
+      handleScoringRenderError(error);
+    }
+  }
+
   function renderScoring() {
     const select = $('scoring-ticket-select');
     if (!select) return;
@@ -4148,9 +4162,7 @@ import { state } from './js/state.js';
     const roundKey = selectedTicket ? selectedTicket.code + ':' + roundNo : '';
     if (selectedTicket && !state.roundLoaded[roundKey]) {
       $('scoring-msg').textContent = 'Đang tải dữ liệu chấm điểm...';
-      loadRoundData(selectedTicket).then(() => renderScoring()).catch(() => {
-        $('scoring-msg').textContent = 'Không tải được dữ liệu chấm điểm.';
-      });
+      loadScoringRoundAndRender(selectedTicket);
       return;
     }
     const ticketQuestions = questionsForTicket(selectedTicket);
@@ -4260,7 +4272,7 @@ import { state } from './js/state.js';
     $('score-counts').textContent = result ? `${result.counts.A}/${result.counts.B}/${result.counts.C}/${result.counts.D}` : '0/0/0/0';
     $('scoring-status').textContent = ticket ? `Trạng thái phiếu: ${ticket.status}` : '';
     renderReassessmentBanner(ticket);
-    renderNonconformities((ticket && ticket.nonconformities && ticket.nonconformities.length) ? ticket.nonconformities : (result ? result.nonconformities : []), ticket);
+    renderNonconformities(currentRoundNonconformityRows(ticket, result ? result.nonconformities : null), ticket);
     const roundNo = ticket ? (ticket.current_round_no || ticket.completed_round || 1) : 1;
     const leadEligibility = result ? leadSubmissionEligibility(answers, activeQuestions, result) : { eligible: false };
     const canScoreRound = !!ticket && resourceCan(ticket, 'score');
@@ -4304,7 +4316,7 @@ import { state } from './js/state.js';
 
   function correctionRowLocked(ticket, row) {
     if (!ticket || ticket.status !== 'Đang xử lý') return true;
-    return !!(row && Number(row.correction_locked || 0));
+    return !!ticket.scoringLocked || !!(row && Number(row.correction_locked || 0));
   }
 
   function nonconformityQuestionKey(row) {
@@ -4329,16 +4341,49 @@ import { state } from './js/state.js';
     return key ? (draftCorrectiveRequirementStore()[key] || {}) : {};
   }
 
+  function evaluationDateForNonconformities(ticket) {
+    return ticket?.actual_evaluation_date_iso || ticket?.planned_iso || localTodayISODate();
+  }
+
   function defaultCorrectionDueDateForTicket(ticket) {
     const roundNo = Number(ticket?.current_round_no || ticket?.completed_round || 1);
     if (!ticket || roundNo !== 1) return '';
-    const evaluationDate = ticket.actual_evaluation_date_iso || ticket.planned_iso || localTodayISODate();
-    return addCalendarDaysISODate(evaluationDate, 7);
+    return addCalendarDaysISODate(evaluationDateForNonconformities(ticket), 7);
+  }
+
+  function currentRoundNonconformityRows(ticket, calculatedRows) {
+    if (!ticket) return [];
+    const roundNo = Number(ticket.current_round_no || ticket.completed_round || 1);
+    const savedRows = (ticket.nonconformities || []).filter((row) => {
+      const rowRound = Number(row && row.round_no);
+      return (!rowRound || rowRound === roundNo) && ['B', 'C', 'D'].includes(row.severity || row.score);
+    });
+    if (!Array.isArray(calculatedRows)) return savedRows;
+    const savedByQuestion = new Map(savedRows.map((row) => [nonconformityQuestionKey(row), row]));
+    return calculatedRows
+      .filter((row) => ['B', 'C', 'D'].includes(row && (row.score || row.severity)))
+      .map((row) => {
+        const saved = savedByQuestion.get(nonconformityQuestionKey(row));
+        const score = row.score || row.severity;
+        if (!saved) return row;
+        return {
+          ...row,
+          ...saved,
+          category: row.category || row.section || saved.category || saved.section || '',
+          section: row.section || row.category || saved.section || saved.category || '',
+          clause_code: row.clause_code || row.question_code || saved.clause_code || saved.question_code || '',
+          question_code: row.question_code || row.clause_code || saved.question_code || saved.clause_code || '',
+          severity: score,
+          score,
+          note: row.note || '',
+          nonconformity_content: row.note || row.nonconformity_content || row.nonconformity || '',
+          nonconformity: row.note || row.nonconformity_content || row.nonconformity || '',
+        };
+      });
   }
 
   function nonconformityDisplayRow(row, ticket) {
-    const persisted = !!(row && row.id
-      && (row.evaluation_answer_id || row.question_item_id || row.question_id));
+    const persisted = !!(row && row.id && row.evaluation_answer_id);
     const draftKey = persisted ? '' : draftCorrectiveRequirementKey(ticket, row);
     const draft = draftKey ? (draftCorrectiveRequirementStore()[draftKey] || {}) : {};
     const hasDraftDueDate = Object.prototype.hasOwnProperty.call(draft, 'due_date');
@@ -4381,6 +4426,27 @@ import { state } from './js/state.js';
     return (rows || [])
       .map((row) => nonconformityDisplayRow(row, ticket))
       .filter((row) => !String(row.remediation || '').trim() || !String(row.due_date || '').trim());
+  }
+
+  function renderNonconformityErrorState(message) {
+    const tbody = $('nonconformity-tbody');
+    if (!tbody) return;
+    tbody.textContent = '';
+    const tr = el('tr');
+    tr.appendChild(el('td', {
+      className: 'muted',
+      attrs: { colspan: '7' },
+      text: message || 'Không thể hiển thị bảng điểm không phù hợp. Vui lòng tải lại trang.',
+    }));
+    tbody.appendChild(tr);
+    if ($('nonconformity-count')) $('nonconformity-count').textContent = 'Không xác định';
+    if ($('nonconformity-empty')) $('nonconformity-empty').classList.toggle('hidden', true);
+  }
+
+  function handleScoringRenderError(error) {
+    console.error('[scoring.render_failed]', error);
+    if ($('scoring-msg')) $('scoring-msg').textContent = 'Không thể hiển thị dữ liệu chấm điểm. Vui lòng tải lại trang.';
+    renderNonconformityErrorState();
   }
 
   function renderNonconformities(rows, ticket) {
@@ -4429,6 +4495,8 @@ import { state } from './js/state.js';
         const dueAttrs = r._draft_key
           ? { type: 'date', 'data-nc-due-date': validationId, 'data-nc-draft-due-date': r._draft_key }
           : { type: 'date', 'data-nc-due-date': validationId };
+        const minimumDueDate = evaluationDateForNonconformities(ticket);
+        if (minimumDueDate) dueAttrs.min = minimumDueDate;
         if (r._due_date_is_default) {
           dueAttrs['data-nc-default-due-date'] = r.due_date;
           dueAttrs['data-nc-due-date-dirty'] = 'false';
@@ -4484,7 +4552,7 @@ import { state } from './js/state.js';
   async function applyDraftNonconformityRequirements(ticket) {
     if (!ticket) return;
     const store = draftCorrectiveRequirementStore();
-    const rows = (ticket.nonconformities || []).filter((row) => row.id && row.question_id);
+    const rows = (ticket.nonconformities || []).filter((row) => row.id && row.evaluation_answer_id && nonconformityQuestionKey(row));
     for (const row of rows) {
       const key = draftCorrectiveRequirementKey(ticket, row);
       const draft = key ? store[key] : null;
@@ -4496,8 +4564,10 @@ import { state } from './js/state.js';
         remediation: hasRemediation ? draft.remediation : row.remediation,
         due_date: hasDueDate ? draft.due_date : row.due_date,
       };
-      if (String(next.remediation || '') === String(row.remediation || '') && String(next.due_date || '') === String(row.due_date || '')) continue;
-      await updateNonconformityRequirement(ticket, row, next);
+      if (String(next.remediation || '') !== String(row.remediation || '') || String(next.due_date || '') !== String(row.due_date || '')) {
+        await updateNonconformityRequirement(ticket, row, next);
+      }
+      delete store[key];
     }
   }
 
@@ -6323,24 +6393,6 @@ import { state } from './js/state.js';
     try { localStorage.setItem('qlcl.sidebar', collapsed ? 'collapsed' : 'expanded'); } catch {}
   });
 
-  if ($('global-command-search')) {
-    $('global-command-search').addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
-      const query = e.target.value.trim();
-      if (!query) return;
-      state.evalSearch = query;
-      state.evalPage = 1;
-      if ($('eval-search')) $('eval-search').value = query;
-      navigateToTab('evaluations');
-    });
-    document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        $('global-command-search').focus();
-      }
-    });
-  }
-
   if ($('audit-open-scoring')) {
     $('audit-open-scoring').addEventListener('click', () => {
       const ticket = activeAuditTicket();
@@ -6378,29 +6430,89 @@ import { state } from './js/state.js';
     node.classList.toggle('hidden', !shouldShowGlobalPeriod() || !state.dashboardPeriodNotice);
   }
 
+  function currentDashboardReportValue(type) {
+    const month = currentMonthVN();
+    const [year, monthNo] = month.split('-').map(Number);
+    if (type === 'QUARTER') return `${year}-Q${Math.ceil(monthNo / 3)}`;
+    if (type === 'YEAR') return String(year);
+    return month;
+  }
+
+  function validDashboardReportValue(type, value) {
+    if (!['MONTH', 'QUARTER', 'YEAR'].includes(type)) return false;
+    if (type === 'QUARTER') return /^\d{4}-Q[1-4]$/.test(value);
+    if (type === 'YEAR') return /^\d{4}$/.test(value);
+    return REPORTING_PERIOD.isValidPeriod(value);
+  }
+
+  function dashboardReportLabel(type, value) {
+    if (type === 'QUARTER') {
+      const match = String(value).match(/^(\d{4})-Q([1-4])$/);
+      return match ? `Quý ${['I', 'II', 'III', 'IV'][Number(match[2]) - 1]}/${match[1]}` : value;
+    }
+    if (type === 'YEAR') return `Năm ${value}`;
+    return REPORTING_PERIOD.labelForPeriod(value);
+  }
+
+  function offsetDashboardReportValue(type, value, offset) {
+    if (type === 'YEAR') return String(Number(value) + offset);
+    if (type === 'QUARTER') {
+      const match = String(value).match(/^(\d{4})-Q([1-4])$/);
+      if (!match) return value;
+      const index = (Number(match[1]) * 4) + Number(match[2]) - 1 + offset;
+      return `${Math.floor(index / 4)}-Q${(index % 4) + 1}`;
+    }
+    const [year, month] = String(value).split('-').map(Number);
+    const index = (year * 12) + month - 1 + offset;
+    return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
+  }
+
+  function dashboardReportRouteState() {
+    const params = recordRouteParams();
+    const type = String(params.get('periodType') || 'MONTH').toUpperCase();
+    const value = String(params.get('periodValue') || params.get('period') || '');
+    return validDashboardReportValue(type, value) ? { type, value } : null;
+  }
+
+  function dashboardReportOptions(type, selected) {
+    return Array.from({ length: 11 }, (_, index) => offsetDashboardReportValue(type, selected, 2 - index));
+  }
+
   function renderDashboardPeriodControls() {
+    const reportMode = state.tab === 'overview';
     const periods = REPORTING_PERIOD.normalizePeriods(state.dashboardPeriods);
-    const current = currentMonthVN();
-    const selected = state.month;
+    const report = state.dashboardReport;
+    const type = reportMode ? report.periodType : 'MONTH';
+    const current = reportMode ? currentDashboardReportValue(type) : currentMonthVN();
+    const selected = reportMode ? report.periodValue : state.month;
     const adjacent = REPORTING_PERIOD.adjacentPeriods(periods, selected);
+    ['dashboard-period-segment', 'dashboard-period-segment-mobile'].forEach((id) => {
+      const segment = $(id);
+      if (segment) segment.classList.toggle('hidden', !reportMode);
+    });
+    document.querySelectorAll('[data-dashboard-period-type]').forEach((button) => {
+      button.classList.toggle('active', reportMode && button.dataset.dashboardPeriodType === type);
+      button.setAttribute('aria-pressed', reportMode && button.dataset.dashboardPeriodType === type ? 'true' : 'false');
+    });
     ['month-picker', 'mobile-month-picker'].forEach((id) => {
       const select = $(id);
       if (!select) return;
       select.textContent = '';
-      periods.forEach((item) => select.appendChild(el('option', {
-        attrs: { value: item.value },
-        text: REPORTING_PERIOD.labelForPeriod(item.value),
+      const options = reportMode ? dashboardReportOptions(type, selected) : periods.map((item) => item.value);
+      options.forEach((value) => select.appendChild(el('option', {
+        attrs: { value },
+        text: reportMode ? dashboardReportLabel(type, value) : REPORTING_PERIOD.labelForPeriod(value),
       })));
       select.value = selected;
-      select.disabled = periods.length === 0;
+      select.disabled = options.length === 0;
     });
     ['period-previous', 'mobile-period-previous'].forEach((id) => {
       const button = $(id);
-      if (button) button.disabled = !adjacent.previous;
+      if (button) button.disabled = reportMode ? false : !adjacent.previous;
     });
     ['period-next', 'mobile-period-next'].forEach((id) => {
       const button = $(id);
-      if (button) button.disabled = !adjacent.next;
+      if (button) button.disabled = reportMode ? false : !adjacent.next;
     });
     ['period-current', 'mobile-period-current'].forEach((id) => {
       const button = $(id);
@@ -6411,7 +6523,16 @@ import { state } from './js/state.js';
 
   function syncDashboardPeriodUrl({ replace = false } = {}) {
     if (!shouldShowGlobalPeriod() || !REPORTING_PERIOD.isValidPeriod(state.month)) return false;
-    const route = REPORTING_PERIOD.routeWithPeriod(routePathFromHash(), state.month);
+    let route;
+    if (state.tab === 'overview' && validDashboardReportValue(state.dashboardReport.periodType, state.dashboardReport.periodValue)) {
+      const params = new URLSearchParams({
+        periodType: state.dashboardReport.periodType,
+        periodValue: state.dashboardReport.periodValue,
+      });
+      route = `/dashboard?${params.toString()}`;
+    } else {
+      route = REPORTING_PERIOD.routeWithPeriod(routePathFromHash(), state.month);
+    }
     const next = '#' + route;
     if (window.location.hash === next) return false;
     if (replace) window.history.replaceState(null, '', next);
@@ -6434,6 +6555,36 @@ import { state } from './js/state.js';
     renderDashboardPeriodControls();
     syncDashboardPeriodUrl({ replace });
     if (changed && shouldShowGlobalPeriod()) loadTab();
+  }
+
+  function selectDashboardReportPeriod(value, { replace = false } = {}) {
+    const report = state.dashboardReport;
+    if (!validDashboardReportValue(report.periodType, value)) return;
+    const changed = value !== report.periodValue;
+    report.periodValue = value;
+    renderDashboardPeriodControls();
+    syncDashboardPeriodUrl({ replace });
+    if (changed && state.tab === 'overview') loadTab();
+  }
+
+  function selectDashboardReportType(type) {
+    const report = state.dashboardReport;
+    if (!['MONTH', 'QUARTER', 'YEAR'].includes(type) || type === report.periodType) return;
+    let anchorMonth = state.month || currentMonthVN();
+    if (report.periodType === 'QUARTER' && /^\d{4}-Q[1-4]$/.test(report.periodValue)) {
+      const [year, quarter] = report.periodValue.split('-Q').map(Number);
+      anchorMonth = `${year}-${String(((quarter - 1) * 3) + 1).padStart(2, '0')}`;
+    } else if (report.periodType === 'YEAR' && /^\d{4}$/.test(report.periodValue)) {
+      anchorMonth = `${report.periodValue}-01`;
+    } else if (report.periodType === 'MONTH') {
+      anchorMonth = report.periodValue;
+    }
+    const [year, month] = anchorMonth.split('-').map(Number);
+    report.periodType = type;
+    report.periodValue = type === 'MONTH' ? anchorMonth : type === 'QUARTER' ? `${year}-Q${Math.ceil(month / 3)}` : String(year);
+    renderDashboardPeriodControls();
+    syncDashboardPeriodUrl();
+    if (state.tab === 'overview') loadTab();
   }
 
   async function loadMonths() {
@@ -6459,6 +6610,9 @@ import { state } from './js/state.js';
     }
     state.dashboardPeriods = periods;
     state.month = initial.value || cur;
+    const reportRoute = dashboardReportRouteState();
+    state.dashboardReport.periodType = reportRoute?.type || 'MONTH';
+    state.dashboardReport.periodValue = reportRoute?.value || state.month;
     state.dashboardPeriodNotice = initial.fallback_from_current
       ? `${REPORTING_PERIOD.labelForPeriod(cur)} chưa có dữ liệu. Đang hiển thị kỳ gần nhất: ${REPORTING_PERIOD.labelForPeriod(state.month)}.`
       : '';
@@ -6467,18 +6621,31 @@ import { state } from './js/state.js';
     syncDashboardPeriodUrl({ replace: true });
   }
   ['month-picker', 'mobile-month-picker'].forEach((id) => {
-    if ($(id)) $(id).addEventListener('change', (event) => selectDashboardPeriod(event.target.value));
+    if ($(id)) $(id).addEventListener('change', (event) => {
+      if (state.tab === 'overview') selectDashboardReportPeriod(event.target.value);
+      else selectDashboardPeriod(event.target.value);
+    });
+  });
+  document.querySelectorAll('[data-dashboard-period-type]').forEach((button) => {
+    button.addEventListener('click', () => selectDashboardReportType(button.dataset.dashboardPeriodType));
   });
   [['period-previous', 'previous'], ['mobile-period-previous', 'previous'], ['period-next', 'next'], ['mobile-period-next', 'next']]
     .forEach(([id, direction]) => {
       if (!$(id)) return;
       $(id).addEventListener('click', () => {
+        if (state.tab === 'overview') {
+          selectDashboardReportPeriod(offsetDashboardReportValue(state.dashboardReport.periodType, state.dashboardReport.periodValue, direction === 'previous' ? -1 : 1));
+          return;
+        }
         const adjacent = REPORTING_PERIOD.adjacentPeriods(state.dashboardPeriods, state.month);
         if (adjacent[direction]) selectDashboardPeriod(adjacent[direction]);
       });
     });
   ['period-current', 'mobile-period-current'].forEach((id) => {
-    if ($(id)) $(id).addEventListener('click', () => selectDashboardPeriod(currentMonthVN()));
+    if ($(id)) $(id).addEventListener('click', () => {
+      if (state.tab === 'overview') selectDashboardReportPeriod(currentDashboardReportValue(state.dashboardReport.periodType));
+      else selectDashboardPeriod(currentMonthVN());
+    });
   });
 
   let workspaceReloadTimer = null;
@@ -6702,199 +6869,371 @@ import { state } from './js/state.js';
   }
 
   let statisticalDashboardPayload = null;
+  const DASHBOARD_STATUS_COLORS = Object.freeze({
+    DRAFT: '#6E0012', IN_PROGRESS: '#930019', WAITING_APPROVAL: '#BC0A25',
+    WAITING_CORRECTION: '#DA1E38', ROUND_2: '#F02D48',
+    COMPLETED: '#E53945', CANCELLED: '#FFA0A8',
+  });
+  const DASHBOARD_DONUT_EXCLUDED_STATUS_CODES = new Set(['EXTENDED', 'SUSPENDED']);
+  const DASHBOARD_KPIS = Object.freeze([
+    ['evaluated_supplier_count', 'Số lượng NCC được đánh giá', '♙'],
+    ['evaluation_ticket_count', 'Số phiếu đánh giá NCC', '▤'],
+    ['passed_ticket_count', 'Số phiếu đạt', '✓'],
+    ['failed_ticket_count', 'Số phiếu không đạt', '!'],
+  ]);
 
-  function statisticStatusLabel(status) {
-    if (status === 'ready') return 'Dữ liệu workflow';
-    if (status === 'error') return 'Lỗi nguồn dữ liệu';
-    if (status === 'empty') return 'Không có dữ liệu';
-    return 'Chưa có dữ liệu';
+  function dashboardReportKey() {
+    const report = state.dashboardReport;
+    return JSON.stringify([report.periodType, report.periodValue, report.filters]);
   }
 
-  function renderStatisticKpi(card) {
-    const status = ['ready', 'error', 'empty', 'unavailable'].includes(card?.status) ? card.status : 'unavailable';
-    const node = el('article', {
-      className: `statistics-kpi-card ${status}`,
-      attrs: { 'data-kpi-id': String(card?.id || ''), 'aria-label': String(card?.title || 'Chỉ số') },
+  function dashboardReportQuery() {
+    const report = state.dashboardReport;
+    const params = new URLSearchParams({ periodType: report.periodType, periodValue: report.periodValue });
+    Object.entries(report.filters).forEach(([key, values]) => {
+      if (values.length) params.set(key, values.join(','));
     });
-    node.appendChild(el('div', { className: 'statistics-kpi-label', text: card?.title || '—' }));
-    const valueRow = el('div', { className: 'statistics-kpi-value-row' });
-    valueRow.appendChild(el('strong', {
-      className: 'statistics-kpi-value',
-      text: status === 'ready' ? fmtInt(Number(card.value)) : '—',
+    return params.toString();
+  }
+
+  function dashboardReportRequestActive(requestId, key) {
+    return requestId === state.dashboardRequestId && key === dashboardReportKey();
+  }
+
+  function renderDashboardLoading() {
+    const cards = $('statistics-kpi-cards');
+    cards.textContent = '';
+    DASHBOARD_KPIS.forEach(() => cards.appendChild(el('div', { className: 'statistics-kpi-card statistics-skeleton' })));
+    $('statistics-ranking-body').textContent = '';
+    $('status-donut-legend').textContent = '';
+    $('status-donut-total').textContent = '—';
+    $('status-donut-empty').classList.add('hidden');
+    $('statistics-ranking-empty').classList.add('hidden');
+    $('quality-trend-empty').classList.add('hidden');
+  }
+
+  function comparisonText(value) {
+    const change = Number(value?.absolute_change || 0);
+    if (!change) return 'Không đổi so với kỳ trước';
+    const arrow = change > 0 ? '↑' : '↓';
+    const pct = value.percentage_change;
+    return `${arrow} ${pct == null ? `${Math.abs(change)} phiếu` : `${Math.abs(pct).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`} so với kỳ trước`;
+  }
+
+  function renderStatisticKpi(id, title, icon, value) {
+    const node = el('article', { className: 'statistics-kpi-card', attrs: { 'data-kpi-id': id, 'aria-label': title } });
+    const head = el('div', { className: 'statistics-kpi-head' });
+    head.appendChild(el('div', { className: 'statistics-kpi-label', text: title }));
+    head.appendChild(el('span', { className: 'statistics-kpi-icon', text: icon, attrs: { 'aria-hidden': 'true' } }));
+    node.appendChild(head);
+    node.appendChild(el('strong', { className: 'statistics-kpi-value', text: fmtInt(Number(value?.current_value || 0)) }));
+    node.appendChild(el('span', {
+      className: `statistics-kpi-comparison ${String(value?.sentiment || '').toLowerCase()}`,
+      text: comparisonText(value),
     }));
-    if (status === 'ready') valueRow.appendChild(el('span', { className: 'statistics-kpi-rate', text: fmtPercent(Number(card.rate)) }));
-    node.appendChild(valueRow);
-    node.appendChild(el('div', { className: 'statistics-kpi-detail', text: card?.detail || 'Chưa có dữ liệu' }));
-    node.appendChild(el('div', { className: 'statistics-kpi-status', text: statisticStatusLabel(status) }));
     return node;
   }
 
-  function pointValue(series, index) {
-    const value = series?.points?.[index]?.value;
-    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  function dashboardFilterLabel(key) {
+    return key === 'regions' ? 'Khu vực' : key === 'evaluationTypes' ? 'Loại đánh giá' : 'Ngành hàng - MCH2';
   }
 
-  function renderTrendSummary(payload) {
-    const list = $('quality-trend-summary');
-    if (!list) return;
-    list.textContent = '';
-    const months = Array.isArray(payload?.trend?.months) ? payload.trend.months : [];
-    const series = Array.isArray(payload?.trend?.series) ? payload.trend.series : [];
-    const evaluationSeries = series.find((item) => item.id === 'supplier_evaluations');
-    months.forEach((period, index) => {
-      const evaluationValue = pointValue(evaluationSeries, index);
-      const item = el('li');
-      item.appendChild(el('b', { text: REPORTING_PERIOD.labelForPeriod(period) }));
-      item.appendChild(el('span', {
-        text: `Đánh giá: ${evaluationValue == null ? '—' : fmtPercent(evaluationValue)}`,
-      }));
-      list.appendChild(item);
+  function dashboardFilterOptionsKey(key) {
+    return key === 'evaluationTypes' ? 'evaluation_types' : key;
+  }
+
+  function renderDashboardFilter(host) {
+    const key = host.dataset.filterKey;
+    const selected = state.dashboardReport.filters[key];
+    const options = state.dashboardReport.filterOptions[dashboardFilterOptionsKey(key)] || [];
+    host.textContent = '';
+    host.appendChild(el('label', { text: dashboardFilterLabel(key) }));
+    const trigger = el('button', { className: 'dashboard-filter-trigger', attrs: { type: 'button', 'aria-expanded': 'false' } });
+    trigger.appendChild(el('span', { text: selected.length ? `${selected.length} mục đã chọn` : 'Tất cả' }));
+    trigger.appendChild(el('b', { text: selected.length ? String(selected.length) : '⌄' }));
+    host.appendChild(trigger);
+    const menu = el('div', { className: 'dashboard-filter-menu hidden' });
+    const search = el('input', { className: 'input', attrs: { type: 'search', placeholder: 'Tìm kiếm...', 'aria-label': `Tìm ${dashboardFilterLabel(key)}` } });
+    menu.appendChild(search);
+    const actions = el('div', { className: 'dashboard-filter-actions' });
+    const all = el('button', { text: 'Chọn tất cả', attrs: { type: 'button' } });
+    const clear = el('button', { text: 'Xóa lựa chọn', attrs: { type: 'button' } });
+    actions.append(all, clear);
+    menu.appendChild(actions);
+    const optionHost = el('div', { className: 'dashboard-filter-options' });
+    menu.appendChild(optionHost);
+    host.appendChild(menu);
+    const drawOptions = () => {
+      optionHost.textContent = '';
+      const query = normalizedMasterText(search.value);
+      options.filter((value) => !query || normalizedMasterText(value).includes(query)).forEach((value) => {
+        const label = el('label', { className: 'dashboard-filter-option' });
+        const checkbox = el('input', { attrs: { type: 'checkbox', value } });
+        checkbox.checked = selected.includes(value);
+        checkbox.addEventListener('change', () => {
+          const next = new Set(state.dashboardReport.filters[key]);
+          if (checkbox.checked) next.add(value); else next.delete(value);
+          state.dashboardReport.filters[key] = [...next];
+          renderDashboardFilters();
+          loadTab();
+        });
+        label.append(checkbox, el('span', { text: value }));
+        optionHost.appendChild(label);
+      });
+      if (!optionHost.childElementCount) optionHost.appendChild(el('div', { className: 'muted', text: 'Không có giá trị phù hợp.' }));
+    };
+    trigger.addEventListener('click', (event) => {
+      event.stopPropagation();
+      document.querySelectorAll('.dashboard-filter-menu').forEach((node) => { if (node !== menu) node.classList.add('hidden'); });
+      menu.classList.toggle('hidden');
+      trigger.setAttribute('aria-expanded', menu.classList.contains('hidden') ? 'false' : 'true');
+      if (!menu.classList.contains('hidden')) search.focus();
+    });
+    menu.addEventListener('click', (event) => event.stopPropagation());
+    search.addEventListener('input', drawOptions);
+    all.addEventListener('click', () => {
+      state.dashboardReport.filters[key] = [...options];
+      renderDashboardFilters();
+      loadTab();
+    });
+    clear.addEventListener('click', () => {
+      state.dashboardReport.filters[key] = [];
+      renderDashboardFilters();
+      loadTab();
+    });
+    drawOptions();
+  }
+
+  function renderDashboardFilters() {
+    ['dashboard-filter-region', 'dashboard-filter-evaluation-type', 'dashboard-filter-mch2'].forEach((id) => {
+      if ($(id)) renderDashboardFilter($(id));
+    });
+  }
+
+  document.addEventListener('click', () => document.querySelectorAll('.dashboard-filter-menu').forEach((node) => node.classList.add('hidden')));
+
+  function showStatisticsTooltip(event, lines) {
+    const tooltip = $('statistics-tooltip');
+    tooltip.textContent = '';
+    lines.forEach((line, index) => tooltip.appendChild(el(index ? 'div' : 'strong', { text: line })));
+    tooltip.style.left = `${Math.min(window.innerWidth - 280, event.clientX + 14)}px`;
+    tooltip.style.top = `${Math.min(window.innerHeight - 130, event.clientY + 14)}px`;
+    tooltip.classList.remove('hidden');
+  }
+
+  function hideStatisticsTooltip() {
+    $('statistics-tooltip')?.classList.add('hidden');
+  }
+
+  function drawStatusDonut(distribution) {
+    const canvas = $('status-donut-canvas');
+    const context = canvas.getContext('2d');
+    const items = (distribution.items || [])
+      .filter((item) => !DASHBOARD_DONUT_EXCLUDED_STATUS_CODES.has(item.code) && Number(item.count || 0) > 0)
+      .map((item) => ({ ...item, count: Number(item.count || 0) }));
+    const total = items.reduce((sum, item) => sum + Number(item.count || 0), 0);
+    items.forEach((item) => {
+      item.percentage = total ? Math.round((item.count / total) * 1000) / 10 : 0;
+    });
+    if (!items.some((item) => item.code === state.dashboardReport.selectedStatus)) state.dashboardReport.selectedStatus = '';
+    $('status-donut-total').textContent = fmtInt(total);
+    $('status-donut-empty').classList.toggle('hidden', total > 0);
+    $('statistics-donut-content').classList.toggle('hidden', total === 0);
+    const legend = $('status-donut-legend');
+    legend.textContent = '';
+    items.forEach((item) => {
+      const button = el('button', {
+        className: `statistics-status-item${state.dashboardReport.selectedStatus === item.code ? ' active' : ''}${state.dashboardReport.selectedStatus && state.dashboardReport.selectedStatus !== item.code ? ' muted' : ''}`,
+        attrs: { type: 'button', 'data-status-code': item.code, 'aria-label': item.label },
+      });
+      button.append(el('i', { className: 'statistics-status-dot', attrs: { style: `background:${DASHBOARD_STATUS_COLORS[item.code]}` } }), el('span', { text: item.label }));
+      button.addEventListener('click', () => {
+        state.dashboardReport.selectedStatus = state.dashboardReport.selectedStatus === item.code ? '' : item.code;
+        drawStatusDonut(distribution);
+      });
+      legend.appendChild(button);
+    });
+    const size = 250;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = size * ratio; canvas.height = size * ratio;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, size, size);
+    if (!total) return;
+    const active = state.dashboardReport.selectedStatus;
+    let angle = -Math.PI / 2;
+    const arcs = [];
+    items.forEach((item) => {
+      const next = angle + (Math.PI * 2 * item.count / total);
+      if (item.count) {
+        context.beginPath(); context.arc(125, 125, 94, angle, next); context.strokeStyle = DASHBOARD_STATUS_COLORS[item.code];
+        context.globalAlpha = active && active !== item.code ? .25 : 1; context.lineWidth = active === item.code ? 46.5 : 40.5; context.stroke(); context.globalAlpha = 1;
+        arcs.push({ start: angle, end: next, item });
+      }
+      angle = next;
+    });
+    const arcAt = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * size / rect.width - 125;
+      const y = (event.clientY - rect.top) * size / rect.height - 125;
+      let target = Math.atan2(y, x);
+      if (target < -Math.PI / 2) target += Math.PI * 2;
+      return Math.hypot(x, y) >= 69 && Math.hypot(x, y) <= 118 ? arcs.find((arc) => target >= arc.start && target <= arc.end) : null;
+    };
+    canvas._dashboardDonutMove = (event) => {
+      const arc = arcAt(event);
+      if (!arc) return hideStatisticsTooltip();
+      showStatisticsTooltip(event, [arc.item.label, `Số phiếu: ${fmtInt(arc.item.count)}`, `Tỷ lệ: ${arc.item.percentage.toLocaleString('vi-VN')}%`]);
+    };
+    canvas._dashboardDonutClick = (event) => {
+      const arc = arcAt(event);
+      if (!arc) return;
+      state.dashboardReport.selectedStatus = state.dashboardReport.selectedStatus === arc.item.code ? '' : arc.item.code;
+      drawStatusDonut(distribution);
+    };
+    if (!canvas.dataset.dashboardEventsBound) {
+      canvas.addEventListener('mousemove', (event) => canvas._dashboardDonutMove?.(event));
+      canvas.addEventListener('mouseleave', hideStatisticsTooltip);
+      canvas.addEventListener('click', (event) => canvas._dashboardDonutClick?.(event));
+      canvas.dataset.dashboardEventsBound = 'true';
+    }
+  }
+
+  function renderRanking(rows) {
+    const body = $('statistics-ranking-body');
+    body.textContent = '';
+    $('statistics-ranking-content').classList.toggle('hidden', !rows.length);
+    $('statistics-ranking-empty').classList.toggle('hidden', rows.length > 0);
+    rows.forEach((row) => {
+      const tr = el('tr', { attrs: { tabindex: '0', title: row.supplier_name } });
+      tr.appendChild(el('td', { className: 'mono', text: String(row.rank).padStart(2, '0') }));
+      const supplier = el('td');
+      supplier.append(el('div', { className: 'statistics-ranking-name', text: row.supplier_name, attrs: { title: row.supplier_name } }), el('small', { className: 'statistics-ranking-code', text: row.supplier_code || 'Chưa có mã NCC' }));
+      tr.appendChild(supplier);
+      const scoreText = Number(row.average_final_score).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+      tr.appendChild(el('td', { className: 'statistics-score', text: `${scoreText}%` }));
+      const grade = el('td'); grade.appendChild(el('span', { className: `statistics-grade${row.classification === 'Không đạt' ? ' failed' : ''}`, text: row.classification })); tr.appendChild(grade);
+      const open = () => { state.evalSearch = row.supplier_code || row.supplier_name; navigateToTab('evaluations'); };
+      tr.addEventListener('click', open);
+      tr.addEventListener('keydown', (event) => { if (event.key === 'Enter') open(); });
+      body.appendChild(tr);
     });
   }
 
   function drawQualityTrend(payload = statisticalDashboardPayload) {
     const canvas = $('quality-trend-canvas');
     const empty = $('quality-trend-empty');
-    if (!canvas || !empty) return;
-    const months = Array.isArray(payload?.trend?.months) ? payload.trend.months : [];
-    const series = Array.isArray(payload?.trend?.series) ? payload.trend.series : [];
-    renderTrendSummary(payload);
-    const hasValues = series.some((item) => (item.points || []).some((point) => typeof point.value === 'number' && Number.isFinite(point.value)));
-    empty.classList.toggle('hidden', hasValues);
-
+    const rows = Array.isArray(payload?.trend) ? payload.trend : [];
+    const hasData = rows.some((row) => row.evaluated_supplier_count > 0);
+    empty.classList.toggle('hidden', hasData);
     const context = canvas.getContext('2d');
-    if (!context) return;
-    const width = Math.max(320, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 760));
-    const height = Math.max(220, Math.round(canvas.clientHeight || 270));
+    const width = Math.max(280, Math.round(canvas.parentElement?.clientWidth || 760));
+    const height = 285;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(width * ratio);
-    canvas.height = Math.round(height * ratio);
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
-    if (!months.length || !hasValues) return;
-
+    canvas.width = width * ratio; canvas.height = height * ratio; canvas.style.width = `${width}px`;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height);
+    if (!rows.length || !hasData) return;
     const styles = getComputedStyle(document.documentElement);
-    const colors = {
-      grid: styles.getPropertyValue('--border').trim() || '#e5e7eb',
-      text: styles.getPropertyValue('--muted').trim() || '#6b7280',
-      supplier_evaluations: styles.getPropertyValue('--red').trim() || '#dc2626',
+    const grid = styles.getPropertyValue('--border').trim() || '#e5e7eb';
+    const textColor = styles.getPropertyValue('--muted').trim() || '#6b7280';
+    const surface = styles.getPropertyValue('--surface').trim() || '#fff';
+    const plot = { left: 48, right: width - 48, top: 18, bottom: height - 42 };
+    const chartHeight = plot.bottom - plot.top;
+    const step = (plot.right - plot.left) / rows.length;
+    const maxCount = Math.max(5, Math.ceil(Math.max(...rows.map((row) => row.evaluated_supplier_count)) / 5) * 5);
+    const xAt = (index) => plot.left + step * index + step / 2;
+    const yCount = (value) => plot.bottom - chartHeight * value / maxCount;
+    const yRate = (value) => plot.bottom - chartHeight * Math.max(0, Math.min(1, value));
+    context.font = '10px Be Vietnam Pro, system-ui'; context.textBaseline = 'middle';
+    for (let index = 0; index <= 4; index += 1) {
+      const ratioValue = index / 4; const y = plot.bottom - chartHeight * ratioValue;
+      context.beginPath(); context.strokeStyle = grid; context.lineWidth = 1; context.moveTo(plot.left, y); context.lineTo(plot.right, y); context.stroke();
+      context.fillStyle = textColor; context.textAlign = 'right'; context.fillText(String(Math.round(maxCount * ratioValue)), plot.left - 8, y);
+      context.textAlign = 'left'; context.fillText(`${Math.round(ratioValue * 100)}%`, plot.right + 8, y);
+    }
+    rows.forEach((row, index) => {
+      const selected = row.is_selected;
+      const columnWidth = Math.min(92, step * .92);
+      const x = xAt(index) - columnWidth / 2; const y = yCount(row.evaluated_supplier_count);
+      context.beginPath(); context.roundRect(x, y, columnWidth, plot.bottom - y, [7, 7, 0, 0]); context.fillStyle = selected ? '#D84646' : '#444444'; context.globalAlpha = selected ? 1 : .86; context.fill(); context.globalAlpha = 1;
+      context.fillStyle = selected ? '#D84646' : textColor; context.font = `${selected ? 700 : 500} 10px Be Vietnam Pro, system-ui`; context.textAlign = 'center'; context.fillText(row.period_value.replace(/^\d{4}-/, ''), xAt(index), height - 17);
+    });
+    context.beginPath();
+    rows.forEach((row, index) => { const x = xAt(index); const y = yRate(row.failed_rate); if (index) context.lineTo(x, y); else context.moveTo(x, y); });
+    context.strokeStyle = '#B3B3B3'; context.lineWidth = 2.75; context.lineJoin = 'round'; context.lineCap = 'round'; context.stroke();
+    rows.forEach((row, index) => {
+      const radius = row.is_selected ? 5 : 3;
+      context.beginPath(); context.arc(xAt(index), yRate(row.failed_rate), radius + (row.is_selected ? 3 : 0), 0, Math.PI * 2); context.fillStyle = row.is_selected ? 'rgba(216,70,70,.18)' : 'transparent'; context.fill();
+      context.beginPath(); context.arc(xAt(index), yRate(row.failed_rate), radius, 0, Math.PI * 2); context.fillStyle = '#B3B3B3'; context.fill();
+      if (row.is_selected) { context.beginPath(); context.arc(xAt(index), yRate(row.failed_rate), 2.5, 0, Math.PI * 2); context.fillStyle = surface; context.fill(); }
+    });
+    canvas._dashboardTrendMove = (event) => {
+      const rect = canvas.getBoundingClientRect(); const x = (event.clientX - rect.left) * width / rect.width;
+      const index = Math.max(0, Math.min(rows.length - 1, Math.floor((x - plot.left) / step)));
+      const row = rows[index];
+      showStatisticsTooltip(event, [row.label, `NCC được đánh giá: ${fmtInt(row.evaluated_supplier_count)}`, `Đạt: ${fmtInt(row.passed_ticket_count)}`, `Không đạt: ${fmtInt(row.failed_ticket_count)}`, `Tỷ lệ không đạt: ${(row.failed_rate * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`]);
     };
-    const plot = { left: 46, right: width - 16, top: 14, bottom: height - 38 };
-    const chartWidth = Math.max(1, plot.right - plot.left);
-    const chartHeight = Math.max(1, plot.bottom - plot.top);
-    const xAt = (index) => months.length === 1
-      ? plot.left + chartWidth / 2
-      : plot.left + (chartWidth * index / (months.length - 1));
-    const yAt = (value) => plot.bottom - chartHeight * Math.min(1, Math.max(0, value));
-
-    context.font = '10px Inter, system-ui, sans-serif';
-    context.textBaseline = 'middle';
-    [0, 0.25, 0.5, 0.75, 1].forEach((tick) => {
-      const y = yAt(tick);
-      context.beginPath();
-      context.strokeStyle = colors.grid;
-      context.lineWidth = 1;
-      context.moveTo(plot.left, y);
-      context.lineTo(plot.right, y);
-      context.stroke();
-      context.fillStyle = colors.text;
-      context.textAlign = 'right';
-      context.fillText(`${Math.round(tick * 100)}%`, plot.left - 8, y);
-    });
-    months.forEach((period, index) => {
-      const match = String(period).match(/^\d{4}-(\d{2})$/);
-      context.fillStyle = colors.text;
-      context.textAlign = 'center';
-      context.fillText(match ? `T${Number(match[1])}` : period, xAt(index), height - 16);
-    });
-
-    series.forEach((item) => {
-      const color = colors[item.id];
-      if (!color) return;
-      context.beginPath();
-      let segmentOpen = false;
-      (item.points || []).forEach((point, index) => {
-        const value = typeof point.value === 'number' && Number.isFinite(point.value) ? point.value : null;
-        if (value == null) {
-          segmentOpen = false;
-          return;
-        }
-        const x = xAt(index);
-        const y = yAt(value);
-        if (segmentOpen) context.lineTo(x, y);
-        else context.moveTo(x, y);
-        segmentOpen = true;
-      });
-      context.strokeStyle = color;
-      context.lineWidth = 2.5;
-      context.lineJoin = 'round';
-      context.lineCap = 'round';
-      context.stroke();
-      (item.points || []).forEach((point, index) => {
-        if (typeof point.value !== 'number' || !Number.isFinite(point.value)) return;
-        context.beginPath();
-        context.fillStyle = colors[item.id];
-        context.arc(xAt(index), yAt(point.value), 4, 0, Math.PI * 2);
-        context.fill();
-        context.beginPath();
-        context.fillStyle = styles.getPropertyValue('--surface').trim() || '#fff';
-        context.arc(xAt(index), yAt(point.value), 1.6, 0, Math.PI * 2);
-        context.fill();
-      });
-    });
+    if (!canvas.dataset.dashboardEventsBound) {
+      canvas.addEventListener('mousemove', (event) => canvas._dashboardTrendMove?.(event));
+      canvas.addEventListener('mouseleave', hideStatisticsTooltip);
+      canvas.dataset.dashboardEventsBound = 'true';
+    }
   }
 
-  function validStatisticalDashboard(data, period) {
-    return !!data && data.period === period && Array.isArray(data.kpis) &&
-      Array.isArray(data.trend?.months) && data.trend.months.length === 3 &&
-      Array.isArray(data.trend?.series) &&
-      data.kpis.some((item) => item.id === 'supplier_evaluations') &&
-      data.trend.series.some((item) => item.id === 'supplier_evaluations');
-  }
-
-  function evaluationStatisticsPayload(data) {
-    const kpis = data.kpis.filter((item) => item.id === 'supplier_evaluations');
-    const series = data.trend.series.filter((item) => item.id === 'supplier_evaluations');
-    const status = kpis[0]?.status === 'error' ? 'error' : kpis[0]?.status === 'ready' ? 'ready' : 'empty';
-    return { ...data, status, kpis, trend: { ...data.trend, series } };
+  function validStatisticalDashboard(data, report) {
+    return !!data && data.period?.type === report.periodType && data.period?.value === report.periodValue && data.kpis && Array.isArray(data.status_distribution?.items) && Array.isArray(data.top_suppliers) && Array.isArray(data.trend);
   }
 
   function renderStatisticalDashboard(payload) {
     statisticalDashboardPayload = payload;
-    const cards = $('statistics-kpi-cards');
-    cards.textContent = '';
-    (payload.kpis || []).forEach((card) => cards.appendChild(renderStatisticKpi(card)));
-    cards.classList.remove('hidden');
-    $('statistics-trend-panel').classList.remove('hidden');
-    $('overview-empty').classList.toggle('hidden', payload.status !== 'empty');
-    if (payload.status === 'error') {
-      renderDashboardState('overview-state', 'error', 'Không tải được dữ liệu đánh giá NCC.', () => loadTab());
-    } else {
-      renderDashboardState('overview-state', '', '', null);
-    }
-    window.requestAnimationFrame(() => drawQualityTrend());
+    state.dashboardReport.data = payload;
+    state.dashboardReport.filterOptions = payload.filters?.options || state.dashboardReport.filterOptions;
+    renderDashboardFilters();
+    const cards = $('statistics-kpi-cards'); cards.textContent = '';
+    DASHBOARD_KPIS.forEach(([id, title, icon]) => cards.appendChild(renderStatisticKpi(id, title, icon, payload.kpis[id])));
+    renderDashboardState('overview-state', '', '', null);
+    drawStatusDonut(payload.status_distribution);
+    renderRanking(payload.top_suppliers);
+    window.requestAnimationFrame(() => drawQualityTrend(payload));
   }
 
   async function loadOverview(requestId) {
-    renderDashboardPeriodControls();
-    const month = state.month;
-    renderDashboardState('overview-state', 'loading', `Đang tải dữ liệu ${REPORTING_PERIOD.labelForPeriod(month)}...`, () => loadTab());
-    $('overview-empty').classList.add('hidden');
-    $('statistics-kpi-cards').textContent = '';
-    $('statistics-kpi-cards').classList.add('hidden');
-    $('statistics-trend-panel').classList.add('hidden');
-    const r = await api('/dashboard/statistics?period=' + encodeURIComponent(month));
-    if (!dashboardRequestActive(requestId, month)) return;
-    if (!r.ok || !validStatisticalDashboard(r.data, month)) {
+    const report = state.dashboardReport;
+    if (!validDashboardReportValue(report.periodType, report.periodValue)) report.periodValue = currentDashboardReportValue(report.periodType);
+    renderDashboardPeriodControls(); renderDashboardFilters(); renderDashboardLoading();
+    const key = dashboardReportKey();
+    renderDashboardState('overview-state', 'loading', `Đang tải dữ liệu ${dashboardReportLabel(report.periodType, report.periodValue)}...`, () => loadTab());
+    const r = await api('/dashboard/statistics?' + dashboardReportQuery());
+    if (!dashboardReportRequestActive(requestId, key)) return;
+    if (!r.ok || !validStatisticalDashboard(r.data, report)) {
       statisticalDashboardPayload = null;
-      renderDashboardState('overview-state', 'error', `Không tải được dữ liệu ${REPORTING_PERIOD.labelForPeriod(month)}.`, () => loadTab());
+      renderDashboardState('overview-state', 'error', 'Không thể tải dữ liệu. Vui lòng thử lại.', () => loadTab());
       return;
     }
-    renderStatisticalDashboard(evaluationStatisticsPayload(r.data));
+    renderStatisticalDashboard(r.data);
   }
 
+  async function exportStatisticalDashboard() {
+    const button = $('dashboard-export');
+    const label = button.querySelector('span:last-child');
+    button.disabled = true; label.textContent = 'Đang tạo file...';
+    try {
+      const response = await fetch('/qlcl/api/dashboard/statistics/export?' + dashboardReportQuery(), { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('dashboard_export_failed');
+      const blob = await response.blob();
+      downloadBlob(blob, `dashboard-ncc-${state.dashboardReport.periodValue}.csv`);
+    } catch {
+      renderDashboardState('overview-state', 'error', 'Không thể xuất báo cáo. Vui lòng thử lại.', null);
+    } finally {
+      button.disabled = false; label.textContent = 'Xuất báo cáo';
+    }
+  }
+
+  $('dashboard-export')?.addEventListener('click', exportStatisticalDashboard);
   window.addEventListener('resize', debounce(() => {
-    if (state.tab === 'overview') drawQualityTrend();
+    if (state.tab === 'overview' && statisticalDashboardPayload) {
+      drawStatusDonut(statisticalDashboardPayload.status_distribution);
+      drawQualityTrend(statisticalDashboardPayload);
+    }
   }, 120));
 
   const NCC_EVALUATION_VIOLATION_ORDER = [
@@ -6951,7 +7290,11 @@ import { state } from './js/state.js';
     box.classList.toggle('error', status === 'error');
     box.classList.toggle('empty', status === 'loaded-empty');
     const text = el('span');
-    text.appendChild(el('strong', { text: dashboardMonthLabel(state.month) }));
+    text.appendChild(el('strong', {
+      text: state.tab === 'overview'
+        ? dashboardReportLabel(state.dashboardReport.periodType, state.dashboardReport.periodValue)
+        : dashboardMonthLabel(state.month),
+    }));
     text.appendChild(el('span', { text: ' · ' + message }));
     box.appendChild(text);
     if (status === 'error' && retryHandler) {

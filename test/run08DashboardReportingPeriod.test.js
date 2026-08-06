@@ -55,7 +55,9 @@ test('RUN-08 period controls and dashboard loaders expose the approved UX contra
   assert.match(app, /routeWithPeriod/);
   assert.match(app, /sessionStorage/);
   assert.match(app, /dashboardRequestId/);
-  assert.match(app, /\/dashboard\/statistics\?period=/);
+  assert.match(app, /\/dashboard\/statistics\?' \+ dashboardReportQuery\(\)/);
+  assert.match(app, /periodType/);
+  assert.match(app, /periodValue/);
   assert.match(app, /\/dashboard\/ncc-evaluations\?month=/);
   assert.doesNotMatch(app, /\/dashboard\/timeseries\?month=/);
   assert.match(state, /dashboardRequestId:\s*0/);

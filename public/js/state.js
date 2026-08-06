@@ -22,6 +22,17 @@ export const state = {
   dashboardPeriods: [],
   dashboardRequestId: 0,
   dashboardPeriodNotice: '',
+  dashboardReport: {
+    periodType: 'MONTH',
+    periodValue: '',
+    filters: { regions: [], evaluationTypes: [], mch2: [] },
+    filterOptions: { regions: [], evaluation_types: [], mch2: [] },
+    selectedStatus: '',
+    status: 'idle',
+    requestId: 0,
+    data: null,
+    error: '',
+  },
   nccEvaluationsDashboard: {
     status: 'idle',
     requestedMonth: '',
