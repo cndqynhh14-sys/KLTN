@@ -56,5 +56,6 @@ test('frontend source contains no input-dossier page, state or API integration',
   assert.doesNotMatch(html, /id="view-(?:ncc-docs|lab|kph|qc)"/);
   assert.doesNotMatch(html, /admin-uploads-tbody|threshold-workspace|admin-thresholds-tbody/);
   assert.match(app, /params\.set\('module', 'EVALUATION'\)/);
-  assert.match(app, /supplier_evaluations/);
+  assert.match(app, /DASHBOARD_STATUS_COLORS/);
+  assert.match(app, /dashboardReportQuery/);
 });

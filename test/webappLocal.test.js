@@ -167,16 +167,17 @@ test('local webapp renders, authenticates with guarded screen OTP, and opens eva
   assert.ok(await page.locator('#month-picker option').count() >= 1);
 
   await openRoute(page, '/dashboard', '#view-overview');
-  await page.waitForFunction(() => document.querySelectorAll('#statistics-kpi-cards .statistics-kpi-card').length === 1);
-  assert.equal(await page.locator('#overview-empty').isVisible(), true);
-  assert.match(page.url(), /#\/dashboard\?period=\d{4}-\d{2}$/);
+  await page.waitForFunction(() => document.querySelectorAll('#statistics-kpi-cards .statistics-kpi-card').length === 4);
+  assert.match(page.url(), /#\/dashboard\?periodType=MONTH&periodValue=\d{4}-\d{2}$/);
   assert.equal(await page.locator('#quality-trend-canvas').isVisible(), true);
+  assert.equal(await page.locator('#status-donut-canvas').isVisible(), true);
+  assert.equal(await page.locator('#statistics-ranking-body').count(), 1);
   assert.equal(await page.locator('.statistics-titlebar').count(), 0);
   assert.equal(await page.locator('#dashboard-statistics-tabs').count(), 0);
   assert.equal(await page.locator('#module-navigation').isVisible(), true);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.locator('.statistics-titlebar, #dashboard-statistics-tabs').count(), 0);
-  assert.equal(await page.locator('#statistics-kpi-cards .statistics-kpi-card').count(), 1);
+  assert.equal(await page.locator('#statistics-kpi-cards .statistics-kpi-card').count(), 4);
   await page.setViewportSize({ width: 1366, height: 900 });
 
   await openRoute(page, '/evaluations', '#view-evaluations');

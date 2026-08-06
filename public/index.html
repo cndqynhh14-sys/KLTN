@@ -314,13 +314,19 @@
   .crumb .sep { color: var(--border-2); }
   .crumb b { color: var(--text); font-weight: 600; }
   .crumb .kpill { font-family: var(--mono); font-size: 10px; padding: 3px 8px; background: var(--brand-bg); color: var(--brand); border-radius: 4px; letter-spacing: 0.5px; font-weight: 600; margin-left: 6px; }
-  .pageheader-right { display: flex; align-items: center; gap: 12px; }
+  .pageheader-right { min-width: 0; display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 12px; }
   .period-controls { display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
   .period-label { font-size:10px; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
   .period-nav { min-width:34px; min-height:34px; padding:0 9px; }
   .period-current { min-height:34px; white-space:nowrap; }
   .period-notice { margin: 0 0 12px; padding: 9px 12px; border-radius: 8px; background: var(--blue-bg); color: var(--blue); font-size: 12px; }
   .mobile-reporting-period { display:none; }
+  @media (max-width: 1440px) {
+    .pageheader-right .top-user-chip { display: none; }
+  }
+  @media (max-width: 1180px) {
+    .pageheader-right { gap: 8px; }
+  }
   @media (max-width: 767px) {
     .period-controls { width:100%; justify-content:flex-end; gap:4px; }
     .period-label { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
@@ -1796,35 +1802,6 @@
   }
 
   /* ========== AUDIT WORKSPACE REDESIGN ========== */
-  .cmd-search {
-    width: min(420px, 36vw);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0 12px;
-  }
-  .cmd-search input {
-    width: 100%;
-    min-width: 0;
-    height: 34px;
-    border: 0;
-    outline: none;
-    background: transparent;
-    font-size: 13px;
-    color: var(--text);
-  }
-  .cmd-search .kbd {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--muted);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 1px 5px;
-    background: #f8fafc;
-  }
   .top-icon-btn {
     position: relative;
     min-width: 34px;
@@ -2040,7 +2017,6 @@
       justify-content: flex-start;
       flex-wrap: wrap;
     }
-    .cmd-search { width: min(100%, 360px); }
     #view-evaluations .table-scroll,
     #view-approvals .table-scroll,
     #view-reports .table-scroll { display: none; }
@@ -2337,53 +2313,122 @@
   .workspace-empty { padding: 28px 16px; color: var(--muted); text-align: center; }
   #view-overview > .section-hdr { display: none; }
 
-  .statistics-dashboard { display: grid; gap: 20px; }
-  .statistics-kpis { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 18px; }
-  .statistics-kpi-card { position: relative; min-height: 166px; padding: 18px; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-sm); }
-  .statistics-kpi-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--border-2); }
-  .statistics-kpi-card[data-kpi-id="supplier_evaluations"]::before { background: var(--red); }
-  .statistics-kpi-card.unavailable { background: linear-gradient(145deg, var(--surface), var(--surface-2)); }
-  .statistics-kpi-label { min-height: 34px; color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1.4; }
-  .statistics-kpi-value-row { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; }
-  .statistics-kpi-value { color: var(--text); font: 700 32px/1 var(--mono); letter-spacing: -.04em; }
-  .statistics-kpi-rate { color: var(--red); font: 700 12px/1 var(--mono); }
-  .statistics-kpi-detail { margin-top: 13px; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
-  .statistics-kpi-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; color: var(--muted); font-size: 10.5px; }
-  .statistics-kpi-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--border-2); }
-  .statistics-kpi-card.ready .statistics-kpi-status::before { background: var(--green); }
-  .statistics-kpi-card.error .statistics-kpi-status::before { background: var(--red); }
-  .statistics-trend-panel { padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-sm); }
-  .statistics-trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
-  .statistics-trend-head h2 { margin: 0; color: var(--text); font-size: 15px; }
-  .statistics-trend-head p { margin: 6px 0 0; color: var(--muted); font-size: 11.5px; }
-  .statistics-trend-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; color: var(--muted); font-size: 11px; }
-  .statistics-trend-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .statistics-trend-legend i { width: 18px; height: 3px; border-radius: 999px; background: var(--blue); }
-  .statistics-trend-legend .evaluation i { background: var(--red); }
-  .statistics-chart-wrap { position: relative; min-height: 310px; padding: 16px 18px 10px; }
-  #quality-trend-canvas { display: block; width: 100%; height: 270px; }
-  .statistics-chart-empty { position: absolute; inset: 16px 18px 10px; display: grid; place-items: center; border: 1px dashed var(--border-2); border-radius: 8px; background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--muted); font-size: 12px; text-align: center; }
-  .statistics-trend-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 0 20px 18px; list-style: none; }
-  .statistics-trend-summary li { padding: 10px 12px; border-left: 1px solid var(--border); color: var(--muted); font-size: 10.5px; line-height: 1.5; }
-  .statistics-trend-summary li:first-child { border-left: 0; }
-  .statistics-trend-summary b { display: block; color: var(--text); font-size: 11px; }
+  .statistics-dashboard { display: grid; gap: 18px; }
+  .statistics-title-row { display: block; }
+  .statistics-title-row h1 { margin: 0; color: var(--text); font-size: clamp(22px, 2vw, 30px); letter-spacing: -.035em; }
+  .dashboard-period-segment { display: inline-flex; align-items: center; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); }
+  .dashboard-period-segment button { min-height: 30px; padding: 5px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
+  .dashboard-period-segment button.active { background: var(--surface); color: var(--brand); box-shadow: var(--shadow-sm); }
+  .statistics-filterbar { position: relative; z-index: 5; display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)) auto; gap: 10px; align-items: end; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .dashboard-filter { position: relative; min-width: 0; }
+  .dashboard-filter > label { display: block; margin: 0 0 6px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+  .dashboard-filter-trigger { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); cursor: pointer; text-align: left; }
+  .dashboard-filter-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dashboard-filter-trigger b { flex: 0 0 auto; min-width: 22px; padding: 2px 6px; border-radius: 99px; background: var(--brand-bg); color: var(--brand); font-size: 10px; text-align: center; }
+  .dashboard-filter-menu { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0; min-width: 240px; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 16px 36px rgba(15,23,42,.16); }
+  .dashboard-filter-menu input { width: 100%; margin-bottom: 7px; }
+  .dashboard-filter-actions { display: flex; justify-content: space-between; gap: 8px; padding: 3px 2px 8px; }
+  .dashboard-filter-actions button { min-height: 28px; border: 0; background: transparent; color: var(--brand); font-size: 11px; font-weight: 700; cursor: pointer; }
+  .dashboard-filter-options { display: grid; gap: 2px; max-height: 190px; overflow: auto; }
+  .dashboard-filter-option { min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
+  .dashboard-filter-option:hover { background: var(--surface-2); }
+  .dashboard-filter-option input { width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
+  .dashboard-export { align-self: end; min-width: 148px; justify-content: center; }
+  .statistics-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .statistics-kpi-card { min-height: 142px; padding: 17px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .statistics-kpi-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .statistics-kpi-label { min-height: 34px; color: var(--muted); font-size: 10.5px; font-weight: 800; line-height: 1.45; letter-spacing: .035em; text-transform: uppercase; }
+  .statistics-kpi-icon { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 10px; background: var(--brand-bg); color: var(--brand); }
+  .statistics-kpi-value { display: block; margin-top: 12px; color: var(--text); font: 800 31px/1 var(--mono); letter-spacing: -.04em; }
+  .statistics-kpi-comparison { display: block; margin-top: 12px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .statistics-kpi-comparison.positive { color: var(--green); }
+  .statistics-kpi-comparison.negative { color: var(--red); }
+  .statistics-main-grid { display: grid; grid-template-columns: minmax(390px, .9fr) minmax(520px, 1.25fr); gap: 14px; align-items: stretch; }
+  .statistics-card { min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .statistics-card-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 18px; border-bottom: 1px solid var(--border); }
+  .statistics-card-head h2 { margin: 0; color: var(--text); font-size: 18px; font-weight: 800; }
+  .statistics-donut-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; align-items: center; padding: 16px; }
+  .statistics-donut-wrap { position: relative; min-height: 260px; display: grid; place-items: center; }
+  #status-donut-canvas { width: 250px; height: 250px; max-width: 100%; }
+  .statistics-donut-center { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%,-50%); text-align: center; pointer-events: none; }
+  .statistics-donut-center span { display: block; color: var(--muted); font-size: 10.5px; }
+  .statistics-donut-center strong { display: block; margin-top: 4px; color: var(--text); font: 800 27px/1 var(--mono); }
+  .statistics-status-legend { display: grid; gap: 2px; max-height: 286px; overflow: auto; }
+  .statistics-status-item { width: 100%; min-height: 30px; display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 7px; align-items: center; padding: 5px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font-size: 10.5px; text-align: left; cursor: pointer; }
+  .statistics-status-item:hover, .statistics-status-item.active { background: var(--surface-2); }
+  .statistics-status-item.muted { opacity: .35; }
+  .statistics-status-dot { width: 9px; height: 9px; border-radius: 3px; }
+  .statistics-ranking-wrap { overflow-x: auto; }
+  .statistics-ranking-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11.5px; }
+  .statistics-ranking-col-rank { width: 10%; }
+  .statistics-ranking-col-supplier { width: 50%; }
+  .statistics-ranking-col-score { width: 20%; }
+  .statistics-ranking-col-grade { width: 20%; }
+  .statistics-ranking-table th { padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: 9.5px; letter-spacing: .045em; text-transform: uppercase; text-align: center; white-space: normal; }
+  .statistics-ranking-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .statistics-ranking-table td:nth-child(1),
+  .statistics-ranking-table td:nth-child(3),
+  .statistics-ranking-table td:nth-child(4) { text-align: center; }
+  .statistics-ranking-table td:nth-child(2) { text-align: left; }
+  .statistics-ranking-table tbody tr { cursor: pointer; }
+  .statistics-ranking-table tbody tr:hover { background: var(--surface-2); }
+  .statistics-ranking-name { max-width: 100%; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .statistics-ranking-code { display: block; margin-top: 2px; color: var(--muted); font-size: 9.5px; font-weight: 500; }
+  .statistics-score { font-weight: 750; font-variant-numeric: tabular-nums; }
+  .statistics-grade { display: inline-flex; padding: 3px 7px; border-radius: 99px; background: var(--surface-2); color: var(--text); font-size: 10px; font-weight: 700; white-space: nowrap; }
+  .statistics-grade.failed { background: var(--red-bg); color: var(--red); }
+  .statistics-trend-panel { overflow: hidden; }
+  .statistics-trend-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px 18px; border-bottom: 1px solid var(--border); }
+  .statistics-trend-head h2 { margin: 0; color: var(--text); font-size: 18px; font-weight: 800; }
+  .statistics-trend-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 14px; color: var(--muted); font-size: 10.5px; }
+  .statistics-trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .statistics-trend-legend i { width: 15px; height: 9px; border-radius: 3px; background: #444; }
+  .statistics-trend-legend .failed i { width: 18px; height: 2px; border-radius: 99px; background: #b3b3b3; }
+  .statistics-chart-wrap { position: relative; width: 100%; min-width: 0; min-height: 320px; padding: 14px 16px 9px; }
+  .statistics-chart-scroll { max-width: 100%; overflow-x: hidden; }
+  #quality-trend-canvas { display: block; width: 100%; max-width: 100%; height: 285px; }
+  .statistics-chart-empty, .statistics-card-empty { display: grid; place-items: center; min-height: 220px; padding: 28px; color: var(--muted); font-size: 11.5px; text-align: center; }
+  .statistics-tooltip { position: fixed; z-index: 400; max-width: 260px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); font-size: 11px; line-height: 1.6; pointer-events: none; }
+  .statistics-skeleton { overflow: hidden; background: var(--surface-2); position: relative; }
+  .statistics-skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent); animation: dashboard-shimmer 1.3s infinite; }
+  @keyframes dashboard-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
   .mobile-admin-tree { display: grid; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
   .mobile-admin-tree h4 { margin: 0 0 2px; font-size: 13px; color: var(--muted); }
   .mobile-admin-tree .navigation-group-toggle { width: 100%; }
   .mobile-navigation-group-items { display: grid; gap: 6px; padding-left: 10px; }
-  @media (max-width: 560px) {
+  @media (max-width: 1080px) {
+    .statistics-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .statistics-main-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
     .statistics-dashboard { gap: 14px; }
-    .statistics-kpis { grid-template-columns: 1fr; }
-    .statistics-kpi-card { min-height: 142px; }
+    .statistics-filterbar { grid-template-columns: 1fr; }
+    .dashboard-export { width: 100%; }
+    .statistics-donut-layout { grid-template-columns: 1fr; }
+    .statistics-status-legend { max-height: none; }
     .statistics-trend-head { align-items: flex-start; flex-direction: column; }
     .statistics-trend-legend { justify-content: flex-start; }
-    .statistics-chart-wrap { min-height: 270px; padding-inline: 8px; }
-    #quality-trend-canvas { height: 235px; }
-    .statistics-trend-summary { grid-template-columns: 1fr; padding-inline: 14px; }
-    .statistics-trend-summary li { border-left: 0; border-top: 1px solid var(--border); }
-    .statistics-source-detail { grid-template-columns: 1fr; }
-    .statistics-source-copy, .statistics-source-metric { grid-column: auto; border-left: 0; border-top: 1px solid var(--border); }
-    .statistics-source-copy { border-top: 0; }
+  }
+  @media (max-width: 520px) {
+    .statistics-kpis { grid-template-columns: 1fr; }
+  }
+  @media (prefers-color-scheme: dark) {
+    #view-overview {
+      --surface: #171a21;
+      --surface-2: #20242d;
+      --border: #303641;
+      --border-2: #444b58;
+      --text: #f2f4f7;
+      --muted: #a5adba;
+      --brand-bg: #321b22;
+      --red-bg: #321b22;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.28);
+      --shadow-lg: 0 12px 30px rgba(0,0,0,.45);
+      color-scheme: dark;
+      background: #11141a;
+    }
+    .statistics-filter-menu { box-shadow: 0 16px 36px rgba(0,0,0,.42); }
+    .statistics-skeleton::after { background: linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent); }
   }
 
   @media (max-width: 1180px) {
@@ -2391,7 +2436,6 @@
     .active-assessment-actions { justify-content: flex-start; grid-column: 1 / -1; }
     .audit-mini-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .audit-layout, .workspace-preview { grid-template-columns: 1fr; }
-    .cmd-search { width: min(320px, 32vw); }
   }
 
   @media (max-width: 767px) {
@@ -2847,7 +2891,6 @@
   .auth-title,
   .auth-label,
   .otp-input,
-  .cmd-search .kbd,
   .active-assessment .eyebrow,
   .audit-mini-card .k,
   .flow-item .k,
@@ -2959,13 +3002,13 @@
       <span id="breadcrumb-items" class="breadcrumb-items admin-breadcrumb"></span>
     </nav>
     <div id="month-controls" class="pageheader-right">
-      <label class="cmd-search" for="global-command-search">
-        <span class="mono" style="color:var(--muted);font-size:12px;">⌕</span>
-        <input id="global-command-search" type="search" placeholder="Tìm nhanh phiếu, NCC, MST, mã NCC..." autocomplete="off">
-        <span class="kbd">⌘K</span>
-      </label>
       <span id="period-controls" class="period-controls">
         <span class="period-label">Kỳ báo cáo</span>
+        <span id="dashboard-period-segment" class="dashboard-period-segment hidden" role="group" aria-label="Loại kỳ báo cáo">
+          <button type="button" data-action-id="dashboard.period_type" data-dashboard-period-type="MONTH">Tháng</button>
+          <button type="button" data-action-id="dashboard.period_type" data-dashboard-period-type="QUARTER">Quý</button>
+          <button type="button" data-action-id="dashboard.period_type" data-dashboard-period-type="YEAR">Năm</button>
+        </span>
         <button id="period-previous" class="btn-ghost period-nav" type="button" data-action-id="dashboard.period_previous" aria-label="Xem kỳ trước" data-tooltip="Kỳ có dữ liệu trước đó">‹</button>
         <select id="month-picker" class="pill-select" aria-label="Kỳ báo cáo"></select>
         <button id="period-next" class="btn-ghost period-nav" type="button" data-action-id="dashboard.period_next" aria-label="Xem kỳ sau" data-tooltip="Kỳ có dữ liệu tiếp theo">›</button>
@@ -3012,6 +3055,11 @@
   </div>
   <div id="mobile-period-controls" class="mobile-reporting-period hidden">
     <span class="period-controls">
+      <span id="dashboard-period-segment-mobile" class="dashboard-period-segment hidden" role="group" aria-label="Loại kỳ báo cáo">
+        <button type="button" data-action-id="dashboard.period_type" data-dashboard-period-type="MONTH">Tháng</button>
+        <button type="button" data-action-id="dashboard.period_type" data-dashboard-period-type="QUARTER">Quý</button>
+        <button type="button" data-action-id="dashboard.period_type" data-dashboard-period-type="YEAR">Năm</button>
+      </span>
       <button id="mobile-period-previous" class="btn-ghost period-nav" type="button" data-action-id="dashboard.period_previous" aria-label="Xem kỳ trước">‹</button>
       <select id="mobile-month-picker" class="pill-select" aria-label="Kỳ báo cáo"></select>
       <button id="mobile-period-next" class="btn-ghost period-nav" type="button" data-action-id="dashboard.period_next" aria-label="Xem kỳ sau">›</button>
@@ -3616,26 +3664,73 @@
   <!-- Báo cáo thống kê -->
   <section id="view-overview" data-testid="overview-view" class="page-wrap hidden">
     <div class="statistics-dashboard">
-      <div id="overview-state" class="dashboard-state hidden" aria-live="polite"></div>
-      <div id="overview-empty" class="dashboard-state empty hidden">Không có dữ liệu nghiệp vụ trong kỳ đã chọn.</div>
+      <header class="statistics-title-row">
+        <h1>DASHBOARD ĐÁNH GIÁ NCC</h1>
+      </header>
 
-      <div id="statistics-kpi-cards" class="statistics-kpis" aria-live="polite"></div>
-      <section id="statistics-trend-panel" class="statistics-trend-panel" aria-labelledby="quality-trend-title">
-        <div class="statistics-trend-head">
-          <div>
-            <h2 id="quality-trend-title">Xu hướng chỉ số chất lượng</h2>
-            <p>Ba tháng kết thúc tại kỳ được chọn · tỷ lệ không đạt</p>
-          </div>
-          <div class="statistics-trend-legend" aria-label="Chú giải biểu đồ">
-            <span class="evaluation"><i></i>Đánh giá NCC</span>
-          </div>
-        </div>
-        <div class="statistics-chart-wrap">
-          <canvas id="quality-trend-canvas" role="img" aria-label="Biểu đồ xu hướng tỷ lệ không đạt trong ba tháng"></canvas>
-          <div id="quality-trend-empty" class="statistics-chart-empty hidden">Không có dữ liệu xu hướng trong ba tháng.</div>
-        </div>
-        <ul id="quality-trend-summary" class="statistics-trend-summary" aria-label="Số liệu biểu đồ theo tháng"></ul>
+      <section class="statistics-filterbar" aria-label="Bộ lọc nghiệp vụ dashboard">
+        <div id="dashboard-filter-region" class="dashboard-filter" data-filter-key="regions"><label>Khu vực</label></div>
+        <div id="dashboard-filter-evaluation-type" class="dashboard-filter" data-filter-key="evaluationTypes"><label>Loại đánh giá</label></div>
+        <div id="dashboard-filter-mch2" class="dashboard-filter" data-filter-key="mch2"><label>Ngành hàng - MCH2</label></div>
+        <button id="dashboard-export" class="btn-primary dashboard-export" type="button" data-action-id="dashboard.export" aria-label="Xuất báo cáo dashboard">
+          <span aria-hidden="true">⇩</span><span>Xuất báo cáo</span>
+        </button>
       </section>
+
+      <div id="overview-state" class="dashboard-state hidden" aria-live="polite"></div>
+      <div id="statistics-kpi-cards" class="statistics-kpis" aria-live="polite"></div>
+
+      <div class="statistics-main-grid">
+        <section class="statistics-card" aria-labelledby="status-donut-title">
+          <div class="statistics-card-head">
+            <h2 id="status-donut-title">Phân bố phiếu theo trạng thái xử lý</h2>
+          </div>
+          <div id="statistics-donut-content" class="statistics-donut-layout">
+            <div class="statistics-donut-wrap">
+              <canvas id="status-donut-canvas" role="img" aria-label="Biểu đồ phân bố phiếu theo trạng thái"></canvas>
+              <div class="statistics-donut-center"><span>Tổng phiếu</span><strong id="status-donut-total">0</strong></div>
+            </div>
+            <div id="status-donut-legend" class="statistics-status-legend" aria-label="Chú giải trạng thái"></div>
+          </div>
+          <div id="status-donut-empty" class="statistics-card-empty hidden">Không có dữ liệu phù hợp với bộ lọc hiện tại.</div>
+        </section>
+
+        <section class="statistics-card" aria-labelledby="top-supplier-title">
+          <div class="statistics-card-head">
+            <h2 id="top-supplier-title">Top 10 NCC theo điểm đánh giá</h2>
+          </div>
+          <div id="statistics-ranking-content" class="statistics-ranking-wrap">
+            <table class="statistics-ranking-table">
+              <colgroup>
+                <col class="statistics-ranking-col-rank">
+                <col class="statistics-ranking-col-supplier">
+                <col class="statistics-ranking-col-score">
+                <col class="statistics-ranking-col-grade">
+              </colgroup>
+              <thead><tr><th>Hạng</th><th>Nhà cung cấp</th><th>Điểm đánh giá bình quân</th><th>Xếp loại</th></tr></thead>
+              <tbody id="statistics-ranking-body"></tbody>
+            </table>
+          </div>
+          <div id="statistics-ranking-empty" class="statistics-card-empty hidden">Chưa có NCC nào có kết quả đánh giá hoàn thành trong kỳ báo cáo.</div>
+        </section>
+      </div>
+
+      <section id="statistics-trend-panel" class="statistics-card statistics-trend-panel" aria-labelledby="quality-trend-title">
+        <div class="statistics-trend-head">
+          <h2 id="quality-trend-title">Xu hướng đánh giá NCC</h2>
+          <div class="statistics-trend-legend" aria-label="Chú giải biểu đồ">
+            <span><i></i>Số NCC được đánh giá</span>
+            <span class="failed"><i></i>Tỷ lệ không đạt</span>
+          </div>
+        </div>
+        <div class="statistics-chart-scroll">
+          <div class="statistics-chart-wrap">
+            <canvas id="quality-trend-canvas" role="img" aria-label="Biểu đồ kết hợp số NCC và tỷ lệ không đạt trong sáu kỳ"></canvas>
+            <div id="quality-trend-empty" class="statistics-chart-empty hidden">Không có dữ liệu phù hợp với bộ lọc hiện tại.</div>
+          </div>
+        </div>
+      </section>
+      <div id="statistics-tooltip" class="statistics-tooltip hidden" role="tooltip"></div>
     </div>
   </section>
 

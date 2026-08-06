@@ -25,7 +25,7 @@ function attr(attrs, name) {
 }
 
 test('action registry is complete, unique and uses resource.verb identities', () => {
-  assert.equal(actions.ACTION_VERSION, 13);
+  assert.equal(actions.ACTION_VERSION, 14);
   assert.deepEqual(actions.validateRegistry(), []);
   const required = [
     'action_id', 'label', 'short_label', 'icon', 'variant', 'placement',

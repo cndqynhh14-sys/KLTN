@@ -17,3 +17,7 @@ qlcl-server.pid
 artifacts/dev-runs/
 artifacts/uat-runs/
 artifacts/release/**/qlcl-*.tgz
+output/
+tmp/
+data/*.db.report-artifacts/
+data/*.db.report-artifacts/
