@@ -6,11 +6,13 @@ const { stableMch2Sql } = require('../domain/mchIdentifiers');
 const { WORKFLOW_STATUSES } = require('../domain/workflowHistory');
 const { assertValidDateField } = require('../domain/dateValidation');
 const { normalizeMasterDataText, supplierMasterDataErrorCodes } = require('../domain/masterData');
+const { normalizeSupplierCode } = require('../domain/supplierCode');
 const { upsertSupplier } = require('./supplierImporter');
 const { QuestionVersionService } = require('./QuestionVersionService');
 const ScoringPolicyRepository = require('../scoring/ScoringPolicyRepository');
 const { supportsPreviousEvaluationDefaults } = require('../domain/evaluationHistoryDefaults');
 const { canonicalEvaluationOwnerSql, isEvaluationCreatedAndResponsible } = require('../domain/evaluationResponsibility');
+const { assertTicketMutable } = require('../domain/historicalEvaluation');
 
 const DRAFT_STATUS = WORKFLOW_STATUSES.DRAFT;
 const PROCESSING_STATUS = WORKFLOW_STATUSES.IN_PROGRESS;
@@ -36,31 +38,16 @@ function templateCodeFromBody(body) {
 
 function supplierFromBody(body) {
   return {
-    supplier_code: String(body.supplier_code || '').trim(),
+    supplier_code: normalizeSupplierCode(body.supplier_code),
     supplier_name: String(body.supplier_name || '').trim(),
     tax_code: String(body.tax_code || '').trim(),
     address: String(body.address || body.supplier_address || '').trim(),
-    production_address: String(body.production_address || '').trim(),
-    evaluation_address: String(body.evaluation_address || '').trim(),
-    linked_facility_code: String(body.linked_facility_code || '').trim(),
-    linked_facility_name: String(body.linked_facility_name || '').trim(),
-    linked_facility_address: String(body.linked_facility_address || '').trim(),
-    linked_facility_type: String(body.linked_facility_type || '').trim(),
     region: String(body.region || '').trim(),
     province: String(body.province || '').trim(),
     business_type: String(body.business_type || '').trim(),
-    cmc_owner: String(body.cmc_owner || '').trim(),
-    cmc_head: String(body.cmc_head || '').trim(),
-    business_license_file: String(body.business_license_file || '').trim(),
-    attp_certificate_type: String(body.attp_certificate_type || '').trim(),
-    attp_certificate_file: String(body.attp_certificate_file || '').trim(),
     contact_name: String(body.contact_name || '').trim(),
     contact_email: String(body.email || body.contact_email || '').trim(),
     contact_phone: String(body.phone || body.contact_phone || '').trim(),
-    mch2: String(body.mch2 || '').trim(),
-    mch3: String(body.mch3 || '').trim(),
-    product_group: String(body.product_group || '').trim(),
-    product_name: String(body.product_name || body.products || '').trim(),
     status: 'ACTIVE',
   };
 }
@@ -102,6 +89,46 @@ function hasExplicitStandardSupplierField(body) {
   return ['region', 'province', 'business_type'].some((field) => hasOwnField(body, field));
 }
 
+function canonicalBodyValue(body, canonicalField, compatibilityField) {
+  if (hasOwnField(body, canonicalField)) return body[canonicalField];
+  if (compatibilityField && hasOwnField(body, compatibilityField)) return body[compatibilityField];
+  return undefined;
+}
+
+function ticketSnapshotText(body, existing, canonicalField, compatibilityField) {
+  const value = canonicalBodyValue(body, canonicalField, compatibilityField);
+  if (value !== undefined) return String(value || '').trim();
+  return String(existing[canonicalField] || '').trim();
+}
+
+function normalizedEvaluationType(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd').toLowerCase().trim();
+}
+
+function validContactEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function validContactPhone(value) {
+  return /^[0-9+\-\s.]{8,20}$/.test(String(value || '').trim());
+}
+
+function missingSupplierFields(supplier) {
+  return [
+    ['supplier_code', 'supplier_code_required'],
+    ['supplier_name', 'supplier_name_required'],
+    ['tax_code', 'tax_code_required'],
+    ['address', 'supplier_address_required'],
+    ['region', 'region_required'],
+    ['province', 'province_required'],
+    ['business_type', 'business_type_required'],
+    ['contact_name', 'contact_name_required'],
+    ['contact_email', 'contact_email_required'],
+    ['contact_phone', 'contact_phone_required'],
+  ].filter(([field]) => !String(supplier[field] || '').trim()).map(([, error]) => error);
+}
+
 function assertValidSupplierMasterData(fields) {
   const errors = supplierMasterDataErrorCodes(fields);
   if (errors.length) {
@@ -128,7 +155,7 @@ class EvaluationTicketService {
       getTemplateId: db.prepare('SELECT id FROM question_templates WHERE template_code = ?'),
       insertTemplate: db.prepare('INSERT INTO question_templates (template_code, template_name, active) VALUES (?, ?, 1)'),
       getSupplierById: db.prepare('SELECT * FROM supplier_master WHERE id = ?'),
-      getSupplierByCode: db.prepare('SELECT * FROM supplier_master WHERE supplier_code = ?'),
+      getSupplierByCode: db.prepare('SELECT * FROM supplier_master WHERE UPPER(TRIM(supplier_code)) = ?'),
       lockSnapshot: db.prepare(`UPDATE evaluation_tickets
         SET snapshot_locked_at = COALESCE(snapshot_locked_at, (
           SELECT started_at FROM evaluation_rounds
@@ -313,6 +340,9 @@ class EvaluationTicketService {
     if (!partial && !templateCodeFromBody(body)) errors.push('template_required');
     if (!partial && !String(body.supplier_id || body.supplier_code || '').trim()) errors.push('supplier_required');
     if (!partial && !String(body.supplier_id || body.supplier_name || '').trim()) errors.push('supplier_name_required');
+    if (!partial && normalizedEvaluationType(body.evaluation_type).includes('dot xuat') && !String(body.ad_hoc_reason || '').trim()) {
+      errors.push('ad_hoc_reason_required');
+    }
     return errors;
   }
 
@@ -325,6 +355,7 @@ class EvaluationTicketService {
       this.policyService.assert(user, PERMISSIONS.EVALUATION_CREATE, {
         context: resourceContext({ ...payload, created_by: user.email }),
       });
+      this.assertTicketSnapshot(payload);
       if (files?.business_license_file?.[0]) payload.business_license_file = files.business_license_file[0].originalname;
       if (files?.attp_certificate_file?.[0]) payload.attp_certificate_file = files.attp_certificate_file[0].originalname;
       const ticketCode = this.nextTicketCode(supplier.supplier_code);
@@ -355,6 +386,7 @@ class EvaluationTicketService {
     const existing = this.getTicketByCode(code);
     if (!existing) throw Object.assign(new Error('ticket_not_found'), { status: 404, code: 'ticket_not_found' });
     this.assertVisible(existing, user);
+    assertTicketMutable(existing);
     if (![DRAFT_STATUS, PROCESSING_STATUS].includes(existing.current_status)) {
       throw Object.assign(new Error('ticket_locked'), { status: 403, code: 'ticket_locked' });
     }
@@ -368,6 +400,7 @@ class EvaluationTicketService {
       this.policyService.assert(user, PERMISSIONS.EVALUATION_CREATE, {
         context: resourceContext({ ...existing, ...payload }),
       });
+      this.assertTicketSnapshot(payload);
       if (files?.business_license_file?.[0]) payload.business_license_file = files.business_license_file[0].originalname;
       if (files?.attp_certificate_file?.[0]) payload.attp_certificate_file = files.attp_certificate_file[0].originalname;
       this.ticketRepository.updateByCode({ ...payload, ticket_code: existing.ticket_code });
@@ -381,6 +414,7 @@ class EvaluationTicketService {
     const existing = this.getTicketByCode(code);
     if (!existing) throw Object.assign(new Error('ticket_not_found'), { status: 404, code: 'ticket_not_found' });
     this.assertVisible(existing, user);
+    assertTicketMutable(existing);
     const decision = this.policyService.decision(user, PERMISSIONS.EVALUATION_DELETE_DRAFT, {
       context: resourceContext(existing), stateAllowed: existing.current_status === DRAFT_STATUS,
       stateReason: 'ticket_delete_not_allowed',
@@ -435,21 +469,23 @@ class EvaluationTicketService {
     if (!supplier.supplier_code || !supplier.supplier_name) {
       throw Object.assign(new Error('supplier_required'), { status: 400, code: 'supplier_required' });
     }
-    const merchandisingErrors = validateMerchandising(supplier.mch2, supplier.mch3);
-    if (merchandisingErrors.length) {
-      throw Object.assign(new Error('merchandising_invalid'), {
-        status: 400,
-        code: 'validation_failed',
-        errors: merchandisingErrors,
-      });
-    }
-    assertValidSupplierMasterData(supplier);
     const existing = this.statements.getSupplierByCode.get(supplier.supplier_code);
     if (existing) {
       this.policyService.assert(user, PERMISSIONS.SUPPLIER_READ, { context: resourceContext(existing) });
       this.assertSupplierActive(existing, options.allowInactiveSupplierId);
       return existing;
     }
+    const supplierErrors = missingSupplierFields(supplier);
+    if (supplier.contact_email && !validContactEmail(supplier.contact_email)) supplierErrors.push('contact_email_invalid');
+    if (supplier.contact_phone && !validContactPhone(supplier.contact_phone)) supplierErrors.push('contact_phone_invalid');
+    if (supplierErrors.length) {
+      throw Object.assign(new Error('supplier_validation_failed'), {
+        status: 400,
+        code: 'validation_failed',
+        errors: supplierErrors,
+      });
+    }
+    assertValidSupplierMasterData(supplier);
     this.policyService.assert(user, PERMISSIONS.SUPPLIER_WRITE, {
       context: resourceContext({ ...(existing || {}), ...supplier }),
     });
@@ -457,6 +493,41 @@ class EvaluationTicketService {
     const resolved = this.statements.getSupplierByCode.get(supplier.supplier_code);
     this.policyService.assert(user, PERMISSIONS.SUPPLIER_READ, { context: resourceContext(resolved) });
     return resolved;
+  }
+
+  assertTicketSnapshot(payload) {
+    const snapshotErrors = missingSupplierFields({
+      supplier_code: payload.supplier_code,
+      supplier_name: payload.supplier_name,
+      tax_code: payload.tax_code,
+      address: payload.supplier_address,
+      region: payload.region,
+      province: payload.province,
+      business_type: payload.business_type,
+      contact_name: payload.contact_name,
+      contact_email: payload.contact_email,
+      contact_phone: payload.contact_phone,
+    });
+    if (!payload.cmc_owner) snapshotErrors.push('cmc_owner_required');
+    if (!payload.cmc_head) snapshotErrors.push('cmc_head_required');
+    if (!payload.mch2) snapshotErrors.push('mch2_required');
+    if (!payload.mch3) snapshotErrors.push('mch3_required');
+    if (!payload.snapshot_product_name) snapshotErrors.push('product_name_required');
+    if (!payload.snapshot_evaluation_address && !payload.snapshot_linked_facility_address) {
+      snapshotErrors.push('evaluation_location_required');
+    }
+    if (Boolean(payload.snapshot_linked_facility_name) !== Boolean(payload.snapshot_linked_facility_address)) {
+      snapshotErrors.push('linked_facility_pair_required');
+    }
+    if (payload.contact_email && !validContactEmail(payload.contact_email)) snapshotErrors.push('contact_email_invalid');
+    if (payload.contact_phone && !validContactPhone(payload.contact_phone)) snapshotErrors.push('contact_phone_invalid');
+    if (snapshotErrors.length) {
+      throw Object.assign(new Error('ticket_snapshot_validation_failed'), {
+        status: 400,
+        code: 'validation_failed',
+        errors: [...new Set(snapshotErrors)],
+      });
+    }
   }
 
   ticketPayload(body, supplier, userEmail, existing = {}) {
@@ -498,8 +569,8 @@ class EvaluationTicketService {
       }
       questionTemplateVersionId = published.id;
     }
-    const mch2 = String(body.mch2 || supplier.mch2 || '').trim();
-    const mch3 = String(body.mch3 || supplier.mch3 || '').trim();
+    const mch2 = String(body.mch2 || existing.mch2 || '').trim();
+    const mch3 = String(body.mch3 || existing.mch3 || '').trim();
     const merchandisingErrors = validateMerchandising(mch2, mch3);
     if (merchandisingErrors.length) {
       throw Object.assign(new Error('merchandising_invalid'), {
@@ -539,33 +610,46 @@ class EvaluationTicketService {
     const owner = String(
       body.assigned_specialist_id || existing.assigned_specialist_id || userEmail,
     ).trim();
-    return {
+    const payload = {
       supplier_id: supplier.id,
       supplier_code: supplier.supplier_code,
       supplier_name: String(body.supplier_name || supplier.supplier_name || '').trim(),
       tax_code: String(body.tax_code || supplier.tax_code || '').trim() || null,
       supplier_address: String(body.address || supplier.address || '').trim() || null,
-      production_address: String(body.production_address || supplier.production_address || supplier.address || '').trim() || null,
-      evaluation_address: String(body.evaluation_address || supplier.evaluation_address || body.address || supplier.address || '').trim() || null,
-      linked_facility_code: String(body.linked_facility_code || supplier.linked_facility_code || '').trim() || null,
-      linked_facility_name: String(body.linked_facility_name || supplier.linked_facility_name || '').trim() || null,
-      linked_facility_address: String(body.linked_facility_address || supplier.linked_facility_address || '').trim() || null,
-      linked_facility_type: String(body.linked_facility_type || supplier.linked_facility_type || '').trim() || null,
+      production_address: String(body.production_address || existing.production_address || '').trim() || null,
+      snapshot_evaluation_address: ticketSnapshotText(
+        body, existing, 'snapshot_evaluation_address', 'evaluation_address',
+      ) || null,
+      linked_facility_code: String(body.linked_facility_code || existing.linked_facility_code || '').trim() || null,
+      snapshot_linked_facility_name: ticketSnapshotText(
+        body, existing, 'snapshot_linked_facility_name', 'linked_facility_name',
+      ) || null,
+      snapshot_linked_facility_address: ticketSnapshotText(
+        body, existing, 'snapshot_linked_facility_address', 'linked_facility_address',
+      ) || null,
+      linked_facility_type: String(body.linked_facility_type || existing.linked_facility_type || '').trim() || null,
       region: supplierFields.region || null,
       province: supplierFields.province || null,
       business_type: supplierFields.business_type || null,
-      cmc_owner: String(body.cmc_owner || supplier.cmc_owner || '').trim() || null,
-      cmc_head: String(body.cmc_head || supplier.cmc_head || '').trim() || null,
-      business_license_file: String(body.business_license_file || existing.business_license_file || supplier.business_license_file || '').trim() || null,
-      attp_certificate_type: String(body.attp_certificate_type || supplier.attp_certificate_type || '').trim() || null,
-      attp_certificate_file: String(body.attp_certificate_file || existing.attp_certificate_file || supplier.attp_certificate_file || '').trim() || null,
+      cmc_owner: String(body.cmc_owner || existing.cmc_owner || '').trim() || null,
+      cmc_head: String(body.cmc_head || existing.cmc_head || '').trim() || null,
+      business_license_file: String(body.business_license_file || existing.business_license_file || '').trim() || null,
+      attp_certificate_type: String(body.attp_certificate_type || existing.attp_certificate_type || '').trim() || null,
+      attp_certificate_file: String(body.attp_certificate_file || existing.attp_certificate_file || '').trim() || null,
       contact_name: String(body.contact_name || supplier.contact_name || '').trim() || null,
       contact_email: String(body.email || body.contact_email || supplier.contact_email || '').trim() || null,
       contact_phone: String(body.phone || body.contact_phone || supplier.contact_phone || '').trim() || null,
       mch2: mch2 || null,
       mch3: mch3 || null,
-      product_group: String(body.product_group || supplier.product_group || '').trim() || null,
-      product_name: String(body.product_name || body.products || supplier.product_name || '').trim() || null,
+      product_group: String(body.product_group || existing.product_group || '').trim() || null,
+      snapshot_product_name: String(
+        body.snapshot_product_name
+        || body.product_name
+        || body.products
+        || existing.snapshot_product_name
+        || existing.product_name
+        || ''
+      ).trim() || null,
       evaluation_type: String(body.evaluation_type || existing.evaluation_type || '').trim(),
       template_id: templateId,
       question_template_version_id: questionTemplateVersionId,
@@ -584,6 +668,7 @@ class EvaluationTicketService {
       assigned_specialist_id: owner,
       updated_by: userEmail,
     };
+    return payload;
   }
 }
 

@@ -48,7 +48,7 @@ test('global period picker is limited by manifest route permission and path', ()
     .filter((item) => item.permissions.includes('DASHBOARD.READ') && item.route?.startsWith('/dashboard'))
     .map((item) => item.id);
 
-  assert.deepEqual(periodTabs, ['overview', 'ncc-eval']);
+  assert.deepEqual(periodTabs, ['overview']);
   assert.match(html, /id="period-controls"[\s\S]*>Kỳ báo cáo<\/span>[\s\S]*id="month-picker"/);
   assert.match(app, /item\.permissions\.includes\('DASHBOARD\.READ'\) && item\.route\.startsWith\('\/dashboard'\)/);
   assert.match(app, /function shouldShowGlobalPeriod\(\)/);
@@ -75,29 +75,19 @@ test('admin desktop, dashboard and mobile trees consume grouped manifest navigat
   assert.match(html, /id="scoring-policy-lifecycle"[^>]*business-config-lifecycle/);
 });
 
-test('RUN-17 keeps evaluation dashboard routes in the manifest but exposes only statistics in sidebar navigation', () => {
+test('RUN-30 consolidates supplier analytics into the single statistics dashboard route', () => {
   const allCapabilities = [...new Set(navigation.NAVIGATION_MANIFEST.flatMap((item) => item.permissions))];
-  const dashboardIds = ['overview', 'ncc-eval'];
-  const hiddenSidebarIds = dashboardIds.slice(1);
-  const dashboardItems = navigation.NAVIGATION_MANIFEST.filter((item) => dashboardIds.includes(item.id));
+  const dashboardItems = navigation.NAVIGATION_MANIFEST.filter((item) => item.route?.startsWith('/dashboard'));
 
-  assert.deepEqual(dashboardItems.map((item) => item.id), dashboardIds);
+  assert.deepEqual(dashboardItems.map((item) => item.id), ['overview']);
   assert.deepEqual(
     navigation.sidebarNavigation(allCapabilities)
       .filter((item) => item.parent === 'analytics')
       .map((item) => item.id),
     ['overview'],
   );
-  for (const id of hiddenSidebarIds) {
-    const item = dashboardItems.find((candidate) => candidate.id === id);
-    assert.equal(item.sidebar, false, id);
-    assert.equal(item.sidebar_active, 'overview', id);
-    assert.equal(navigation.resolveRoute(item.route, allCapabilities).status, 'allowed', item.route);
-  }
-  assert.deepEqual(
-    navigation.moduleNavigationFor('ncc-eval', allCapabilities).map((item) => item.id),
-    dashboardIds,
-  );
+  assert.equal(navigation.resolveRoute('/dashboard/ncc-evaluations', allCapabilities).status, 'not_found');
+  assert.deepEqual(navigation.moduleNavigationFor('overview', allCapabilities).map((item) => item.id), ['overview']);
   assert.match(read('public/app.js'), /NAVIGATION\.sidebarNavigation/);
-  assert.match(read('public/app.js'), /current\.sidebar_active === item\.id/);
+  assert.doesNotMatch(read('public/index.html'), /id="view-ncc-eval"/);
 });

@@ -833,6 +833,7 @@ class QuestionVersionService {
           WHERE v.template_id=evaluation_tickets.template_id AND v.version_no=1
         )
         WHERE question_template_version_id IS NULL
+          AND UPPER(COALESCE(source_kind, 'NATIVE')) = 'NATIVE'
       `).run();
     })();
     return this.reconcile();
@@ -864,7 +865,8 @@ class QuestionVersionService {
       orphan_ticket_count: this.db.prepare(`
         SELECT COUNT(*) AS n FROM evaluation_tickets t
         LEFT JOIN question_template_versions v ON v.id=t.question_template_version_id
-        WHERE t.question_template_version_id IS NULL OR v.id IS NULL
+        WHERE UPPER(COALESCE(t.source_kind, 'NATIVE')) = 'NATIVE'
+          AND (t.question_template_version_id IS NULL OR v.id IS NULL)
       `).get().n,
       orphan_answer_count: this.db.prepare(`
         SELECT COUNT(*) AS n FROM evaluation_answers a

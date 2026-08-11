@@ -87,6 +87,18 @@ router.get('/statistics/export', (req, res, next) => {
       [],
       ['Hạng', 'Mã NCC', 'Nhà cung cấp', 'Điểm bình quân', 'Xếp loại', 'Số phiếu'],
       ...payload.top_suppliers.map((row) => [row.rank, row.supplier_code, row.supplier_name, row.average_final_score, row.classification, row.evaluation_count]),
+      [],
+      ['Phân bố NCC theo mức xếp loại'],
+      ['Mức xếp loại', 'Số NCC', 'Tỷ lệ (%)'],
+      ...payload.details.rating_distribution.items.map((row) => [row.label, row.count, row.percentage]),
+      [],
+      ['Hiệu quả đánh giá theo ngành hàng'],
+      ['Ngành hàng', 'Tổng NCC', 'Đạt', 'Không đạt', 'Tỷ lệ đạt (%)', 'Tỷ lệ không đạt (%)', 'Điểm trung bình'],
+      ...payload.details.industry_performance.map((row) => [row.industry, row.total_suppliers, row.passed_suppliers, row.failed_suppliers, row.passed_percentage, row.failed_percentage, row.average_score]),
+      [],
+      ['Tỷ lệ theo nhóm vi phạm'],
+      ['Nhóm vi phạm', 'Số lượt', 'Tỷ lệ (%)'],
+      ...payload.details.violation_distribution.items.map((row) => [row.label, row.count, row.percentage]),
     ];
     const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
     const safePeriod = payload.period.value.replace(/[^0-9A-Z-]/gi, '-');

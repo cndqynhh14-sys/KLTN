@@ -76,22 +76,22 @@ class EvaluationTicketRepository {
       insert: db.prepare(`
         INSERT INTO evaluation_tickets (
           ticket_code, supplier_id, supplier_code, supplier_name, tax_code, supplier_address,
-          production_address, evaluation_address,
-          linked_facility_code, linked_facility_name, linked_facility_address, linked_facility_type,
+          production_address, snapshot_evaluation_address,
+          linked_facility_code, snapshot_linked_facility_name, snapshot_linked_facility_address, linked_facility_type,
           region, province, business_type, cmc_owner, cmc_head,
           business_license_file, attp_certificate_type, attp_certificate_file,
           contact_name, contact_email, contact_phone,
-          mch2, mch3, product_group, product_name, evaluation_type, template_id, facility_type,
+          mch2, mch3, product_group, snapshot_product_name, evaluation_type, template_id, facility_type,
           supplier_scale, question_template_version_id, evaluation_method, planned_date, current_status,
           current_round_no, assigned_specialist_id, created_by, updated_by
         )
         VALUES (
           @ticket_code, @supplier_id, @supplier_code, @supplier_name, @tax_code, @supplier_address,
-          @production_address, @evaluation_address, @linked_facility_code, @linked_facility_name, @linked_facility_address, @linked_facility_type,
+          @production_address, @snapshot_evaluation_address, @linked_facility_code, @snapshot_linked_facility_name, @snapshot_linked_facility_address, @linked_facility_type,
           @region, @province, @business_type, @cmc_owner, @cmc_head,
           @business_license_file, @attp_certificate_type, @attp_certificate_file,
           @contact_name, @contact_email, @contact_phone,
-          @mch2, @mch3, @product_group, @product_name, @evaluation_type, @template_id, @facility_type,
+          @mch2, @mch3, @product_group, @snapshot_product_name, @evaluation_type, @template_id, @facility_type,
           @supplier_scale, @question_template_version_id, @evaluation_method, @planned_date, @current_status,
           1, @assigned_specialist_id, @created_by, @updated_by
         )
@@ -112,10 +112,10 @@ class EvaluationTicketRepository {
         UPDATE evaluation_tickets SET
           supplier_id=@supplier_id, supplier_code=@supplier_code, supplier_name=@supplier_name,
           tax_code=@tax_code, supplier_address=@supplier_address, production_address=@production_address,
-          evaluation_address=@evaluation_address,
+          snapshot_evaluation_address=@snapshot_evaluation_address,
           linked_facility_code=@linked_facility_code,
-          linked_facility_name=@linked_facility_name,
-          linked_facility_address=@linked_facility_address,
+          snapshot_linked_facility_name=@snapshot_linked_facility_name,
+          snapshot_linked_facility_address=@snapshot_linked_facility_address,
           linked_facility_type=@linked_facility_type,
           region=@region,
           province=@province,
@@ -127,7 +127,7 @@ class EvaluationTicketRepository {
           attp_certificate_file=@attp_certificate_file,
           contact_name=@contact_name, contact_email=@contact_email,
           contact_phone=@contact_phone, mch2=@mch2, mch3=@mch3, product_group=@product_group,
-          product_name=@product_name, evaluation_type=@evaluation_type, template_id=@template_id,
+          snapshot_product_name=@snapshot_product_name, evaluation_type=@evaluation_type, template_id=@template_id,
           question_template_version_id=@question_template_version_id,
           facility_type=@facility_type, supplier_scale=@supplier_scale, evaluation_method=@evaluation_method,
           evaluation_department=@evaluation_department, planned_date=@planned_date,

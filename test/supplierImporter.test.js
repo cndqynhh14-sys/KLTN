@@ -23,96 +23,51 @@ function tempDb() {
   return { db, dbPath };
 }
 
-test('parseSupplierWorkbook maps common columns and returns row-level validation errors', () => {
+test('parseSupplierWorkbook maps RUN-32 columns, normalizes codes and returns row-level errors', () => {
   const parsed = parseSupplierWorkbook(workbookBuffer([
     {
-      supplier_code: 'NCC001',
-      supplier_name: 'Fresh Co',
-      tax_code: '0101',
-      contact_email: 'qa@fresh.vn',
-      mch2: 'Thực phẩm tươi sống, chế biến',
-      mch3: 'Rau củ',
-      product_name: 'Rau',
-      'Địa chỉ đánh giá NCC': 'Kho Long Biên',
-      'Địa chỉ đánh giá đơn vị liên kết/gia công': 'Xưởng Gia Công A',
-      'Khu vực': 'Miền Bắc',
-      'Tỉnh': 'Hà Nội',
-      'Loại hình kinh doanh': 'Sản xuất',
-      'CMC phụ trách ngành hàng': 'owner@masangroup.com',
-      'CMC Trưởng phòng ngành hàng': 'head@masangroup.com',
-      'Loại chứng nhận ATTP': 'ISO 22000',
+      supplier_code: ' ncc001 ', supplier_name: 'Fresh Co', tax_code: '0101',
+      address: 'Hà Nội', region: 'MB', province: 'Thành phố Hà Nội',
+      business_type: 'Kinh doanh', contact_name: 'Nguyễn A',
+      contact_email: 'qa@fresh.vn', contact_phone: '0901 234 567', status: 'active',
     },
     { supplier_code: '', supplier_name: 'Missing Code' },
-    { supplier_code: 'NCC003', supplier_name: '', contact_email: 'bad-email' },
+    { supplier_code: 'NCC003', supplier_name: '', contact_email: 'bad-email', contact_phone: 'abc' },
   ]));
 
   assert.equal(parsed.rows.length, 1);
-  assert.equal(parsed.rows[0].supplier_code, 'NCC001');
-  assert.equal(parsed.rows[0].product_name, 'Rau');
-  assert.equal(parsed.rows[0].evaluation_address, 'Kho Long Biên');
-  assert.equal(parsed.rows[0].linked_facility_address, 'Xưởng Gia Công A');
-  assert.equal(parsed.rows[0].region, 'Miền Bắc');
-  assert.equal(parsed.rows[0].province, 'Hà Nội');
-  assert.equal(parsed.rows[0].business_type, 'Sản xuất');
-  assert.equal(parsed.rows[0].cmc_owner, 'owner@masangroup.com');
-  assert.equal(parsed.rows[0].cmc_head, 'head@masangroup.com');
-  assert.equal(parsed.rows[0].attp_certificate_type, 'ISO 22000');
-  assert.equal(parsed.rows[0].status, 'ACTIVE');
+  assert.deepEqual(parsed.rows[0], {
+    supplier_code: 'NCC001', supplier_name: 'Fresh Co', tax_code: '0101', address: 'Hà Nội',
+    region: 'MB', province: 'Thành phố Hà Nội', business_type: 'Kinh doanh',
+    contact_name: 'Nguyễn A', contact_email: 'qa@fresh.vn', contact_phone: '0901 234 567', status: 'ACTIVE',
+  });
   assert.equal(parsed.errors.length, 2);
   assert.ok(parsed.errors[0].errors.includes('supplier_code_required'));
-  assert.ok(parsed.errors[0].errors.includes('mch2_required'));
   assert.ok(parsed.errors[1].errors.includes('supplier_name_required'));
   assert.ok(parsed.errors[1].errors.includes('contact_email_invalid'));
-  assert.ok(parsed.errors[1].errors.includes('mch2_required'));
+  assert.ok(parsed.errors[1].errors.includes('contact_phone_invalid'));
 });
 
-test('upsertSupplier updates existing supplier by supplier_code', () => {
+test('upsertSupplier uses normalized supplier_code as the only business key', () => {
   const { db, dbPath } = tempDb();
   try {
     upsertSupplier(db, {
-      supplier_code: 'NCC001',
-      supplier_name: 'Fresh Co',
-      tax_code: '0101',
-      status: 'ACTIVE',
+      supplier_code: ' ncc001 ', supplier_name: 'Fresh Co', tax_code: '0101', status: 'ACTIVE',
     }, 'admin@masangroup.com', 'MANUAL', null);
     upsertSupplier(db, {
-      supplier_code: 'NCC001',
-      supplier_name: 'Fresh Company Updated',
-      tax_code: '0202',
-      production_address: 'Farm A',
-      evaluation_address: 'Warehouse B',
-      linked_facility_name: 'Processor C',
-      linked_facility_address: 'Processor address',
-      region: 'South',
-      province: 'Long An',
-      business_type: 'Manufacturing',
-      cmc_owner: 'cmc-owner',
-      cmc_head: 'cmc-head',
-      business_license_file: 'business-license.pdf',
-      attp_certificate_type: 'HACCP',
-      attp_certificate_file: 'attp.pdf',
-      mch2: 'Rau củ quả',
-      status: 'ACTIVE',
+      supplier_code: 'NCC001', supplier_name: 'Fresh Company Updated', tax_code: '0202',
+      address: 'Hà Nội', region: 'MB', province: 'Thành phố Hà Nội', business_type: 'Kinh doanh',
+      contact_name: 'Contact', contact_email: 'contact@example.com', contact_phone: '0900000000', status: 'ACTIVE',
     }, 'admin@masangroup.com', 'EXCEL_UPLOAD', null);
 
-    const count = db.prepare('SELECT COUNT(*) AS n FROM supplier_master').get().n;
-    const row = db.prepare('SELECT * FROM supplier_master WHERE supplier_code = ?').get('NCC001');
-    assert.equal(count, 1);
-    assert.equal(row.supplier_name, 'Fresh Company Updated');
-    assert.equal(row.tax_code, '0202');
-    assert.equal(row.production_address, 'Farm A');
-    assert.equal(row.evaluation_address, 'Warehouse B');
-    assert.equal(row.linked_facility_name, 'Processor C');
-    assert.equal(row.linked_facility_address, 'Processor address');
-    assert.equal(row.region, 'South');
-    assert.equal(row.province, 'Long An');
-    assert.equal(row.business_type, 'Manufacturing');
-    assert.equal(row.cmc_owner, 'cmc-owner');
-    assert.equal(row.cmc_head, 'cmc-head');
-    assert.equal(row.business_license_file, 'business-license.pdf');
-    assert.equal(row.attp_certificate_type, 'HACCP');
-    assert.equal(row.attp_certificate_file, 'attp.pdf');
-    assert.equal(row.source_type, 'EXCEL_UPLOAD');
+    const rows = db.prepare('SELECT * FROM supplier_master').all();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].supplier_code, 'NCC001');
+    assert.equal(rows[0].supplier_name, 'Fresh Company Updated');
+    assert.equal(rows[0].tax_code, '0202');
+    assert.equal(rows[0].address, 'Hà Nội');
+    assert.equal(rows[0].business_type, 'Kinh doanh');
+    assert.equal(rows[0].source_type, 'EXCEL_UPLOAD');
   } finally {
     db.close();
     fs.rmSync(dbPath, { force: true });

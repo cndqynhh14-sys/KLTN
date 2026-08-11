@@ -7,8 +7,8 @@ const { requireAuth } = require('../middleware/auth');
 const { requirePermission, policyErrorResponse } = require('../middleware/policy');
 const { PERMISSIONS } = require('../authorization/permissionCatalog');
 const { resourceContext } = require('../services/PolicyService');
-const { validateMerchandising } = require('../domain/merchandising');
 const { validateSupplierMasterData } = require('../domain/masterData');
+const { normalizeSupplierCode } = require('../domain/supplierCode');
 const { normalizePage } = require('../domain/pagination');
 const { parseSupplierWorkbook, upsertSupplier } = require('../services/supplierImporter');
 const SupplierRepository = require('../repositories/SupplierRepository');
@@ -39,31 +39,16 @@ const uploadLimiter = rateLimit({
 function supplierPayload(body, sourceType) {
   const text = (field) => String(body?.[field] || '').trim() || null;
   return {
-    supplier_code: String(body?.supplier_code || '').trim(),
+    supplier_code: normalizeSupplierCode(body?.supplier_code),
     supplier_name: String(body?.supplier_name || '').trim(),
     tax_code: text('tax_code'),
     address: text('address'),
-    production_address: text('production_address'),
-    evaluation_address: text('evaluation_address'),
-    linked_facility_code: text('linked_facility_code'),
-    linked_facility_name: text('linked_facility_name'),
-    linked_facility_address: text('linked_facility_address'),
-    linked_facility_type: text('linked_facility_type'),
     region: text('region'),
     province: text('province'),
     business_type: text('business_type'),
-    cmc_owner: text('cmc_owner'),
-    cmc_head: text('cmc_head'),
-    business_license_file: text('business_license_file'),
-    attp_certificate_type: text('attp_certificate_type'),
-    attp_certificate_file: text('attp_certificate_file'),
     contact_name: text('contact_name'),
     contact_email: text('contact_email'),
     contact_phone: text('contact_phone'),
-    mch2: text('mch2'),
-    mch3: text('mch3'),
-    product_group: text('product_group'),
-    product_name: text('product_name'),
     status: String(body?.status || 'ACTIVE').trim().toUpperCase(),
     source_type: sourceType,
   };
@@ -72,17 +57,12 @@ function supplierPayload(body, sourceType) {
 const MANUAL_CREATE_REQUIRED_FIELDS = [
   'tax_code',
   'address',
-  'production_address',
-  'evaluation_address',
   'region',
   'province',
   'business_type',
   'contact_name',
   'contact_email',
   'contact_phone',
-  'mch2',
-  'mch3',
-  'product_name',
 ];
 
 function withActions(item, user) {
@@ -111,9 +91,10 @@ function validateSupplier(supplier, options = {}) {
   if (supplier.contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplier.contact_email)) {
     errors.contact_email = 'invalid';
   }
+  if (supplier.contact_phone && !/^[0-9+\-\s.]{8,20}$/.test(supplier.contact_phone)) {
+    errors.contact_phone = 'invalid';
+  }
   Object.assign(errors, validateSupplierMasterData(supplier));
-  const merchandisingErrors = validateMerchandising(supplier.mch2, supplier.mch3);
-  if (merchandisingErrors.length) errors.merchandising = merchandisingErrors;
   if (!['ACTIVE', 'INACTIVE', 'SUSPENDED'].includes(supplier.status)) errors.status = 'invalid';
   return errors;
 }
@@ -123,14 +104,10 @@ router.get('/', (req, res) => {
   const pageSize = normalizePage(req.query.page_size || req.query.pageSize, 15, 1, 100);
   const offset = (page - 1) * pageSize;
   const q = String(req.query.q || req.query.search || '').trim();
-  const mch2 = String(req.query.mch2 || '').trim();
-  const mch3 = String(req.query.mch3 || '').trim();
   const status = String(req.query.status || '').trim().toUpperCase();
 
   const { items, total } = supplierRepository.list({
     q,
-    mch2,
-    mch3,
     status,
     pageSize,
     offset,
@@ -165,6 +142,9 @@ router.post('/', requirePermission(PERMISSIONS.SUPPLIER_WRITE), (req, res) => {
   if (Object.keys(errors).length) return res.status(400).json({ error: 'validation_failed', errors });
 
   try {
+    if (supplierRepository.getByCode(supplier.supplier_code)) {
+      return res.status(409).json({ error: 'supplier_code_exists' });
+    }
     upsertSupplier(db, supplier, req.user.email, 'MANUAL', null);
     const item = supplierRepository.getByCode(supplier.supplier_code);
     logAccess({ email: req.user.email, action: 'SUPPLIER_UPSERT', details: { supplier_code: supplier.supplier_code, source_type: 'MANUAL' }, ip: req.ip, ua: req.get('user-agent') });
@@ -181,7 +161,7 @@ router.put('/:id', requirePermission(PERMISSIONS.SUPPLIER_WRITE), (req, res) => 
   if (!assertSupplierScope(req, res, existing, PERMISSIONS.SUPPLIER_WRITE)) return;
 
   const supplier = supplierPayload({ ...existing, ...req.body }, 'MANUAL');
-  const errors = validateSupplier(supplier);
+  const errors = validateSupplier(supplier, { requireManualCreateFields: true });
   if (Object.keys(errors).length) return res.status(400).json({ error: 'validation_failed', errors });
 
   try {

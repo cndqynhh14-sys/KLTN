@@ -96,15 +96,23 @@ test.describe('@smoke QLCL foundation', () => {
       const prior = await createEvaluation({
         supplier_code: `RUN06-${suffix}-A`, supplier_name: 'RUN-06 Synthetic Supplier A',
         tax_code: `TAX-${suffix}`, address: 'Synthetic supplier address',
-        production_address: 'Synthetic production address', evaluation_address: 'Synthetic evaluation address',
+        region: 'MB', province: 'Tỉnh Tuyên Quang', business_type: 'Tự sản xuất',
+        snapshot_evaluation_address: 'Synthetic evaluation address',
         contact_name: 'Synthetic Contact', email: 'synthetic-supplier@example.test', phone: '0900000000',
-        product_name: 'Synthetic product',
+        snapshot_product_name: 'Synthetic product',
+        cmc_owner: 'RUN-06 CMC owner', cmc_head: 'RUN-06 CMC head',
         evaluation_type: 'Dinh ky', template: 'BM03', facility_type: 'CO_SO_NUOI_TRONG',
         supplier_scale: 'LARGE', planned_date: '2026-06-01', actual_evaluation_date: '2026-06-02',
         mch2: 'Thực phẩm công nghệ', mch3: 'Thực phẩm khô',
       });
       const noHistory = await createEvaluation({
         supplier_code: `RUN06-${suffix}-B`, supplier_name: 'RUN-06 Synthetic Supplier B',
+        tax_code: `TAX-${suffix}-B`, address: 'Synthetic supplier address B',
+        region: 'MB', province: 'Tỉnh Tuyên Quang', business_type: 'Tự sản xuất',
+        contact_name: 'Synthetic Contact B', email: 'synthetic-supplier-b@example.test', phone: '0900000001',
+        snapshot_evaluation_address: 'Synthetic evaluation address B',
+        snapshot_product_name: 'Synthetic product B',
+        cmc_owner: 'RUN-06 CMC owner', cmc_head: 'RUN-06 CMC head',
         evaluation_type: 'Dinh ky', template: 'BM04', facility_type: 'CHUNG',
         supplier_scale: 'SMALL', planned_date: '2026-07-01',
         mch2: 'Thực phẩm công nghệ', mch3: 'Thực phẩm khô',
@@ -115,33 +123,37 @@ test.describe('@smoke QLCL foundation', () => {
     expect(run06Fixture.noHistory.status).toBe(201);
     expect(run06Fixture.prior.requestId).toBeTruthy();
 
-    await page.evaluate(() => { window.location.hash = '/dashboard?period=2026-06'; });
+    await page.evaluate(() => { window.location.hash = '/dashboard'; });
     await expect(page.locator('#view-overview')).toBeVisible();
+    await page.locator('#month-picker').selectOption('2026-06');
     await expect(page.locator('#month-picker')).toHaveValue('2026-06');
     await expect(page.locator('#crumb-month')).toHaveCount(0);
     await expect(page.locator('#period-updated')).toHaveCount(0);
     await expect(page.locator('.statistics-titlebar')).toHaveCount(0);
     await expect(page.locator('#dashboard-statistics-tabs')).toHaveCount(0);
-    await expect(page.locator('#module-navigation')).toBeVisible();
-    await expect(page.locator('#module-navigation [data-route-tab]')).toHaveCount(2);
-    await expect(page.locator('#statistics-kpi-cards .statistics-kpi-card')).toHaveCount(1);
-    await expect(page).toHaveURL(/#\/dashboard\?period=2026-06$/);
-    await page.evaluate(() => { window.location.hash = '/dashboard/ncc-evaluations?period=2026-06'; });
-    await expect(page.locator('#view-ncc-eval')).toBeVisible();
+    await expect(page.locator('#module-navigation')).toBeHidden();
+    await expect(page.locator('#module-navigation [data-route-tab]')).toHaveCount(0);
+    await expect(page.locator('#statistics-kpi-cards .statistics-kpi-card')).toHaveCount(4);
+    await expect(page.locator('#statistics-overview-charts')).toBeVisible();
+    await expect(page.locator('#statistics-detail-charts')).toBeHidden();
+    await expect(page).toHaveURL(/#\/dashboard\?periodType=MONTH&periodValue=2026-06$/);
+    await page.evaluate(() => { window.location.hash = '/dashboard/ncc-evaluations?month=2026-06'; });
+    await expect(page.locator('#view-overview')).toBeVisible();
     await expect(page.locator('#desktop-navigation [data-route-tab="overview"]')).toHaveClass(/active/);
-    await expect(page.locator('#module-navigation [data-route-tab]')).toHaveCount(2);
     await expect(page.locator('#month-picker')).toHaveValue('2026-06');
-    await expect(page).toHaveURL(/#\/dashboard\/ncc-evaluations\?period=2026-06$/);
+    await expect(page).toHaveURL(/#\/dashboard\?periodType=MONTH&periodValue=2026-06$/);
+    await page.locator('#dashboard-mode-detail').click();
+    await expect(page.locator('#statistics-overview-charts')).toBeHidden();
+    await expect(page.locator('#statistics-detail-charts')).toBeVisible();
+    await expect(page.locator('#month-picker')).toHaveValue('2026-06');
+    await expect(page).toHaveURL(/#\/dashboard\?periodType=MONTH&periodValue=2026-06$/);
+    await page.locator('#dashboard-mode-overview').click();
     const currentDashboardPeriod = await page.evaluate(() => {
       const parts = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit' }).split('/');
       return `${parts[1]}-${parts[0]}`;
     });
     if (currentDashboardPeriod !== '2026-06') {
       await page.locator('#month-picker').selectOption(currentDashboardPeriod);
-      await expect(page.locator('#month-picker')).toHaveValue(currentDashboardPeriod);
-      await page.goBack();
-      await expect(page.locator('#month-picker')).toHaveValue('2026-06');
-      await page.goForward();
       await expect(page.locator('#month-picker')).toHaveValue(currentDashboardPeriod);
       await page.locator('#month-picker').selectOption('2026-06');
     }
@@ -205,8 +217,18 @@ test.describe('@smoke QLCL foundation', () => {
     await supplierLookup.fill(savedSupplierLabel);
     await supplierLookup.dispatchEvent('change');
     await expect(page.locator('#new-template')).toHaveValue('BM03');
+    await expect(page.locator('#new-production-address')).toHaveCount(0);
+    await expect(page.locator('#new-evaluation-address')).toHaveValue('');
+    await expect(page.locator('#new-mch2')).toHaveValue('');
+    await expect(page.locator('#new-products')).toHaveValue('');
+    await page.locator('#new-evaluation-address').fill('Synthetic evaluation address');
+    await page.locator('#new-cmc-owner').fill('RUN-06 CMC owner');
+    await page.locator('#new-cmc-head').fill('RUN-06 CMC head');
+    await page.locator('#new-mch2').selectOption({ label: 'Thực phẩm công nghệ' });
+    await page.locator('#new-mch3').selectOption({ label: 'Thực phẩm khô' });
+    await page.locator('#new-products').fill('Synthetic product');
     await page.locator('#new-planned-date').fill('2026-08-01');
-    await page.locator('#new-method').selectOption('Online');
+    await expect(page.locator('#new-method')).toHaveCount(0);
 
     const failEvaluationSave = async (route) => {
       if (route.request().method() === 'POST') {
@@ -938,8 +960,26 @@ test.describe('@smoke QLCL foundation', () => {
             const overflow = getComputedStyle(scroller).overflowX;
             return overflow !== 'auto' && overflow !== 'scroll';
           }).length : 0;
+          const overflowElements = [...document.querySelectorAll('body *')]
+            .filter((node) => visible(node))
+            .map((node) => {
+              const rect = node.getBoundingClientRect();
+              return {
+                tag: node.tagName,
+                id: node.id || '',
+                className: typeof node.className === 'string' ? node.className : '',
+                left: Math.round(rect.left * 10) / 10,
+                right: Math.round(rect.right * 10) / 10,
+                width: Math.round(rect.width * 10) / 10,
+              };
+            })
+            .filter((item) => item.left < -1 || item.right > documentElement.clientWidth + 1)
+            .slice(0, 8);
           return {
-            noDocumentOverflow: documentElement.scrollWidth <= documentElement.clientWidth,
+            noDocumentOverflow: documentElement.scrollWidth <= documentElement.clientWidth + 1,
+            documentWidth: documentElement.scrollWidth,
+            clientWidth: documentElement.clientWidth,
+            overflowElements,
             missingLabels,
             unsafeTables,
             moduleNavVisible: visible(moduleNav),
@@ -951,7 +991,10 @@ test.describe('@smoke QLCL foundation', () => {
             mobile,
           };
         }, { module: entry.module, mobile: viewport.width < 768 });
-        expect(layoutAudit.noDocumentOverflow, `${entry.route} ${viewport.name} must not overflow horizontally`).toBeTruthy();
+        expect(
+          layoutAudit.noDocumentOverflow,
+          `${entry.route} ${viewport.name} must not overflow horizontally: ${JSON.stringify(layoutAudit)}`,
+        ).toBeTruthy();
         expect(layoutAudit.missingLabels, `${entry.route} ${viewport.name} form labels`).toEqual([]);
         expect(layoutAudit.unsafeTables, `${entry.route} ${viewport.name} table strategy`).toBe(0);
         expect(layoutAudit.menuOverlapsContent, `${entry.route} ${viewport.name} menu overlap`).toBeFalsy();

@@ -60,7 +60,7 @@ function createTicket(db, suffix = 'PRIMARY', { withRound = true } = {}) {
     INSERT INTO evaluation_tickets (
       ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type,
       template_id, question_template_version_id, facility_type, supplier_scale,
-      product_name, business_type, evaluation_address, actual_evaluation_date,
+      snapshot_product_name, business_type, snapshot_evaluation_address, actual_evaluation_date,
       current_status, current_round_no, completed_round, score_percent,
       grade_code, result_label, created_by
     ) VALUES (?, ?, ?, 'RUN-21 Synthetic Supplier', 'Periodic', ?, ?, 'ALL',

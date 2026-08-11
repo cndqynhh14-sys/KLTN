@@ -131,11 +131,18 @@ function tokenFor(authorizationService, email) {
 function insertSupplier(db, fields) {
   return db.prepare(`
     INSERT INTO supplier_master (
-      supplier_code, supplier_name, mch2, mch3, status, source_type, created_by
+      supplier_code, supplier_name, tax_code, address, region, province, business_type,
+      contact_name, contact_email, contact_phone, status, source_type, created_by
     ) VALUES (
-      @supplier_code, @supplier_name, @mch2, @mch3, @status, 'MANUAL', @created_by
+      @supplier_code, @supplier_name, @tax_code, @address, 'MB', 'Thành phố Hà Nội', 'Tự sản xuất',
+      'Policy Contact', 'policy-contact@example.test', '0900000018', @status, 'MANUAL', @created_by
     )
-  `).run({ ...fields, status: fields.status || 'ACTIVE' }).lastInsertRowid;
+  `).run({
+    ...fields,
+    tax_code: fields.tax_code || `${fields.supplier_code}-TAX`,
+    address: fields.address || 'Policy supplier address',
+    status: fields.status || 'ACTIVE',
+  }).lastInsertRowid;
 }
 
 function insertEvaluation(db, fields) {
@@ -359,6 +366,8 @@ test('global supplier read does not bypass evaluation create and update MCH2 sco
         facility_type: 'CHUNG',
         supplier_scale: 'LARGE',
         planned_date: '2026-07-20',
+        mch2: 'Dệt may',
+        mch3: 'Bông vải sợi',
       }),
     });
     const createBody = await createResponse.json();
@@ -368,7 +377,7 @@ test('global supplier read does not bypass evaluation create and update MCH2 sco
         'Content-Type': 'application/json',
         Cookie: `qlcl_token=${tokenFor(authorizationService, email)}`,
       },
-      body: JSON.stringify({ supplier_id: supplierId }),
+      body: JSON.stringify({ supplier_id: supplierId, mch2: 'Dệt may', mch3: 'Bông vải sợi' }),
     });
     const updateBody = await updateResponse.json();
 
@@ -488,8 +497,12 @@ test('RUN-18 existing supplier reference needs only global supplier read and nev
         facility_type: 'CHUNG',
         supplier_scale: 'LARGE',
         planned_date: '2026-07-20',
+        cmc_owner: 'CMC Owner',
+        cmc_head: 'CMC Head',
         mch2: 'Homeline',
         mch3: MCH3_BY_MCH2.Homeline[0],
+        product_name: 'Policy product',
+        snapshot_evaluation_address: 'Policy audit address',
       }),
     });
     const body = await response.json();

@@ -1,6 +1,6 @@
 # Menu and action matrix
 
-Generated from `public/js/navigation-manifest.js`. Navigation manifest version: `8`.
+Generated from `public/js/navigation-manifest.js`. Navigation manifest version: `9`.
 
 | ID | Parent | Route | View | Label | Permissions | Feature | Mobile | Sidebar | Sidebar active | Contextual |
 |---|---|---|---|---|---|---|---:|---:|---|---:|
@@ -15,7 +15,6 @@ Generated from `public/js/navigation-manifest.js`. Navigation manifest version: 
 | `analytics` | — | — | — | Báo cáo & phân tích | — | ON | — | yes | — | no |
 | `overview` | `analytics` | `/dashboard` | `view-overview` | Báo cáo thống kê | `DASHBOARD.READ` | ON | 30 | yes | — | no |
 | `reports` | `evaluations` | `/reports` | `view-reports` | Báo cáo | `REPORT.READ` | ON | — | yes | — | yes |
-| `ncc-eval` | `analytics` | `/dashboard/ncc-evaluations` | `view-ncc-eval` | Phân tích đánh giá NCC | `DASHBOARD.READ` | ON | 32 | no | `overview` | no |
 | `administration` | — | — | — | Quản trị | — | ON | — | yes | — | no |
 | `admin` | `administration` | `/admin` | `view-admin` | Trung tâm quản trị | `SYSTEM.ADMIN`<br>`USER.MANAGE`<br>`AUDIT.READ`<br>`AUDIT.EXPORT`<br>`REPORT_TEMPLATE.MANAGE`<br>`REPORT_TEMPLATE.PUBLISH`<br>`REPORT_TEMPLATE.ADVANCED`<br>`QUESTION_TEMPLATE.MANAGE`<br>`SCORING_POLICY.MANAGE`<br>`SCORING_POLICY.PUBLISH` | ON | 40 | yes | — | no |
 | `admin-people-access` | `admin` | — | — | Nhân sự & phân quyền | — | ON | — | yes | — | no |

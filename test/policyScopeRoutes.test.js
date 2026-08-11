@@ -230,10 +230,10 @@ test('RUN-18 specialist reads the full supplier master while supplier writes rem
       }, 3600);
       const insertSupplier = db.prepare(`
         INSERT INTO supplier_master (
-          supplier_code, supplier_name, region, province, business_type, mch2, mch3,
+          supplier_code, supplier_name, region, province, business_type,
           status, source_type, created_by, created_at
         ) VALUES (
-          @supplier_code, @supplier_name, @region, @province, @business_type, @mch2, @mch3,
+          @supplier_code, @supplier_name, @region, @province, @business_type,
           'ACTIVE', 'MANUAL', @created_by, @created_at
         )
       `);

@@ -43,6 +43,7 @@ Generated from `public/js/action-registry.js` (version 14). Do not edit this fil
 | dashboard.period_next | Xem kỳ báo cáo sau | DASHBOARD | control | secondary | DASHBOARD.READ | — | — | — |
 | dashboard.period_current | Về kỳ báo cáo hiện tại | DASHBOARD | control | secondary | DASHBOARD.READ | — | — | — |
 | dashboard.period_type | Đổi loại kỳ báo cáo | DASHBOARD | control | secondary | DASHBOARD.READ | — | — | — |
+| dashboard.mode | Đổi chế độ dashboard | DASHBOARD | control | secondary | DASHBOARD.READ | — | — | — |
 | dashboard.export | Xuất dashboard đánh giá NCC | DASHBOARD | page | secondary | DASHBOARD.READ | — | Idempotency-Key | export.generated |
 | session.logout | Đăng xuất | AUTH | control | secondary | — | — | Idempotency-Key | auth.logout.succeeded |
 | auth.request_otp | Gửi mã xác thực | AUTH | control | secondary | — | — | Idempotency-Key | auth.otp.request.succeeded |

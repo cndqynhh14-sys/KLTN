@@ -561,6 +561,22 @@
   .data-table td.num-strong { font-size: 13px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
   .data-table td.muted { color: var(--muted); }
   .data-table td.label { font-weight: 500; }
+  #view-suppliers .table-scroll { overflow-x: hidden; }
+  .supplier-master-table { width: 100%; table-layout: fixed; }
+  .supplier-master-table th,
+  .supplier-master-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .supplier-master-table th { padding-inline: 8px; letter-spacing: .08em; font-size: 9px; }
+  .supplier-master-table td { padding-inline: 10px; }
+  .supplier-master-table .supplier-col-index { width: 5%; }
+  .supplier-master-table .supplier-col-code { width: 9%; }
+  .supplier-master-table .supplier-col-name { width: 15%; }
+  .supplier-master-table .supplier-col-tax { width: 10%; }
+  .supplier-master-table .supplier-col-address { width: 16%; }
+  .supplier-master-table .supplier-col-region { width: 7%; }
+  .supplier-master-table .supplier-col-province { width: 9%; }
+  .supplier-master-table .supplier-col-business { width: 14%; }
+  .supplier-master-table .supplier-col-status { width: 8%; }
+  .supplier-master-table .supplier-col-actions { width: 7%; }
 
   .mobile-card-list { display: none; }
   .supplier-card {
@@ -1627,6 +1643,17 @@
   .workflow-step .t { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; overflow-wrap: anywhere; word-break: break-word; }
   .workflow-step .d { font-size: 12px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; word-break: break-word; }
   .form-shell { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 18px; }
+  .evaluation-form-groups { grid-template-columns: 1fr; }
+  .evaluation-form-group { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: var(--surface); }
+  .evaluation-form-group h4 { margin: 0 0 14px; color: var(--brand); font-size: 13px; font-weight: 900; letter-spacing: .035em; }
+  [data-evaluation-group="assessment"] { order: 1; }
+  [data-evaluation-group="merchandising"] { order: 2; }
+  [data-evaluation-group="supplier"] { order: 3; }
+  [data-evaluation-group="contact"] { order: 4; }
+  [data-evaluation-group="linked-facility"] { order: 5; }
+  [data-evaluation-group="criteria"] { order: 6; }
+  .evaluation-form-groups > .field-full { order: 7; }
+  .evaluation-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .form-field label { display: block; font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
   .placeholder-note { border: 1px dashed var(--border-2); border-radius: 8px; padding: 14px 16px; color: var(--muted); font-size: 12.5px; line-height: 1.55; background: #fafbfc; }
   .field-error { display: block; color: var(--red); font-size: 11px; min-height: 16px; margin-top: 4px; }
@@ -2335,6 +2362,11 @@
   .dashboard-filter-option input { width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
   .dashboard-export { align-self: end; min-width: 148px; justify-content: center; }
   .statistics-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .dashboard-view-segment { display: inline-flex; width: fit-content; padding: 4px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); }
+  .dashboard-view-segment button { min-width: 124px; min-height: 36px; padding: 7px 18px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 800; cursor: pointer; }
+  .dashboard-view-segment button.active { background: var(--surface); color: var(--brand); box-shadow: var(--shadow-sm); }
+  .dashboard-view-segment button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .statistics-mode-pane { display: grid; gap: 14px; }
   .statistics-kpi-card { min-height: 142px; padding: 17px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
   .statistics-kpi-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   .statistics-kpi-label { min-height: 34px; color: var(--muted); font-size: 10.5px; font-weight: 800; line-height: 1.45; letter-spacing: .035em; text-transform: uppercase; }
@@ -2388,6 +2420,19 @@
   .statistics-chart-scroll { max-width: 100%; overflow-x: hidden; }
   #quality-trend-canvas { display: block; width: 100%; max-width: 100%; height: 285px; }
   .statistics-chart-empty, .statistics-card-empty { display: grid; place-items: center; min-height: 220px; padding: 28px; color: var(--muted); font-size: 11.5px; text-align: center; }
+  .statistics-detail-top { display: grid; grid-template-columns: minmax(0, 13fr) minmax(320px, 7fr); gap: 14px; align-items: stretch; }
+  .statistics-detail-chart { position: relative; min-height: 350px; padding: 16px 18px 12px; }
+  #industry-performance-canvas, #violation-distribution-canvas { display: block; width: 100%; height: 320px; }
+  .statistics-rating-layout { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, .8fr); gap: 12px; align-items: center; padding: 16px; }
+  .statistics-rating-canvas-wrap { position: relative; min-height: 260px; display: grid; place-items: center; }
+  #rating-distribution-canvas { width: 250px; height: 250px; max-width: 100%; }
+  .statistics-rating-center { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
+  .statistics-rating-center span { display: block; color: var(--muted); font-size: 10px; }
+  .statistics-rating-center strong { display: block; margin-top: 4px; color: var(--text); font: 800 25px/1 var(--mono); }
+  .statistics-rating-legend { display: grid; gap: 8px; }
+  .statistics-rating-item { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 8px; align-items: start; color: var(--text); font-size: 11px; line-height: 1.4; }
+  .statistics-rating-item i { width: 9px; height: 9px; margin-top: 3px; border-radius: 3px; }
+  .statistics-rating-item small { display: block; color: var(--muted); font-size: 10px; }
   .statistics-tooltip { position: fixed; z-index: 400; max-width: 260px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); font-size: 11px; line-height: 1.6; pointer-events: none; }
   .statistics-skeleton { overflow: hidden; background: var(--surface-2); position: relative; }
   .statistics-skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent); animation: dashboard-shimmer 1.3s infinite; }
@@ -2399,18 +2444,22 @@
   @media (max-width: 1080px) {
     .statistics-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .statistics-main-grid { grid-template-columns: 1fr; }
+    .statistics-detail-top { grid-template-columns: 1fr; }
   }
   @media (max-width: 760px) {
     .statistics-dashboard { gap: 14px; }
     .statistics-filterbar { grid-template-columns: 1fr; }
     .dashboard-export { width: 100%; }
     .statistics-donut-layout { grid-template-columns: 1fr; }
+    .statistics-rating-layout { grid-template-columns: 1fr; }
     .statistics-status-legend { max-height: none; }
     .statistics-trend-head { align-items: flex-start; flex-direction: column; }
     .statistics-trend-legend { justify-content: flex-start; }
   }
   @media (max-width: 520px) {
     .statistics-kpis { grid-template-columns: 1fr; }
+    .dashboard-view-segment { width: 100%; }
+    .dashboard-view-segment button { min-width: 0; flex: 1; }
   }
   @media (prefers-color-scheme: dark) {
     #view-overview {
@@ -2609,6 +2658,7 @@
     .result-strip { grid-template-columns: 1fr 1fr; padding: 12px; }
     .result-chip { padding: 11px; }
     .form-shell { grid-template-columns: 1fr; padding: 14px; }
+    .evaluation-form-grid { grid-template-columns: 1fr; }
     .form-field label { font-size: 13px; letter-spacing: 0; text-transform: none; margin-bottom: 8px; }
     .form-actions {
       position: sticky;
@@ -3230,7 +3280,10 @@
       <div class="panel">
         <div class="panel-head"><h3>Thông tin phiếu</h3><span class="count">Kiểm tra</span></div>
         <form id="evaluation-form" novalidate>
-          <div class="form-shell">
+          <div class="form-shell evaluation-form-groups">
+            <section class="evaluation-form-group" data-evaluation-group="assessment">
+              <h4>THÔNG TIN ĐÁNH GIÁ</h4>
+              <div class="evaluation-form-grid">
             <div class="form-field">
               <label>Loại hình đánh giá</label>
               <select id="new-eval-type" name="evaluation_type" class="input" required>
@@ -3246,6 +3299,17 @@
               <input id="new-ad-hoc-reason" name="ad_hoc_reason" class="input" placeholder="Nhập lý do">
               <span class="field-error" data-error-for="ad_hoc_reason"></span>
             </div>
+            <div class="form-field">
+              <label>Ngày đánh giá dự kiến</label>
+              <input id="new-planned-date" name="planned_date" class="input" type="date" required>
+              <span class="field-error" data-error-for="planned_date"></span>
+            </div>
+              </div>
+            </section>
+
+            <section class="evaluation-form-group" data-evaluation-group="supplier">
+              <h4>THÔNG TIN NHÀ CUNG CẤP</h4>
+              <div class="evaluation-form-grid">
             <div class="form-field">
               <label>Chọn NCC</label>
               <input id="new-supplier-select" class="input" list="new-supplier-options" autocomplete="off" placeholder="Nhập mã / tên / MST NCC">
@@ -3272,18 +3336,13 @@
               <span class="field-error" data-error-for="address"></span>
             </div>
             <div class="form-field">
-              <label>Địa chỉ cơ sở sản xuất</label>
-              <input id="new-production-address" name="production_address" class="input" placeholder="Địa chỉ cơ sở" required>
-              <span class="field-error" data-error-for="production_address"></span>
-            </div>
-            <div class="form-field">
-              <label>Địa chỉ đánh giá</label>
-              <input id="new-evaluation-address" name="evaluation_address" class="input" placeholder="Địa điểm đánh giá" required>
-              <span class="field-error" data-error-for="evaluation_address"></span>
+              <label>Địa chỉ đánh giá NCC</label>
+              <input id="new-evaluation-address" name="snapshot_evaluation_address" class="input" placeholder="Có thể để trống nếu đánh giá đơn vị liên kết/gia công">
+              <span class="field-error" data-error-for="snapshot_evaluation_address"></span>
             </div>
             <div class="form-field">
               <label>Khu vực</label>
-              <select id="new-region" name="region" class="input">
+              <select id="new-region" name="region" class="input" required>
                 <option value="">Chọn khu vực</option>
                 <option value="MB">MB</option>
                 <option value="MN">MN</option>
@@ -3292,14 +3351,14 @@
             </div>
             <div class="form-field">
               <label>Tỉnh</label>
-              <select id="new-province" name="province" class="input" disabled>
+              <select id="new-province" name="province" class="input" disabled required>
                 <option value="">Chọn khu vực trước</option>
               </select>
               <span class="field-error" data-error-for="province"></span>
             </div>
             <div class="form-field">
               <label>Loại hình kinh doanh</label>
-              <select id="new-business-type" name="business_type" class="input">
+              <select id="new-business-type" name="business_type" class="input" required>
                 <option value="">Chọn loại hình kinh doanh</option>
                 <option value="Tự sản xuất">Tự sản xuất</option>
                 <option value="Kinh doanh">Kinh doanh</option>
@@ -3307,46 +3366,58 @@
               </select>
               <span class="field-error" data-error-for="business_type"></span>
             </div>
+              </div>
+            </section>
+
+            <section class="evaluation-form-group" data-evaluation-group="linked-facility">
+              <h4>THÔNG TIN ĐƠN VỊ LIÊN KẾT/GIA CÔNG</h4>
+              <div class="evaluation-form-grid">
             <div class="form-field">
               <label>Tên đơn vị liên kết</label>
-              <input id="new-linked-facility-name" name="linked_facility_name" class="input" placeholder="Tên đơn vị liên kết/gia công">
+              <input id="new-linked-facility-name" name="snapshot_linked_facility_name" class="input" placeholder="Tên đơn vị liên kết/gia công">
+              <span class="field-error" data-error-for="snapshot_linked_facility_name"></span>
             </div>
             <div class="form-field">
-              <label>Mã đơn vị liên kết</label>
-              <input id="new-linked-facility-code" name="linked_facility_code" class="input" placeholder="VD: DV-GC-001">
+              <label>Địa chỉ đánh giá đơn vị liên kết/gia công</label>
+              <input id="new-linked-facility-address" name="snapshot_linked_facility_address" class="input" placeholder="Địa chỉ thực hiện đánh giá">
+              <span class="field-error" data-error-for="snapshot_linked_facility_address"></span>
             </div>
-            <div class="form-field">
-              <label>Địa chỉ đơn vị liên kết</label>
-              <input id="new-linked-facility-address" name="linked_facility_address" class="input" placeholder="Địa chỉ đơn vị liên kết/gia công">
-            </div>
-            <div class="form-field">
-              <label>Loại đơn vị liên kết</label>
-              <input id="new-linked-facility-type" name="linked_facility_type" class="input" placeholder="VD: Gia công">
-            </div>
+              </div>
+            </section>
+
+            <section class="evaluation-form-group" data-evaluation-group="merchandising">
+              <h4>THÔNG TIN NGÀNH HÀNG</h4>
+              <div class="evaluation-form-grid">
             <div class="form-field">
               <label>CMC phụ trách</label>
-              <input id="new-cmc-owner" name="cmc_owner" class="input" placeholder="CMC phụ trách ngành hàng">
+              <input id="new-cmc-owner" name="cmc_owner" class="input" placeholder="CMC phụ trách ngành hàng" required>
+              <span class="field-error" data-error-for="cmc_owner"></span>
             </div>
             <div class="form-field">
               <label>CMC trưởng phòng</label>
-              <input id="new-cmc-head" name="cmc_head" class="input" placeholder="CMC trưởng phòng ngành hàng">
+              <input id="new-cmc-head" name="cmc_head" class="input" placeholder="CMC trưởng phòng ngành hàng" required>
+              <span class="field-error" data-error-for="cmc_head"></span>
             </div>
             <div class="form-field">
-              <label>File giấy phép kinh doanh</label>
-              <input id="new-business-license-file" name="business_license_file" class="input" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png">
-              <div id="new-business-license-file-name" class="muted mono" style="font-size:12px;margin-top:6px"></div>
-              <span class="field-error" data-error-for="business_license_file"></span>
+              <label>Ngành hàng MCH2</label>
+              <select id="new-mch2" name="mch2" class="input" required>
+                <option value="">Chọn MCH2</option>
+              </select>
+              <span class="field-error" data-error-for="mch2"></span>
             </div>
             <div class="form-field">
-              <label>Loại chứng nhận ATTP</label>
-              <input id="new-attp-certificate-type" name="attp_certificate_type" class="input" placeholder="VD: HACCP, ISO 22000">
+              <label>Ngành hàng MCH3</label>
+              <select id="new-mch3" name="mch3" class="input" required>
+                <option value="">Chọn MCH3</option>
+              </select>
+              <span class="field-error" data-error-for="mch3"></span>
             </div>
-            <div class="form-field">
-              <label>File chứng nhận ATTP</label>
-              <input id="new-attp-certificate-file" name="attp_certificate_file" class="input" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png">
-              <div id="new-attp-certificate-file-name" class="muted mono" style="font-size:12px;margin-top:6px"></div>
-              <span class="field-error" data-error-for="attp_certificate_file"></span>
-            </div>
+              </div>
+            </section>
+
+            <section class="evaluation-form-group" data-evaluation-group="contact">
+              <h4>THÔNG TIN LIÊN HỆ NCC</h4>
+              <div class="evaluation-form-grid">
             <div class="form-field">
               <label>Người liên hệ NCC</label>
               <input id="new-contact-name" name="contact_name" class="input" placeholder="Họ tên" required>
@@ -3362,24 +3433,12 @@
               <input id="new-email" name="email" class="input" type="email" placeholder="email@ncc.vn" required>
               <span class="field-error" data-error-for="email"></span>
             </div>
-            <div class="form-field">
-              <label>Ngành hàng MCH2</label>
-              <select id="new-mch2" name="mch2" class="input" required>
-                <option value="">Chọn MCH2</option>
-                <option>Rau củ quả</option>
-                <option>Thịt</option>
-                <option>Thủy hải sản</option>
-                <option>Thực phẩm chế biến</option>
-              </select>
-              <span class="field-error" data-error-for="mch2"></span>
-            </div>
-            <div class="form-field">
-              <label>Ngành hàng MCH3</label>
-              <select id="new-mch3" name="mch3" class="input" required>
-                <option value="">Chọn MCH3</option>
-              </select>
-              <span class="field-error" data-error-for="mch3"></span>
-            </div>
+              </div>
+            </section>
+
+            <section class="evaluation-form-group" data-evaluation-group="criteria">
+              <h4>XÁC NHẬN BỘ TIÊU CHÍ ĐÁNH GIÁ</h4>
+              <div class="evaluation-form-grid">
             <div class="form-field">
               <label>Sản phẩm dự kiến đánh giá</label>
               <input id="new-products" name="products" class="input" placeholder="Nhập sản phẩm" required>
@@ -3412,20 +3471,8 @@
               </select>
               <span class="field-error" data-error-for="supplier_scale"></span>
             </div>
-            <div class="form-field">
-              <label>Ngày đánh giá dự kiến</label>
-              <input id="new-planned-date" name="planned_date" class="input" type="date" required>
-              <span class="field-error" data-error-for="planned_date"></span>
-            </div>
-            <div class="form-field">
-              <label>Phương thức đánh giá</label>
-              <select id="new-method" name="method" class="input" required>
-                <option value="">Chọn phương thức</option>
-                <option value="Thực địa">Thực địa</option>
-                <option value="Online">Trực tuyến</option>
-              </select>
-              <span class="field-error" data-error-for="method"></span>
-            </div>
+              </div>
+            </section>
             <div class="form-field field-full">
               <div class="form-actions">
                 <button id="btn-form-reset" type="button" class="btn-ghost left-action">Xóa thông tin phiếu</button>
@@ -3680,10 +3727,16 @@
       <div id="overview-state" class="dashboard-state hidden" aria-live="polite"></div>
       <div id="statistics-kpi-cards" class="statistics-kpis" aria-live="polite"></div>
 
+      <div id="dashboard-view-segment" class="dashboard-view-segment" role="tablist" aria-label="Chế độ dashboard">
+        <button id="dashboard-mode-overview" class="active" type="button" role="tab" aria-selected="true" aria-controls="statistics-overview-charts" data-action-id="dashboard.mode" data-dashboard-mode="overview">Tổng quan</button>
+        <button id="dashboard-mode-detail" type="button" role="tab" aria-selected="false" aria-controls="statistics-detail-charts" data-action-id="dashboard.mode" data-dashboard-mode="detail">Chi tiết</button>
+      </div>
+
+      <div id="statistics-overview-charts" class="statistics-mode-pane" role="tabpanel" aria-labelledby="dashboard-mode-overview">
       <div class="statistics-main-grid">
         <section class="statistics-card" aria-labelledby="status-donut-title">
           <div class="statistics-card-head">
-            <h2 id="status-donut-title">Phân bố phiếu theo trạng thái xử lý</h2>
+            <h2 id="status-donut-title">Tiến độ kế hoạch đánh giá</h2>
           </div>
           <div id="statistics-donut-content" class="statistics-donut-layout">
             <div class="statistics-donut-wrap">
@@ -3730,35 +3783,39 @@
           </div>
         </div>
       </section>
-      <div id="statistics-tooltip" class="statistics-tooltip hidden" role="tooltip"></div>
-    </div>
-  </section>
+      </div>
 
-  <!-- Đánh giá NCC -->
-  <section id="view-ncc-eval" class="page-wrap hidden">
-    <div class="section-hdr">
-      <h2>03 — Đánh giá NCC</h2>
-      <span class="sub">Tổng hợp 4 nhóm vi phạm</span>
-      <div class="line"></div>
-    </div>
-    <div id="ncc-eval-summary" class="kpi-strip col3"></div>
-    <div id="ncc-eval-state" class="dashboard-state hidden"></div>
-    <div class="grid-2">
-      <div class="panel">
-        <div class="panel-head"><h3>Theo ngành hàng</h3><span id="ncc-eval-count" class="count"></span></div>
-        <div style="overflow-x:auto">
-          <table class="data-table">
-            <thead><tr><th>STT</th><th>Ngành hàng</th><th class="text-right">Đạt</th><th class="text-right">Không đạt</th><th class="text-right">Tổng NCC</th><th class="text-right">Tỷ lệ đạt</th><th class="text-right">Tỷ lệ không đạt</th></tr></thead>
-            <tbody id="ncc-eval-tbody"></tbody>
-          </table>
+      <div id="statistics-detail-charts" class="statistics-mode-pane hidden" role="tabpanel" aria-labelledby="dashboard-mode-detail">
+        <div class="statistics-detail-top">
+          <section class="statistics-card" aria-labelledby="industry-performance-title">
+            <div class="statistics-card-head"><h2 id="industry-performance-title">Hiệu quả đánh giá theo ngành hàng</h2></div>
+            <div class="statistics-detail-chart">
+              <canvas id="industry-performance-canvas" role="img" aria-label="Biểu đồ 100% stacked bar hiệu quả đánh giá theo ngành hàng"></canvas>
+              <div id="industry-performance-empty" class="statistics-chart-empty hidden">Không có dữ liệu ngành hàng trong phạm vi lọc.</div>
+            </div>
+          </section>
+
+          <section class="statistics-card" aria-labelledby="rating-distribution-title">
+            <div class="statistics-card-head"><h2 id="rating-distribution-title">Phân bố NCC theo mức xếp loại</h2></div>
+            <div id="rating-distribution-content" class="statistics-rating-layout">
+              <div class="statistics-rating-canvas-wrap">
+                <canvas id="rating-distribution-canvas" role="img" aria-label="Biểu đồ tròn phân bố NCC theo mức xếp loại"></canvas>
+              </div>
+              <div id="rating-distribution-legend" class="statistics-rating-legend" aria-label="Chú giải mức xếp loại"></div>
+            </div>
+            <div id="rating-distribution-empty" class="statistics-card-empty hidden">Không có NCC đã đánh giá trong phạm vi lọc.</div>
+          </section>
         </div>
-        <p id="ncc-eval-empty" class="hidden empty-state" style="padding:40px">Không có dữ liệu Đánh giá NCC trong tháng đã chọn.</p>
+
+        <section class="statistics-card" aria-labelledby="violation-distribution-title">
+          <div class="statistics-card-head"><h2 id="violation-distribution-title">Tỷ lệ theo nhóm vi phạm</h2></div>
+          <div class="statistics-detail-chart">
+            <canvas id="violation-distribution-canvas" role="img" aria-label="Biểu đồ thanh ngang tỷ lệ theo nhóm vi phạm"></canvas>
+            <div id="violation-distribution-empty" class="statistics-chart-empty hidden">Không có lượt vi phạm trong phạm vi lọc.</div>
+          </div>
+        </section>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h3>4 nhóm lỗi vi phạm</h3><span class="count mono">Vi phạm</span></div>
-        <div id="ncc-violations-chart" class="ncc-violation-chart"></div>
-        <p id="ncc-violations-empty" class="hidden empty-state" style="padding:32px">Không có dữ liệu vi phạm để hiển thị.</p>
-      </div>
+      <div id="statistics-tooltip" class="statistics-tooltip hidden" role="tooltip"></div>
     </div>
   </section>
 
@@ -3774,21 +3831,6 @@
     <div class="panel">
       <div class="filter-grid">
         <input id="supplier-search" class="input" type="search" placeholder="Tìm theo Mã NCC / Tên NCC / Mã số thuế">
-        <select id="supplier-filter-mch2" class="pill-select">
-          <option value="">MCH2</option>
-          <option>Rau củ quả</option>
-          <option>Thịt</option>
-          <option>Thủy hải sản</option>
-          <option>Thực phẩm chế biến</option>
-        </select>
-        <select id="supplier-filter-mch3" class="pill-select">
-          <option value="">MCH3</option>
-          <option>Trái cây</option>
-          <option>Rau ăn lá</option>
-          <option>Thịt heo</option>
-          <option>Cá tươi</option>
-          <option>Đồ chế biến</option>
-        </select>
         <select id="supplier-filter-status" class="pill-select">
           <option value="">Trạng thái</option>
           <option value="ACTIVE">Đang hoạt động</option>
@@ -3799,21 +3841,24 @@
         <button id="supplier-reset-filters" class="btn-ghost" type="button">Xóa bộ lọc</button>
       </div>
       <div class="table-scroll">
-        <table class="data-table">
+        <table class="data-table supplier-master-table">
+          <colgroup>
+            <col class="supplier-col-index"><col class="supplier-col-code"><col class="supplier-col-name">
+            <col class="supplier-col-tax"><col class="supplier-col-address"><col class="supplier-col-region">
+            <col class="supplier-col-province"><col class="supplier-col-business"><col class="supplier-col-status">
+            <col class="supplier-col-actions">
+          </colgroup>
           <thead>
             <tr>
               <th>STT</th>
               <th>Mã NCC</th>
               <th>Tên NCC</th>
               <th>Mã số thuế</th>
+              <th>Địa chỉ</th>
               <th>Khu vực</th>
               <th>Tỉnh</th>
-              <th>MCH2</th>
-              <th>MCH3</th>
-              <th>Sản phẩm</th>
-              <th>Liên hệ</th>
+              <th>Loại hình kinh doanh</th>
               <th>Trạng thái</th>
-              <th>Nguồn</th>
               <th id="supplier-action-head" class="table-action-cell supplier-action-cell hidden">Thao tác</th>
             </tr>
           </thead>
@@ -4711,40 +4756,16 @@
           <div class="form-field field-span-6"><label>Tên NCC *</label><input id="supplier-name" class="input" required><span class="field-error" data-supplier-error-for="supplier-name"></span></div>
           <div class="form-field field-span-3"><label>Mã số thuế *</label><input id="supplier-tax-code" class="input" required><span class="field-error" data-supplier-error-for="supplier-tax-code"></span></div>
           <div class="form-field field-span-12"><label>Địa chỉ *</label><input id="supplier-address" class="input" required><span class="field-error" data-supplier-error-for="supplier-address"></span></div>
-          <div class="form-field field-span-6"><label>Địa chỉ sản xuất *</label><input id="supplier-production-address" class="input" required><span class="field-error" data-supplier-error-for="supplier-production-address"></span></div>
-          <div class="form-field field-span-6"><label>Địa chỉ đánh giá *</label><input id="supplier-evaluation-address" class="input" required><span class="field-error" data-supplier-error-for="supplier-evaluation-address"></span></div>
           <div class="form-field field-span-3"><label>Khu vực *</label><select id="supplier-region" class="input" required><option value="">Chọn khu vực</option><option value="MB">MB</option><option value="MN">MN</option></select><span class="field-error" data-supplier-error-for="supplier-region"></span></div>
           <div class="form-field field-span-3"><label>Tỉnh *</label><select id="supplier-province" class="input" disabled required><option value="">Chọn khu vực trước</option></select><span class="field-error" data-supplier-error-for="supplier-province"></span></div>
           <div class="form-field field-span-3"><label>Loại hình kinh doanh *</label><select id="supplier-business-type" class="input" required><option value="">Chọn loại hình kinh doanh</option><option value="Tự sản xuất">Tự sản xuất</option><option value="Kinh doanh">Kinh doanh</option><option value="Sản xuất và kinh doanh">Sản xuất và kinh doanh</option></select><span class="field-error" data-supplier-error-for="supplier-business-type"></span></div>
           <div class="form-field field-span-3"><label>Trạng thái</label><select id="supplier-status" class="input"><option value="ACTIVE">Đang hoạt động</option><option value="INACTIVE">Không hoạt động</option><option value="SUSPENDED">Tạm ngưng</option></select></div>
-        </section>
-        <section class="manual-supplier-section" aria-labelledby="manual-supplier-linked-title">
-          <h4 id="manual-supplier-linked-title" class="manual-supplier-section-title">Đơn vị liên kết</h4>
-          <div class="form-field field-span-3"><label>Mã đơn vị liên kết</label><input id="supplier-linked-facility-code" class="input"></div>
-          <div class="form-field field-span-6"><label>Tên đơn vị liên kết</label><input id="supplier-linked-facility-name" class="input"></div>
-          <div class="form-field field-span-3"><label>Loại đơn vị liên kết</label><input id="supplier-linked-facility-type" class="input"></div>
-          <div class="form-field field-span-12"><label>Địa chỉ đơn vị liên kết</label><input id="supplier-linked-facility-address" class="input"></div>
         </section>
         <section class="manual-supplier-section" aria-labelledby="manual-supplier-contact-title">
           <h4 id="manual-supplier-contact-title" class="manual-supplier-section-title">Thông tin liên hệ</h4>
           <div class="form-field field-span-4"><label>Người liên hệ *</label><input id="supplier-contact-name" class="input" required><span class="field-error" data-supplier-error-for="supplier-contact-name"></span></div>
           <div class="form-field field-span-4"><label>Email liên hệ *</label><input id="supplier-contact-email" type="email" class="input" required><span class="field-error" data-supplier-error-for="supplier-contact-email"></span></div>
           <div class="form-field field-span-4"><label>SĐT liên hệ *</label><input id="supplier-contact-phone" class="input" required><span class="field-error" data-supplier-error-for="supplier-contact-phone"></span></div>
-        </section>
-        <section class="manual-supplier-section" aria-labelledby="manual-supplier-product-title">
-          <h4 id="manual-supplier-product-title" class="manual-supplier-section-title">Ngành hàng và Sản phẩm</h4>
-          <div class="form-field field-span-3"><label>MCH2 *</label><select id="supplier-mch2" class="input" required><option value="">MCH2</option></select><span class="field-error" data-supplier-error-for="supplier-mch2"></span></div>
-          <div class="form-field field-span-3"><label>MCH3 *</label><select id="supplier-mch3" class="input" disabled required><option value="">MCH3</option></select><span class="field-error" data-supplier-error-for="supplier-mch3"></span></div>
-          <div class="form-field field-span-6"><label>Nhóm sản phẩm</label><input id="supplier-product-group" class="input"></div>
-          <div class="form-field field-span-6"><label>Sản phẩm *</label><input id="supplier-product-name" class="input" required><span class="field-error" data-supplier-error-for="supplier-product-name"></span></div>
-          <div class="form-field field-span-6"><label>File giấy phép kinh doanh</label><input id="supplier-business-license-file" class="input"></div>
-          <div class="form-field field-span-6"><label>Loại chứng nhận ATTP</label><input id="supplier-attp-certificate-type" class="input"></div>
-          <div class="form-field field-span-6"><label>File chứng nhận ATTP</label><input id="supplier-attp-certificate-file" class="input"></div>
-        </section>
-        <section class="manual-supplier-section" aria-labelledby="manual-supplier-cmc-title">
-          <h4 id="manual-supplier-cmc-title" class="manual-supplier-section-title">Thông tin CMC</h4>
-          <div class="form-field field-span-6"><label>CMC phụ trách</label><input id="supplier-cmc-owner" class="input"></div>
-          <div class="form-field field-span-6"><label>CMC trưởng phòng</label><input id="supplier-cmc-head" class="input"></div>
         </section>
       </div>
     </div>
@@ -4767,7 +4788,7 @@
     <input id="supplier-import-file" type="file" accept=".xlsx" required
       class="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
     <p class="text-xs text-slate-500 mt-3 leading-relaxed">
-      Bắt buộc: <span class="mono">supplier_code, supplier_name, mch2, mch3</span>.
+      Bắt buộc: <span class="mono">supplier_code, supplier_name</span>.
       Nếu có lỗi, toàn bộ file sẽ không được nhập.
     </p>
     <div id="supplier-import-result" class="placeholder-note mt-4" style="max-height:180px; overflow:auto;"></div>

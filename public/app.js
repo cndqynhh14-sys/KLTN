@@ -298,16 +298,23 @@ import { state } from './js/state.js';
     return {
       code: ticket.ticket_code,
       id: ticket.id,
+      source_kind: ticket.source_kind || 'NATIVE',
+      is_historical: !!ticket.is_historical,
+      read_only: !!ticket.read_only,
+      historical_source_stt: ticket.historical_source_stt || null,
       supplier_id: ticket.supplier_id,
       supplier_code: ticket.supplier && ticket.supplier.code,
       supplier_name: ticket.supplier && ticket.supplier.name,
       tax_code: ticket.supplier && ticket.supplier.tax_code,
       address: ticket.supplier && ticket.supplier.address,
       production_address: ticket.supplier && ticket.supplier.production_address,
-      evaluation_address: ticket.supplier && ticket.supplier.evaluation_address,
+      evaluation_address: ticket.supplier && (ticket.supplier.snapshot_evaluation_address || ticket.supplier.evaluation_address),
+      snapshot_evaluation_address: ticket.supplier && (ticket.supplier.snapshot_evaluation_address || ticket.supplier.evaluation_address),
       linked_facility_code: ticket.supplier && ticket.supplier.linked_facility_code,
-      linked_facility_name: ticket.supplier && ticket.supplier.linked_facility_name,
-      linked_facility_address: ticket.supplier && ticket.supplier.linked_facility_address,
+      linked_facility_name: ticket.supplier && (ticket.supplier.snapshot_linked_facility_name || ticket.supplier.linked_facility_name),
+      linked_facility_address: ticket.supplier && (ticket.supplier.snapshot_linked_facility_address || ticket.supplier.linked_facility_address),
+      snapshot_linked_facility_name: ticket.supplier && (ticket.supplier.snapshot_linked_facility_name || ticket.supplier.linked_facility_name),
+      snapshot_linked_facility_address: ticket.supplier && (ticket.supplier.snapshot_linked_facility_address || ticket.supplier.linked_facility_address),
       linked_facility_type: ticket.supplier && ticket.supplier.linked_facility_type,
       region: ticket.supplier && ticket.supplier.region,
       province: ticket.supplier && ticket.supplier.province,
@@ -324,7 +331,8 @@ import { state } from './js/state.js';
       mch2: ticket.merchandising && ticket.merchandising.mch2,
       mch3: ticket.merchandising && ticket.merchandising.mch3,
       product_group: ticket.product_group || ticket.template_code,
-      product_name: ticket.product_name || '',
+      snapshot_product_name: ticket.snapshot_product_name || ticket.product_name || '',
+      product_name: ticket.snapshot_product_name || ticket.product_name || '',
       facility_type: ticket.facility_type || '',
       supplier_scale: ticket.supplier_scale || '',
       evaluation_method: ticket.evaluation_method || '',
@@ -687,8 +695,6 @@ import { state } from './js/state.js';
     params.set('page', String(state.supplierPage));
     params.set('page_size', String(SUPPLIER_PAGE_SIZE));
     if (state.supplierSearch) params.set('q', state.supplierSearch);
-    if (state.supplierFilters.mch2) params.set('mch2', state.supplierFilters.mch2);
-    if (state.supplierFilters.mch3) params.set('mch3', state.supplierFilters.mch3);
     if (state.supplierFilters.status) params.set('status', state.supplierFilters.status);
     return params.toString();
   }
@@ -753,8 +759,8 @@ import { state } from './js/state.js';
 
     const grid = el('div', { className: 'supplier-card-grid' });
     appendSupplierCardField(grid, 'MST', row.tax_code);
-    appendSupplierCardField(grid, 'MCH', [row.mch2, row.mch3].filter(Boolean).join(' / '));
-    appendSupplierCardField(grid, 'Liên hệ', row.contact_name);
+    appendSupplierCardField(grid, 'Địa chỉ', row.address);
+    appendSupplierCardField(grid, 'Loại hình', row.business_type);
     card.appendChild(grid);
 
     if (isInternalUser()) {
@@ -770,17 +776,12 @@ import { state } from './js/state.js';
     { id: 'supplier-name', key: 'supplier_name', label: 'Tên NCC', always: true },
     { id: 'supplier-tax-code', key: 'tax_code', label: 'Mã số thuế', manualCreate: true },
     { id: 'supplier-address', key: 'address', label: 'Địa chỉ', manualCreate: true },
-    { id: 'supplier-production-address', key: 'production_address', label: 'Địa chỉ sản xuất', manualCreate: true },
-    { id: 'supplier-evaluation-address', key: 'evaluation_address', label: 'Địa chỉ đánh giá', manualCreate: true },
     { id: 'supplier-region', key: 'region', label: 'Khu vực', manualCreate: true },
     { id: 'supplier-province', key: 'province', label: 'Tỉnh', manualCreate: true },
     { id: 'supplier-business-type', key: 'business_type', label: 'Loại hình kinh doanh', manualCreate: true },
     { id: 'supplier-contact-name', key: 'contact_name', label: 'Người liên hệ', manualCreate: true },
     { id: 'supplier-contact-email', key: 'contact_email', label: 'Email liên hệ', manualCreate: true },
     { id: 'supplier-contact-phone', key: 'contact_phone', label: 'SĐT liên hệ', manualCreate: true },
-    { id: 'supplier-mch2', key: 'mch2', label: 'MCH2', manualCreate: true },
-    { id: 'supplier-mch3', key: 'mch3', label: 'MCH3', manualCreate: true },
-    { id: 'supplier-product-name', key: 'product_name', label: 'Sản phẩm', manualCreate: true },
   ];
   const SUPPLIER_FIELD_BY_KEY = SUPPLIER_REQUIRED_FIELD_SPECS.reduce((acc, spec) => {
     acc[spec.key] = spec;
@@ -793,27 +794,12 @@ import { state } from './js/state.js';
       supplier_name: $('supplier-name').value.trim(),
       tax_code: $('supplier-tax-code').value.trim(),
       address: $('supplier-address').value.trim(),
-      production_address: $('supplier-production-address').value.trim(),
-      evaluation_address: $('supplier-evaluation-address').value.trim(),
-      linked_facility_code: $('supplier-linked-facility-code').value.trim(),
-      linked_facility_name: $('supplier-linked-facility-name').value.trim(),
-      linked_facility_address: $('supplier-linked-facility-address').value.trim(),
-      linked_facility_type: $('supplier-linked-facility-type').value.trim(),
       region: $('supplier-region').value.trim(),
       province: $('supplier-province').value.trim(),
       business_type: $('supplier-business-type').value.trim(),
-      cmc_owner: $('supplier-cmc-owner').value.trim(),
-      cmc_head: $('supplier-cmc-head').value.trim(),
-      business_license_file: $('supplier-business-license-file').value.trim(),
-      attp_certificate_type: $('supplier-attp-certificate-type').value.trim(),
-      attp_certificate_file: $('supplier-attp-certificate-file').value.trim(),
       contact_name: $('supplier-contact-name').value.trim(),
       contact_email: $('supplier-contact-email').value.trim(),
       contact_phone: $('supplier-contact-phone').value.trim(),
-      mch2: $('supplier-mch2').value.trim(),
-      mch3: $('supplier-mch3').value.trim(),
-      product_group: $('supplier-product-group').value.trim(),
-      product_name: $('supplier-product-name').value.trim(),
       status: $('supplier-status').value,
     };
   }
@@ -824,7 +810,7 @@ import { state } from './js/state.js';
     if (err) err.textContent = message || '';
   }
   function supplierRequiredFieldSpecs() {
-    return SUPPLIER_REQUIRED_FIELD_SPECS.filter((spec) => spec.always || (!state.editingSupplierId && spec.manualCreate));
+    return SUPPLIER_REQUIRED_FIELD_SPECS;
   }
   function validateSupplierRequiredFields() {
     const activeIds = new Set();
@@ -854,6 +840,16 @@ import { state } from './js/state.js';
       setSupplierFieldError('supplier-business-type', 'Loại hình kinh doanh không hợp lệ.');
       ok = false;
     }
+    const contactEmail = $('supplier-contact-email') ? $('supplier-contact-email').value.trim() : '';
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+      setSupplierFieldError('supplier-contact-email', 'Email liên hệ không hợp lệ.');
+      ok = false;
+    }
+    const contactPhone = $('supplier-contact-phone') ? $('supplier-contact-phone').value.trim() : '';
+    if (contactPhone && !/^[0-9+\-\s.]{8,20}$/.test(contactPhone)) {
+      setSupplierFieldError('supplier-contact-phone', 'Số điện thoại không hợp lệ.');
+      ok = false;
+    }
     return ok;
   }
   function clearSupplierFormErrors() {
@@ -863,11 +859,6 @@ import { state } from './js/state.js';
     clearSupplierFormErrors();
     let highlighted = false;
     Object.entries(errors || {}).forEach(([key, value]) => {
-      if (key === 'merchandising') {
-        setSupplierFieldError('supplier-mch3', apiErrorMessage('merchandising_invalid'));
-        highlighted = true;
-        return;
-      }
       const spec = SUPPLIER_FIELD_BY_KEY[key];
       if (!spec) return;
       const message = value === 'invalid'
@@ -884,26 +875,10 @@ import { state } from './js/state.js';
     $('supplier-name').value = row?.supplier_name || '';
     $('supplier-tax-code').value = row?.tax_code || '';
     $('supplier-address').value = row?.address || '';
-    $('supplier-production-address').value = row?.production_address || '';
-    $('supplier-evaluation-address').value = row?.evaluation_address || '';
-    $('supplier-linked-facility-code').value = row?.linked_facility_code || '';
-    $('supplier-linked-facility-name').value = row?.linked_facility_name || '';
-    $('supplier-linked-facility-address').value = row?.linked_facility_address || '';
-    $('supplier-linked-facility-type').value = row?.linked_facility_type || '';
     setMasterDataControlValues('supplier', row?.region, row?.province, row?.business_type);
-    $('supplier-cmc-owner').value = row?.cmc_owner || '';
-    $('supplier-cmc-head').value = row?.cmc_head || '';
-    $('supplier-business-license-file').value = row?.business_license_file || '';
-    $('supplier-attp-certificate-type').value = row?.attp_certificate_type || '';
-    $('supplier-attp-certificate-file').value = row?.attp_certificate_file || '';
     $('supplier-contact-name').value = row?.contact_name || '';
     $('supplier-contact-email').value = row?.contact_email || '';
     $('supplier-contact-phone').value = row?.contact_phone || '';
-    $('supplier-mch2').value = row?.mch2 || '';
-    refreshSupplierMch3Options();
-    $('supplier-mch3').value = row?.mch3 || '';
-    $('supplier-product-group').value = row?.product_group || '';
-    $('supplier-product-name').value = row?.product_name || '';
     $('supplier-status').value = row?.status || 'ACTIVE';
   }
 
@@ -934,21 +909,10 @@ import { state } from './js/state.js';
         ['supplier_name', 'Tên NCC'],
         ['tax_code', 'Mã số thuế'],
         ['address', 'Địa chỉ'],
-        ['production_address', 'Địa chỉ sản xuất'],
-        ['evaluation_address', 'Địa chỉ đánh giá'],
         ['region', 'Khu vực'],
         ['province', 'Tỉnh'],
         ['business_type', 'Loại hình kinh doanh'],
         ['status', 'Trạng thái'],
-      ],
-    },
-    {
-      title: 'Đơn vị liên kết',
-      fields: [
-        ['linked_facility_code', 'Mã đơn vị liên kết'],
-        ['linked_facility_name', 'Tên đơn vị liên kết'],
-        ['linked_facility_address', 'Địa chỉ đơn vị liên kết'],
-        ['linked_facility_type', 'Loại đơn vị liên kết'],
       ],
     },
     {
@@ -957,34 +921,6 @@ import { state } from './js/state.js';
         ['contact_name', 'Người liên hệ'],
         ['contact_email', 'Email liên hệ'],
         ['contact_phone', 'SĐT liên hệ'],
-      ],
-    },
-    {
-      title: 'Ngành hàng và Sản phẩm',
-      fields: [
-        ['mch2', 'MCH2'],
-        ['mch3', 'MCH3'],
-        ['product_group', 'Nhóm sản phẩm'],
-        ['product_name', 'Sản phẩm'],
-        ['business_license_file', 'File giấy phép kinh doanh'],
-        ['attp_certificate_type', 'Loại chứng nhận ATTP'],
-        ['attp_certificate_file', 'File chứng nhận ATTP'],
-      ],
-    },
-    {
-      title: 'Thông tin CMC',
-      fields: [
-        ['cmc_owner', 'CMC phụ trách'],
-        ['cmc_head', 'CMC trưởng phòng'],
-      ],
-    },
-    {
-      title: 'Thông tin hệ thống',
-      fields: [
-        ['created_by', 'Người tạo'],
-        ['created_at', 'Thời gian tạo'],
-        ['updated_by', 'Người cập nhật cuối'],
-        ['updated_at', 'Thời gian cập nhật cuối'],
       ],
     },
   ];
@@ -1087,21 +1023,19 @@ import { state } from './js/state.js';
     if (state.supplierLoading || state.supplierError) {
       const message = state.supplierLoading ? UI_TEXT.suppliers.loading : state.supplierError;
       const tr = el('tr');
-      tr.appendChild(el('td', { className: 'muted', attrs: { colspan: showSupplierActions ? '13' : '12' }, text: message }));
+      tr.appendChild(el('td', { className: 'muted', attrs: { colspan: showSupplierActions ? '10' : '9' }, text: message }));
       tbody.appendChild(tr);
       if (mobileList) appendSupplierMobileState(mobileList, message);
     } else if (state.suppliers.length === 0) {
       const filterText = filterSummary([
         state.supplierSearch && '"' + state.supplierSearch + '"',
-        state.supplierFilters && state.supplierFilters.mch2,
-        state.supplierFilters && state.supplierFilters.mch3,
         state.supplierFilters && statusText(state.supplierFilters.status),
       ]);
       const message = filterText
         ? 'Không có kết quả cho ' + filterText + '. Xóa bộ lọc để xem lại toàn bộ danh mục NCC.'
         : UI_TEXT.suppliers.emptyFiltered;
       const tr = el('tr');
-      tr.appendChild(el('td', { className: 'muted', attrs: { colspan: showSupplierActions ? '13' : '12' }, text: message }));
+      tr.appendChild(el('td', { className: 'muted', attrs: { colspan: showSupplierActions ? '10' : '9' }, text: message }));
       tbody.appendChild(tr);
       if (mobileList) appendSupplierMobileState(mobileList, message);
     } else {
@@ -1110,17 +1044,14 @@ import { state } from './js/state.js';
         const indexLabel = String(start + i + 1).padStart(2, '0');
         const tr = el('tr');
         tr.appendChild(el('td', { className: 'muted mono', text: indexLabel }));
-        tr.appendChild(el('td', { className: 'mono label', text: row.supplier_code || '' }));
-        tr.appendChild(el('td', { className: 'label', text: row.supplier_name || '' }));
+        tr.appendChild(el('td', { className: 'mono label', attrs: { title: row.supplier_code || '' }, text: row.supplier_code || '' }));
+        tr.appendChild(el('td', { className: 'label', attrs: { title: row.supplier_name || '' }, text: row.supplier_name || '' }));
         tr.appendChild(el('td', { className: 'mono', text: row.tax_code || '—' }));
+        tr.appendChild(el('td', { attrs: { title: row.address || '' }, text: row.address || '—' }));
         tr.appendChild(el('td', { text: row.region || '—' }));
-        tr.appendChild(el('td', { text: row.province || '—' }));
-        tr.appendChild(el('td', { text: row.mch2 || '—' }));
-        tr.appendChild(el('td', { text: row.mch3 || '—' }));
-        tr.appendChild(el('td', { text: row.product_name || row.product_group || '—' }));
-        tr.appendChild(el('td', { text: row.contact_name || '—' }));
+        tr.appendChild(el('td', { attrs: { title: row.province || '' }, text: row.province || '—' }));
+        tr.appendChild(el('td', { attrs: { title: row.business_type || '' }, text: row.business_type || '—' }));
         const statusTd = el('td'); statusTd.appendChild(supplierStatusTag(row.status)); tr.appendChild(statusTd);
-        tr.appendChild(el('td', { className: 'mono muted', text: row.source_type || '—' }));
         if (showSupplierActions) {
           const actionTd = el('td', { className: 'table-action-cell supplier-action-cell' });
           actionTd.appendChild(renderSupplierActions(row));
@@ -1253,13 +1184,9 @@ import { state } from './js/state.js';
   }
   function initMerchandisingSelects() {
     renderMch2Options($('eval-mch2-filter'), 'MCH2');
-    renderMch2Options($('supplier-filter-mch2'), 'MCH2');
     renderMch2Options($('new-mch2'), 'Chọn MCH2');
-    renderMch2Options($('supplier-mch2'), 'Chọn MCH2');
     refreshEvalMch3Filter();
-    refreshSupplierMch3Filter();
     refreshMch3Options();
-    refreshSupplierMch3Options();
   }
   function setMsg(id, text, kind) {
     const e = $(id);
@@ -1517,7 +1444,17 @@ import { state } from './js/state.js';
   }
 
   function routePathFromHash() {
-    return (window.location.hash || '').replace(/^#/, '') || '/dashboard';
+    const route = (window.location.hash || '').replace(/^#/, '') || '/dashboard';
+    if (route.split('?')[0] !== '/dashboard/ncc-evaluations') return route;
+    const legacyParams = new URLSearchParams(route.includes('?') ? route.slice(route.indexOf('?') + 1) : '');
+    const params = new URLSearchParams();
+    if (/^\d{4}-\d{2}$/.test(legacyParams.get('month') || '')) {
+      params.set('periodType', 'MONTH');
+      params.set('periodValue', legacyParams.get('month'));
+    }
+    const canonical = `/dashboard${params.size ? `?${params.toString()}` : ''}`;
+    window.history.replaceState(null, '', `#${canonical}`);
+    return canonical;
   }
 
   function scoringTicketFromRoute() {
@@ -3351,6 +3288,11 @@ import { state } from './js/state.js';
       if ($('eval-page-meta')) $('eval-page-meta').textContent = 'Không tìm thấy hoặc không thể truy cập phiếu đánh giá.';
       return;
     }
+    if (ticket.is_historical || ticket.read_only) {
+      showToast('Phiếu lịch sử chỉ được xem, không mở chấm điểm.', 'info');
+      openTicketDetail(ticket.code);
+      return;
+    }
     state.scoringTicket = ticket.code;
     navigateToTab('scoring');
     loadRoundData(ticket, true).then(() => {
@@ -3576,41 +3518,62 @@ import { state } from './js/state.js';
 
     const body = $('ticket-detail-body');
     body.textContent = '';
-    body.appendChild(detailSection('Thông tin phiếu', [
+    if (row.is_historical) {
+      body.appendChild(detailSection('Nguồn dữ liệu', [
+        ['Loại phiếu', 'Phiếu lịch sử'],
+        ['Chế độ', 'Chỉ đọc'],
+        ['STT nguồn', row.historical_source_stt],
+        ['Lưu ý', 'Nguồn lịch sử không có dữ liệu biểu mẫu và câu hỏi chi tiết.'],
+      ]));
+    }
+    body.appendChild(detailSection('Thông tin đánh giá', [
       ['Mã phiếu', row.code],
       ['Trạng thái', row.status],
-      ['Biểu mẫu', row.template_code],
-      ['Loại cơ sở', row.facility_type],
-      ['Quy mô', row.supplier_scale],
       ['Loại hình đánh giá', row.evaluation_type],
-      ['Phương thức', row.evaluation_method],
-      ['Phòng ban đánh giá', row.evaluation_department],
+      ['Ngày đánh giá dự kiến', row.planned_at],
+      ['Ngày đánh giá thực tế', row.actual_evaluation_date],
       ['Người thực hiện', row.assignee],
       ['QA lead', row.qa_lead],
       ['QA support', row.qa_support],
       ['Người tạo', row.created_by_display_name],
       ['Cập nhật bởi', row.updated_by_display_name],
-      ['Ngày dự kiến', row.planned_at],
-      ['Ngày đánh giá thực tế', row.actual_evaluation_date],
       ['Ngày đánh giá tiếp theo', row.next_evaluation_date],
       ['Ngày đánh giá lại dự kiến', row.reassessment_due_date],
       ['Tình trạng đánh giá lại', reassessmentStatus(row).label],
     ]));
-    body.appendChild(detailSection('Thông tin NCC', [
-      ['NCC', joinDetailParts([row.supplier_code, row.supplier_name])],
+    body.appendChild(detailSection('Thông tin ngành hàng', [
+      ['CMC phụ trách', row.cmc_owner],
+      ['CMC trưởng phòng', row.cmc_head],
+      ['Ngành hàng MCH2', row.mch2],
+      ['Ngành hàng MCH3', row.mch3],
+    ]));
+    body.appendChild(detailSection('Thông tin nhà cung cấp', [
+      ['Mã NCC', row.supplier_code],
+      ['Tên NCC', row.supplier_name],
       ['Mã số thuế', row.tax_code],
       ['Địa chỉ', row.address],
-      ['Địa chỉ sản xuất', row.production_address],
-      ['Địa chỉ đánh giá', row.evaluation_address],
-      ['Khu vực / Tỉnh', joinDetailParts([row.region, row.province], ' / ')],
+      ['Khu vực', row.region],
+      ['Tỉnh', row.province],
       ['Loại hình kinh doanh', row.business_type],
-      ['Đơn vị liên kết', joinDetailParts([row.linked_facility_code, row.linked_facility_name, row.linked_facility_address])],
-      ['CMC', joinDetailParts([row.cmc_owner, row.cmc_head], ' / ')],
-      ['Giay phep / ATTP', legalAttachmentLinks(row) || joinDetailParts([row.business_license_file, row.attp_certificate_type, row.attp_certificate_file])],
-      ['Liên hệ', joinDetailParts([row.contact_name, row.contact_phone, row.contact_email])],
-      ['MCH', joinDetailParts([row.mch2, row.mch3], ' / ')],
-      ['Sản phẩm', row.product_name || row.product_group],
+      ['Địa chỉ đánh giá NCC', row.snapshot_evaluation_address || row.evaluation_address],
     ]));
+    body.appendChild(detailSection('Thông tin liên hệ NCC', [
+      ['Người liên hệ', row.contact_name],
+      ['Email liên hệ', row.contact_email],
+      ['Số điện thoại', row.contact_phone],
+    ]));
+    body.appendChild(detailSection('Thông tin đơn vị liên kết/gia công', [
+      ['Tên đơn vị liên kết', row.snapshot_linked_facility_name || row.linked_facility_name],
+      ['Địa chỉ đánh giá đơn vị liên kết/gia công', row.snapshot_linked_facility_address || row.linked_facility_address],
+    ]));
+    if (!row.is_historical) {
+      body.appendChild(detailSection('Xác nhận bộ tiêu chí đánh giá', [
+        ['Biểu mẫu đánh giá', row.template_code],
+        ['Sản phẩm dự kiến đánh giá', row.product_name],
+        ['Loại cơ sở', row.facility_type],
+        ['Quy mô NCC', row.supplier_scale],
+      ]));
+    }
     body.appendChild(detailSection('Kết quả đánh giá', [
       ['Điểm ban đầu', row.round_1_score_percent == null ? '' : row.round_1_score_percent + '%'],
       ['Xếp loại ban đầu', row.round_1_grade_code],
@@ -3717,11 +3680,15 @@ import { state } from './js/state.js';
         tr.appendChild(el('td', { text: item.final_conclusion || EMPTY_DETAIL_TEXT }));
         tr.appendChild(el('td', { text: item.status || '' }));
         const actionTd = el('td', { className: 'table-action-cell' });
-        actionTd.appendChild(RowActionGroup([
-          actionDescriptor('evaluation.score', () => openAssessmentRound(row.code, item.round_no), row, {
-            label: 'Mở lần đánh giá', objectIdentity: row.code,
-          }),
-        ]));
+        if (row.is_historical) {
+          actionTd.appendChild(el('span', { className: 'tag sev-blue', text: 'Chỉ đọc' }));
+        } else {
+          actionTd.appendChild(RowActionGroup([
+            actionDescriptor('evaluation.score', () => openAssessmentRound(row.code, item.round_no), row, {
+              label: 'Mở lần đánh giá', objectIdentity: row.code,
+            }),
+          ]));
+        }
         tr.appendChild(actionTd);
         tbody.appendChild(tr);
       });
@@ -3812,31 +3779,33 @@ import { state } from './js/state.js';
       ])));
     });
 
-    const actions = el('div', { className: 'workflow-actions', attrs: { style: 'padding:12px 16px' } });
-    const reportSelect = el('select', { className: 'input', attrs: { id: 'ticket-report-template-select', style: 'max-width:260px' } });
-    reportSelect.appendChild(el('option', { attrs: { value: '' }, text: 'Chọn mẫu PDF' }));
-    loadReportTemplatesForExport(reportSelect);
-    actions.appendChild(reportSelect);
-    const roundSelect = el('select', { className: 'input', attrs: { id: 'ticket-report-round-select', style: 'max-width:190px' } });
-    roundSelect.appendChild(el('option', { attrs: { value: '' }, text: 'Lần mới nhất' }));
-    assessmentRows.forEach((item) => {
-      roundSelect.appendChild(el('option', { attrs: { value: String(item.round_no || '') }, text: item.label || ('Đánh giá lần ' + item.round_no) }));
-    });
-    actions.appendChild(roundSelect);
-    actions.appendChild(el('span', { className: 'muted mono', attrs: { id: 'ticket-report-export-msg' }, text: '' }));
-    const detailActions = [actionDescriptor('report.export_pdf', () => exportTicketPdf(row.code), row, { objectIdentity: row.code })];
-    if (canEditWorkflowRecord(row) && !['Hoàn thành', 'Gia hạn', 'Tạm ngưng', 'Hủy', 'Đã hủy'].includes(row.status)) {
-      detailActions.push(actionDescriptor('evaluation.cancellation_request', () => requestTicketCancellation(row.code), row, { objectIdentity: row.code }));
+    if (!row.is_historical) {
+      const actions = el('div', { className: 'workflow-actions', attrs: { style: 'padding:12px 16px' } });
+      const reportSelect = el('select', { className: 'input', attrs: { id: 'ticket-report-template-select', style: 'max-width:260px' } });
+      reportSelect.appendChild(el('option', { attrs: { value: '' }, text: 'Chọn mẫu PDF' }));
+      loadReportTemplatesForExport(reportSelect);
+      actions.appendChild(reportSelect);
+      const roundSelect = el('select', { className: 'input', attrs: { id: 'ticket-report-round-select', style: 'max-width:190px' } });
+      roundSelect.appendChild(el('option', { attrs: { value: '' }, text: 'Lần mới nhất' }));
+      assessmentRows.forEach((item) => {
+        roundSelect.appendChild(el('option', { attrs: { value: String(item.round_no || '') }, text: item.label || ('Đánh giá lần ' + item.round_no) }));
+      });
+      actions.appendChild(roundSelect);
+      actions.appendChild(el('span', { className: 'muted mono', attrs: { id: 'ticket-report-export-msg' }, text: '' }));
+      const detailActions = [actionDescriptor('report.export_pdf', () => exportTicketPdf(row.code), row, { objectIdentity: row.code })];
+      if (canEditWorkflowRecord(row) && !['Hoàn thành', 'Gia hạn', 'Tạm ngưng', 'Hủy', 'Đã hủy'].includes(row.status)) {
+        detailActions.push(actionDescriptor('evaluation.cancellation_request', () => requestTicketCancellation(row.code), row, { objectIdentity: row.code }));
+      }
+      if (canEditWorkflowRecord(row) && isRound2NotPassed(row) && row.status !== 'Chờ duyệt (TBP)') {
+        detailActions.push(actionDescriptor('evaluation.correction_extension', () => createCorrectionExtension(row.code), row, { objectIdentity: row.code }));
+        detailActions.push(actionDescriptor('evaluation.suspension_request', () => submitTicketProposal(row.code, 'SUSPENSION'), row, { objectIdentity: row.code }));
+      }
+      actions.appendChild(FormActionBar(detailActions.filter(Boolean)));
+      if ((row.approval_tasks || []).some((task) => task.status === 'PENDING')) {
+        actions.appendChild(el('span', { className: 'tag sev-amber', text: 'Đang chờ phê duyệt' }));
+      }
+      list.appendChild(actions);
     }
-    if (canEditWorkflowRecord(row) && isRound2NotPassed(row) && row.status !== 'Chờ duyệt (TBP)') {
-      detailActions.push(actionDescriptor('evaluation.correction_extension', () => createCorrectionExtension(row.code), row, { objectIdentity: row.code }));
-      detailActions.push(actionDescriptor('evaluation.suspension_request', () => submitTicketProposal(row.code, 'SUSPENSION'), row, { objectIdentity: row.code }));
-    }
-    actions.appendChild(FormActionBar(detailActions.filter(Boolean)));
-    if ((row.approval_tasks || []).some((task) => task.status === 'PENDING')) {
-      actions.appendChild(el('span', { className: 'tag sev-amber', text: 'Đang chờ phê duyệt' }));
-    }
-    list.appendChild(actions);
 
     (row.approval_tasks || []).forEach((task) => {
       list.appendChild(workflowLine(task.approval_level || 'AP', joinDetailParts([task.assigned_role, task.status]), joinDetailParts([
@@ -5126,17 +5095,10 @@ import { state } from './js/state.js';
     renderMch3Options($('new-mch2'), $('new-mch3'), 'Chọn MCH3', { reset });
   }
 
-  function refreshSupplierMch3Options(reset) {
-    renderMch3Options($('supplier-mch2'), $('supplier-mch3'), 'Chọn MCH3', { reset });
-  }
-
   function refreshEvalMch3Filter(reset) {
     renderMch3Options($('eval-mch2-filter'), $('eval-mch3-filter'), 'MCH3', { reset });
   }
 
-  function refreshSupplierMch3Filter(reset) {
-    renderMch3Options($('supplier-filter-mch2'), $('supplier-filter-mch3'), 'MCH3', { reset });
-  }
   function refreshFacilityOptions() {
     const sel = $('new-facility-type');
     if (!sel) return;
@@ -5259,8 +5221,11 @@ import { state } from './js/state.js';
       ['supplier_code', 'Vui lòng nhập mã NCC.'],
       ['tax_code', 'Vui lòng nhập mã số thuế.'],
       ['address', 'Vui lòng nhập địa chỉ NCC.'],
-      ['production_address', 'Vui lòng nhập địa chỉ cơ sở sản xuất.'],
-      ['evaluation_address', 'Vui lòng nhập địa chỉ đánh giá.'],
+      ['region', 'Vui lòng chọn khu vực.'],
+      ['province', 'Vui lòng chọn tỉnh.'],
+      ['business_type', 'Vui lòng chọn loại hình kinh doanh.'],
+      ['cmc_owner', 'Vui lòng nhập CMC phụ trách.'],
+      ['cmc_head', 'Vui lòng nhập CMC trưởng phòng.'],
       ['contact_name', 'Vui lòng nhập người liên hệ NCC.'],
       ['phone', 'Vui lòng nhập SĐT.'],
       ['email', 'Vui lòng nhập email.'],
@@ -5271,7 +5236,6 @@ import { state } from './js/state.js';
       ['facility_type', 'Vui lòng chọn loại cơ sở.'],
       ['supplier_scale', 'Vui lòng chọn quy mô NCC.'],
       ['planned_date', 'Vui lòng nhập ngày đánh giá dự kiến.'],
-      ['method', 'Vui lòng chọn phương thức đánh giá.'],
     ];
     const errors = {};
     required.forEach(([name, msg]) => {
@@ -5298,10 +5262,17 @@ import { state } from './js/state.js';
     if (form.elements.business_type.value && !isValidBusinessTypeValue(form.elements.business_type.value)) {
       errors.business_type = 'Loại hình kinh doanh không hợp lệ.';
     }
-    ['business_license_file', 'attp_certificate_file'].forEach((name) => {
-      const file = legalFileInput(name);
-      if (file && !isAllowedLegalFile(file)) errors[name] = 'Chi chap nhan PDF, DOC, DOCX, JPG, JPEG, PNG.';
-    });
+    const evaluationAddress = form.elements.snapshot_evaluation_address.value.trim();
+    const linkedName = form.elements.snapshot_linked_facility_name.value.trim();
+    const linkedAddress = form.elements.snapshot_linked_facility_address.value.trim();
+    if (!evaluationAddress && !linkedAddress) {
+      errors.snapshot_evaluation_address = 'Phải nhập ít nhất một địa chỉ đánh giá.';
+      errors.snapshot_linked_facility_address = 'Phải nhập ít nhất một địa chỉ đánh giá.';
+    }
+    if (Boolean(linkedName) !== Boolean(linkedAddress)) {
+      errors.snapshot_linked_facility_name = 'Tên và địa chỉ đơn vị liên kết phải đi theo cặp.';
+      errors.snapshot_linked_facility_address = 'Tên và địa chỉ đơn vị liên kết phải đi theo cặp.';
+    }
     if (form.elements.mch2.value && form.elements.mch3.value && !isValidMchPair(form.elements.mch2.value, form.elements.mch3.value)) {
       errors.mch3 = 'MCH3 không thuộc MCH2 đã chọn.';
     }
@@ -5311,38 +5282,33 @@ import { state } from './js/state.js';
 
   function createTicketFromForm(form) {
     return {
-      supplier_code: form.elements.supplier_code.value.trim(),
+      supplier_code: form.elements.supplier_code.value.trim().toUpperCase(),
       supplier_name: form.elements.supplier_name.value.trim(),
       supplier_id: state.selectedSupplierId || undefined,
       tax_code: form.elements.tax_code.value.trim(),
       address: form.elements.address.value.trim(),
-      production_address: form.elements.production_address.value.trim(),
-      evaluation_address: form.elements.evaluation_address.value.trim(),
-      linked_facility_code: form.elements.linked_facility_code.value.trim(),
-      linked_facility_name: form.elements.linked_facility_name.value.trim(),
-      linked_facility_address: form.elements.linked_facility_address.value.trim(),
-      linked_facility_type: form.elements.linked_facility_type.value.trim(),
+      snapshot_evaluation_address: form.elements.snapshot_evaluation_address.value.trim(),
+      snapshot_linked_facility_name: form.elements.snapshot_linked_facility_name.value.trim(),
+      snapshot_linked_facility_address: form.elements.snapshot_linked_facility_address.value.trim(),
       region: form.elements.region.value.trim(),
       province: form.elements.province.value.trim(),
       business_type: form.elements.business_type.value.trim(),
       cmc_owner: form.elements.cmc_owner.value.trim(),
       cmc_head: form.elements.cmc_head.value.trim(),
-      attp_certificate_type: form.elements.attp_certificate_type.value.trim(),
       contact_name: form.elements.contact_name.value.trim(),
       contact_email: form.elements.email.value.trim(),
       contact_phone: form.elements.phone.value.trim(),
       email: form.elements.email.value.trim(),
       phone: form.elements.phone.value.trim(),
       evaluation_type: form.elements.evaluation_type.value,
+      ad_hoc_reason: form.elements.ad_hoc_reason.value.trim(),
       mch2: form.elements.mch2.value,
       mch3: form.elements.mch3.value,
       template: form.elements.template.value,
       facility_type: form.elements.facility_type.value,
       supplier_scale: form.elements.supplier_scale.value,
-      product_name: form.elements.products.value.trim(),
+      snapshot_product_name: form.elements.products.value.trim(),
       products: form.elements.products.value.trim(),
-      evaluation_method: form.elements.method.value,
-      method: form.elements.method.value,
       planned_date: form.elements.planned_date.value.trim(),
       assignee: state.email ? state.email.split('@')[0] : 'Bạn',
     };
@@ -5381,20 +5347,12 @@ import { state } from './js/state.js';
     form.elements.supplier_code.value = row.supplier_code || '';
     form.elements.tax_code.value = row.tax_code || '';
     form.elements.address.value = row.address || '';
-    form.elements.production_address.value = row.production_address || row.address || '';
-    form.elements.evaluation_address.value = row.evaluation_address || row.address || '';
-    form.elements.linked_facility_code.value = row.linked_facility_code || '';
-    form.elements.linked_facility_name.value = row.linked_facility_name || '';
-    form.elements.linked_facility_address.value = row.linked_facility_address || '';
-    form.elements.linked_facility_type.value = row.linked_facility_type || '';
+    form.elements.snapshot_evaluation_address.value = row.snapshot_evaluation_address || row.evaluation_address || '';
+    form.elements.snapshot_linked_facility_name.value = row.snapshot_linked_facility_name || row.linked_facility_name || '';
+    form.elements.snapshot_linked_facility_address.value = row.snapshot_linked_facility_address || row.linked_facility_address || '';
     setMasterDataControlValues('new', row.region, row.province, row.business_type);
     form.elements.cmc_owner.value = row.cmc_owner || '';
     form.elements.cmc_head.value = row.cmc_head || '';
-    form.elements.business_license_file.value = '';
-    updateLegalFileLabel('business_license_file', row.business_license_file || '');
-    form.elements.attp_certificate_type.value = row.attp_certificate_type || '';
-    form.elements.attp_certificate_file.value = '';
-    updateLegalFileLabel('attp_certificate_file', row.attp_certificate_file || '');
     form.elements.contact_name.value = row.contact_name || '';
     form.elements.phone.value = row.contact_phone || '';
     form.elements.email.value = row.contact_email || '';
@@ -5407,7 +5365,6 @@ import { state } from './js/state.js';
     form.elements.facility_type.value = row.facility_type || '';
     form.elements.supplier_scale.value = row.supplier_scale || '';
     form.elements.planned_date.value = row.planned_iso || dateInputValue(row.planned_at);
-    form.elements.method.value = row.evaluation_method || '';
     resetNewSupplierSelect();
     updateAdHocReasonVisibility();
   }
@@ -5420,27 +5377,19 @@ import { state } from './js/state.js';
     form.elements.supplier_name.value = supplier.supplier_name || '';
     form.elements.tax_code.value = supplier.tax_code || '';
     form.elements.address.value = supplier.address || '';
-    form.elements.production_address.value = supplier.production_address || supplier.address || '';
-    form.elements.evaluation_address.value = supplier.evaluation_address || supplier.address || '';
-    form.elements.linked_facility_code.value = supplier.linked_facility_code || '';
-    form.elements.linked_facility_name.value = supplier.linked_facility_name || '';
-    form.elements.linked_facility_address.value = supplier.linked_facility_address || '';
-    form.elements.linked_facility_type.value = supplier.linked_facility_type || '';
+    form.elements.snapshot_evaluation_address.value = '';
+    form.elements.snapshot_linked_facility_name.value = '';
+    form.elements.snapshot_linked_facility_address.value = '';
     setMasterDataControlValues('new', supplier.region, supplier.province, supplier.business_type);
-    form.elements.cmc_owner.value = supplier.cmc_owner || '';
-    form.elements.cmc_head.value = supplier.cmc_head || '';
-    form.elements.business_license_file.value = '';
-    updateLegalFileLabel('business_license_file', supplier.business_license_file || '');
-    form.elements.attp_certificate_type.value = supplier.attp_certificate_type || '';
-    form.elements.attp_certificate_file.value = '';
-    updateLegalFileLabel('attp_certificate_file', supplier.attp_certificate_file || '');
+    form.elements.cmc_owner.value = '';
+    form.elements.cmc_head.value = '';
     form.elements.contact_name.value = supplier.contact_name || '';
     form.elements.email.value = supplier.contact_email || '';
     form.elements.phone.value = supplier.contact_phone || '';
-    form.elements.mch2.value = supplier.mch2 || '';
+    form.elements.mch2.value = '';
     refreshMch3Options();
-    form.elements.mch3.value = supplier.mch3 || '';
-    form.elements.products.value = supplier.product_name || supplier.product_group || '';
+    form.elements.mch3.value = '';
+    form.elements.products.value = '';
     setMsg('evaluation-form-msg', UI_TEXT.suppliers.importedFromDirectory, 'ok');
     loadPreviousEvaluationDefaults();
   }
@@ -5950,19 +5899,16 @@ import { state } from './js/state.js';
   if ($('supplier-apply-filters')) $('supplier-apply-filters').addEventListener('click', () => {
     state.supplierSearch = $('supplier-search').value.trim();
     state.supplierFilters = {
-      mch2: $('supplier-filter-mch2').value,
-      mch3: $('supplier-filter-mch3').value,
       status: $('supplier-filter-status').value,
     };
     state.supplierPage = 1;
     loadSuppliers();
   });
   if ($('supplier-reset-filters')) $('supplier-reset-filters').addEventListener('click', () => {
-    ['supplier-search', 'supplier-filter-mch2', 'supplier-filter-mch3', 'supplier-filter-status'].forEach((id) => { if ($(id)) $(id).value = ''; });
+    ['supplier-search', 'supplier-filter-status'].forEach((id) => { if ($(id)) $(id).value = ''; });
     state.supplierSearch = '';
     state.supplierFilters = {};
     state.supplierPage = 1;
-    refreshSupplierMch3Filter(true);
     loadSuppliers();
   });
   const debouncedSupplierSearch = debounce((value) => {
@@ -6004,12 +5950,6 @@ import { state } from './js/state.js';
       setMsg('supplier-form-msg', 'Vui lòng nhập đầy đủ các trường bắt buộc.', 'err');
       return;
     }
-    if (!isValidMchPair(payload.mch2, payload.mch3)) {
-      finishButton();
-      setSupplierFieldError('supplier-mch3', apiErrorMessage('merchandising_invalid'));
-      setMsg('supplier-form-msg', apiErrorMessage('merchandising_invalid'), 'err');
-      return;
-    }
     const pathUrl = state.editingSupplierId ? '/suppliers/' + encodeURIComponent(state.editingSupplierId) : '/suppliers';
     const method = state.editingSupplierId ? 'PUT' : 'POST';
     const r = await api(pathUrl, { method, body: payload });
@@ -6018,8 +5958,7 @@ import { state } from './js/state.js';
       const err = r.data && r.data.error;
       const errors = (r.data && r.data.errors) || {};
       applySupplierServerErrors(errors);
-      const code = errors.merchandising ? 'merchandising_invalid' : err;
-      setMsg('supplier-form-msg', apiErrorMessage(code, 'Không lưu được NCC.'), 'err');
+      setMsg('supplier-form-msg', apiErrorMessage(err, 'Không lưu được NCC.'), 'err');
       return;
     }
     finishButton('Đã lưu ✓');
@@ -6157,8 +6096,6 @@ import { state } from './js/state.js';
     loadPreviousEvaluationDefaults();
   });
   if ($('eval-mch2-filter')) $('eval-mch2-filter').addEventListener('change', () => refreshEvalMch3Filter(true));
-  if ($('supplier-filter-mch2')) $('supplier-filter-mch2').addEventListener('change', () => refreshSupplierMch3Filter(true));
-  if ($('supplier-mch2')) $('supplier-mch2').addEventListener('change', () => refreshSupplierMch3Options(true));
   if ($('new-mch2')) $('new-mch2').addEventListener('change', () => refreshMch3Options(true));
   if ($('new-region')) $('new-region').addEventListener('change', () => refreshProvinceOptions('new', true));
   if ($('supplier-region')) $('supplier-region').addEventListener('change', () => refreshProvinceOptions('supplier', true));
@@ -6829,7 +6766,6 @@ import { state } from './js/state.js';
     'scoring': loadWorkflowTab,
     'suppliers': loadWorkflowTab,
     'reports': loadWorkflowTab,
-    'ncc-eval': loadNccEval,
     'admin': loadAdminDashboard,
     'admin-users': loadAdmin,
     'admin-roles': loadAdmin,
@@ -6874,6 +6810,10 @@ import { state } from './js/state.js';
     WAITING_CORRECTION: '#DA1E38', ROUND_2: '#F02D48',
     COMPLETED: '#E53945', CANCELLED: '#FFA0A8',
   });
+  const DASHBOARD_RATING_COLORS = Object.freeze({
+    FAILED: '#220006', BASIC: '#73000E', GOOD: '#BA001D', HIGH: '#E53945',
+  });
+  const DASHBOARD_DETAIL_COLORS = Object.freeze({ passed: '#E53945', failed: '#220006', violation: '#BA001D' });
   const DASHBOARD_DONUT_EXCLUDED_STATUS_CODES = new Set(['EXTENDED', 'SUSPENDED']);
   const DASHBOARD_KPIS = Object.freeze([
     ['evaluated_supplier_count', 'Số lượng NCC được đánh giá', '♙'],
@@ -6910,6 +6850,10 @@ import { state } from './js/state.js';
     $('status-donut-empty').classList.add('hidden');
     $('statistics-ranking-empty').classList.add('hidden');
     $('quality-trend-empty').classList.add('hidden');
+    $('rating-distribution-legend').textContent = '';
+    $('industry-performance-empty').classList.add('hidden');
+    $('rating-distribution-empty').classList.add('hidden');
+    $('violation-distribution-empty').classList.add('hidden');
   }
 
   function comparisonText(value) {
@@ -7179,8 +7123,230 @@ import { state } from './js/state.js';
     }
   }
 
+  function setupDashboardCanvas(canvas, height) {
+    const width = Math.max(280, Math.round(canvas.parentElement?.clientWidth || 640));
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const context = canvas.getContext('2d');
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, width, height);
+    return { context, width, height };
+  }
+
+  function clippedCanvasText(context, text, maxWidth) {
+    const value = String(text || '');
+    if (context.measureText(value).width <= maxWidth) return value;
+    let output = value;
+    while (output.length > 1 && context.measureText(`${output}…`).width > maxWidth) output = output.slice(0, -1);
+    return `${output}…`;
+  }
+
+  function clearDashboardCanvas(id) {
+    const canvas = $(id);
+    if (!canvas) return;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function drawRatingDistribution(distribution) {
+    const canvas = $('rating-distribution-canvas');
+    const content = $('rating-distribution-content');
+    const empty = $('rating-distribution-empty');
+    const legend = $('rating-distribution-legend');
+    const items = (distribution?.items || []).filter((item) => Number(item.count || 0) > 0);
+    const total = Number(distribution?.total_suppliers || items.reduce((sum, item) => sum + Number(item.count || 0), 0));
+    content.classList.toggle('hidden', total === 0);
+    empty.classList.toggle('hidden', total > 0);
+    legend.textContent = '';
+    items.forEach((item) => {
+      const row = el('div', { className: 'statistics-rating-item' });
+      row.appendChild(el('i', { attrs: { style: `background:${DASHBOARD_RATING_COLORS[item.code]}` } }));
+      const copy = el('span', { text: item.label });
+      copy.appendChild(el('small', { text: `${fmtInt(item.count)} NCC · ${Number(item.percentage || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%` }));
+      row.appendChild(copy);
+      legend.appendChild(row);
+    });
+    const size = 250;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = size * ratio; canvas.height = size * ratio;
+    canvas.style.width = `${size}px`; canvas.style.height = `${size}px`;
+    const context = canvas.getContext('2d');
+    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, size, size);
+    if (!total) return;
+    let angle = -Math.PI / 2;
+    const arcs = [];
+    items.forEach((item) => {
+      const next = angle + Math.PI * 2 * Number(item.count || 0) / total;
+      context.beginPath(); context.moveTo(125, 125); context.arc(125, 125, 105, angle, next); context.closePath();
+      context.fillStyle = DASHBOARD_RATING_COLORS[item.code]; context.fill();
+      context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#fff'; context.lineWidth = 2; context.stroke();
+      arcs.push({ start: angle, end: next, item });
+      angle = next;
+    });
+    const arcAt = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * size / rect.width - 125;
+      const y = (event.clientY - rect.top) * size / rect.height - 125;
+      if (Math.hypot(x, y) > 105) return null;
+      let target = Math.atan2(y, x);
+      if (target < -Math.PI / 2) target += Math.PI * 2;
+      return arcs.find((arc) => target >= arc.start && target <= arc.end) || null;
+    };
+    canvas._dashboardRatingMove = (event) => {
+      const arc = arcAt(event);
+      if (!arc) return hideStatisticsTooltip();
+      showStatisticsTooltip(event, [arc.item.label, `Số NCC: ${fmtInt(arc.item.count)}`, `Tỷ lệ: ${Number(arc.item.percentage || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`]);
+    };
+    if (!canvas.dataset.dashboardEventsBound) {
+      canvas.addEventListener('mousemove', (event) => canvas._dashboardRatingMove?.(event));
+      canvas.addEventListener('mouseleave', hideStatisticsTooltip);
+      canvas.dataset.dashboardEventsBound = 'true';
+    }
+  }
+
+  function drawIndustryPerformance(rows) {
+    const canvas = $('industry-performance-canvas');
+    const empty = $('industry-performance-empty');
+    const data = Array.isArray(rows) ? rows : [];
+    empty.classList.toggle('hidden', data.length > 0);
+    canvas.classList.toggle('hidden', data.length === 0);
+    const height = Math.max(320, data.length * 46 + 54);
+    const { context, width } = setupDashboardCanvas(canvas, height);
+    if (!data.length) return;
+    const styles = getComputedStyle(document.documentElement);
+    const grid = styles.getPropertyValue('--border').trim() || '#e5e7eb';
+    const textColor = styles.getPropertyValue('--muted').trim() || '#6b7280';
+    const left = width < 520 ? 128 : 190;
+    const plot = { left, right: width - 28, top: 24, bottom: height - 26 };
+    const chartWidth = Math.max(80, plot.right - plot.left);
+    const step = (plot.bottom - plot.top) / data.length;
+    const hits = [];
+    context.font = '10px Be Vietnam Pro, system-ui'; context.textBaseline = 'middle';
+    [0, 25, 50, 75, 100].forEach((tick) => {
+      const x = plot.left + chartWidth * tick / 100;
+      context.beginPath(); context.moveTo(x, plot.top - 9); context.lineTo(x, plot.bottom); context.strokeStyle = grid; context.lineWidth = 1; context.stroke();
+      context.fillStyle = textColor; context.textAlign = 'center'; context.fillText(`${tick}%`, x, 10);
+    });
+    data.forEach((row, index) => {
+      const y = plot.top + step * index + step / 2;
+      const barHeight = Math.min(24, step * .56);
+      const passedWidth = chartWidth * Number(row.passed_percentage || 0) / 100;
+      const failedWidth = chartWidth - passedWidth;
+      context.fillStyle = textColor; context.textAlign = 'right';
+      context.fillText(clippedCanvasText(context, row.industry, left - 18), plot.left - 10, y);
+      context.fillStyle = DASHBOARD_DETAIL_COLORS.passed; context.fillRect(plot.left, y - barHeight / 2, passedWidth, barHeight);
+      context.fillStyle = DASHBOARD_DETAIL_COLORS.failed; context.fillRect(plot.left + passedWidth, y - barHeight / 2, failedWidth, barHeight);
+      if (passedWidth > 42) { context.fillStyle = '#fff'; context.textAlign = 'center'; context.fillText(`${Number(row.passed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`, plot.left + passedWidth / 2, y); }
+      if (failedWidth > 42) { context.fillStyle = '#fff'; context.textAlign = 'center'; context.fillText(`${Number(row.failed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`, plot.left + passedWidth + failedWidth / 2, y); }
+      hits.push({ top: y - step / 2, bottom: y + step / 2, row });
+    });
+    canvas._dashboardIndustryMove = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const y = (event.clientY - rect.top) * height / rect.height;
+      const hit = hits.find((item) => y >= item.top && y <= item.bottom);
+      if (!hit) return hideStatisticsTooltip();
+      const row = hit.row;
+      showStatisticsTooltip(event, [row.industry, `Tổng NCC: ${fmtInt(row.total_suppliers)}`, `Đạt: ${fmtInt(row.passed_suppliers)} (${Number(row.passed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%)`, `Không đạt: ${fmtInt(row.failed_suppliers)} (${Number(row.failed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%)`, `Điểm trung bình: ${Number(row.average_score).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`]);
+    };
+    if (!canvas.dataset.dashboardEventsBound) {
+      canvas.addEventListener('mousemove', (event) => canvas._dashboardIndustryMove?.(event));
+      canvas.addEventListener('mouseleave', hideStatisticsTooltip);
+      canvas.dataset.dashboardEventsBound = 'true';
+    }
+  }
+
+  function drawViolationDistribution(distribution) {
+    const canvas = $('violation-distribution-canvas');
+    const empty = $('violation-distribution-empty');
+    const data = [...(distribution?.items || [])].sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
+    empty.classList.toggle('hidden', data.length > 0);
+    canvas.classList.toggle('hidden', data.length === 0);
+    const height = Math.max(300, data.length * 58 + 54);
+    const { context, width } = setupDashboardCanvas(canvas, height);
+    if (!data.length) return;
+    const styles = getComputedStyle(document.documentElement);
+    const grid = styles.getPropertyValue('--border').trim() || '#e5e7eb';
+    const textColor = styles.getPropertyValue('--muted').trim() || '#6b7280';
+    const left = width < 520 ? 138 : 245;
+    const plot = { left, right: width - 52, top: 24, bottom: height - 24 };
+    const chartWidth = Math.max(80, plot.right - plot.left);
+    const step = (plot.bottom - plot.top) / data.length;
+    const hits = [];
+    context.font = '10px Be Vietnam Pro, system-ui'; context.textBaseline = 'middle';
+    [0, 25, 50, 75, 100].forEach((tick) => {
+      const x = plot.left + chartWidth * tick / 100;
+      context.beginPath(); context.moveTo(x, plot.top - 8); context.lineTo(x, plot.bottom); context.strokeStyle = grid; context.lineWidth = 1; context.stroke();
+      context.fillStyle = textColor; context.textAlign = 'center'; context.fillText(`${tick}%`, x, 10);
+    });
+    data.forEach((row, index) => {
+      const y = plot.top + step * index + step / 2;
+      const barHeight = Math.min(25, step * .52);
+      const barWidth = chartWidth * Math.min(100, Math.max(0, Number(row.percentage || 0))) / 100;
+      context.fillStyle = textColor; context.textAlign = 'right'; context.fillText(clippedCanvasText(context, row.label, left - 18), plot.left - 10, y);
+      context.fillStyle = DASHBOARD_DETAIL_COLORS.violation; context.fillRect(plot.left, y - barHeight / 2, barWidth, barHeight);
+      context.fillStyle = textColor; context.textAlign = 'left'; context.fillText(`${Number(row.percentage || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`, Math.min(plot.right + 7, plot.left + barWidth + 7), y);
+      hits.push({ top: y - step / 2, bottom: y + step / 2, row });
+    });
+    canvas._dashboardViolationMove = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const y = (event.clientY - rect.top) * height / rect.height;
+      const hit = hits.find((item) => y >= item.top && y <= item.bottom);
+      if (!hit) return hideStatisticsTooltip();
+      showStatisticsTooltip(event, [hit.row.label, `Số lượt: ${fmtInt(hit.row.count)}`, `Tỷ lệ: ${Number(hit.row.percentage || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`]);
+    };
+    if (!canvas.dataset.dashboardEventsBound) {
+      canvas.addEventListener('mousemove', (event) => canvas._dashboardViolationMove?.(event));
+      canvas.addEventListener('mouseleave', hideStatisticsTooltip);
+      canvas.dataset.dashboardEventsBound = 'true';
+    }
+  }
+
+  function renderDashboardMode() {
+    const mode = state.dashboardReport.mode === 'detail' ? 'detail' : 'overview';
+    state.dashboardReport.mode = mode;
+    document.querySelectorAll('[data-dashboard-mode]').forEach((button) => {
+      const active = button.dataset.dashboardMode === mode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      button.tabIndex = active ? 0 : -1;
+    });
+    $('statistics-overview-charts').classList.toggle('hidden', mode !== 'overview');
+    $('statistics-detail-charts').classList.toggle('hidden', mode !== 'detail');
+  }
+
+  function renderActiveDashboardCharts() {
+    renderDashboardMode();
+    if (!statisticalDashboardPayload) return;
+    if (state.dashboardReport.mode === 'detail') {
+      clearDashboardCanvas('status-donut-canvas');
+      clearDashboardCanvas('quality-trend-canvas');
+      $('statistics-ranking-body').textContent = '';
+      window.requestAnimationFrame(() => {
+        drawIndustryPerformance(statisticalDashboardPayload.details.industry_performance);
+        drawRatingDistribution(statisticalDashboardPayload.details.rating_distribution);
+        drawViolationDistribution(statisticalDashboardPayload.details.violation_distribution);
+      });
+      return;
+    }
+    clearDashboardCanvas('industry-performance-canvas');
+    clearDashboardCanvas('rating-distribution-canvas');
+    clearDashboardCanvas('violation-distribution-canvas');
+    drawStatusDonut(statisticalDashboardPayload.status_distribution);
+    renderRanking(statisticalDashboardPayload.top_suppliers);
+    window.requestAnimationFrame(() => drawQualityTrend(statisticalDashboardPayload));
+  }
+
+  function selectDashboardMode(mode) {
+    if (!['overview', 'detail'].includes(mode) || state.dashboardReport.mode === mode) return;
+    state.dashboardReport.mode = mode;
+    hideStatisticsTooltip();
+    renderActiveDashboardCharts();
+  }
+
   function validStatisticalDashboard(data, report) {
-    return !!data && data.period?.type === report.periodType && data.period?.value === report.periodValue && data.kpis && Array.isArray(data.status_distribution?.items) && Array.isArray(data.top_suppliers) && Array.isArray(data.trend);
+    return !!data && data.period?.type === report.periodType && data.period?.value === report.periodValue && data.kpis && Array.isArray(data.status_distribution?.items) && Array.isArray(data.top_suppliers) && Array.isArray(data.trend) && Array.isArray(data.details?.rating_distribution?.items) && Array.isArray(data.details?.industry_performance) && Array.isArray(data.details?.violation_distribution?.items);
   }
 
   function renderStatisticalDashboard(payload) {
@@ -7191,15 +7357,13 @@ import { state } from './js/state.js';
     const cards = $('statistics-kpi-cards'); cards.textContent = '';
     DASHBOARD_KPIS.forEach(([id, title, icon]) => cards.appendChild(renderStatisticKpi(id, title, icon, payload.kpis[id])));
     renderDashboardState('overview-state', '', '', null);
-    drawStatusDonut(payload.status_distribution);
-    renderRanking(payload.top_suppliers);
-    window.requestAnimationFrame(() => drawQualityTrend(payload));
+    renderActiveDashboardCharts();
   }
 
   async function loadOverview(requestId) {
     const report = state.dashboardReport;
     if (!validDashboardReportValue(report.periodType, report.periodValue)) report.periodValue = currentDashboardReportValue(report.periodType);
-    renderDashboardPeriodControls(); renderDashboardFilters(); renderDashboardLoading();
+    renderDashboardPeriodControls(); renderDashboardFilters(); renderDashboardMode(); renderDashboardLoading();
     const key = dashboardReportKey();
     renderDashboardState('overview-state', 'loading', `Đang tải dữ liệu ${dashboardReportLabel(report.periodType, report.periodValue)}...`, () => loadTab());
     const r = await api('/dashboard/statistics?' + dashboardReportQuery());
@@ -7229,10 +7393,19 @@ import { state } from './js/state.js';
   }
 
   $('dashboard-export')?.addEventListener('click', exportStatisticalDashboard);
+  document.querySelectorAll('[data-dashboard-mode]').forEach((button) => {
+    button.addEventListener('click', () => selectDashboardMode(button.dataset.dashboardMode));
+    button.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const nextMode = state.dashboardReport.mode === 'overview' ? 'detail' : 'overview';
+      selectDashboardMode(nextMode);
+      document.querySelector(`[data-dashboard-mode="${nextMode}"]`)?.focus();
+    });
+  });
   window.addEventListener('resize', debounce(() => {
     if (state.tab === 'overview' && statisticalDashboardPayload) {
-      drawStatusDonut(statisticalDashboardPayload.status_distribution);
-      drawQualityTrend(statisticalDashboardPayload);
+      renderActiveDashboardCharts();
     }
   }, 120));
 

@@ -66,6 +66,7 @@ function runLegacyForwardRepairCompatibilityAdapter(schema) {
     ['ensureUserRoleColumn', ensureUserRoleColumn],
     ['ensureSupplierMasterColumns', ensureSupplierMasterColumns],
     ['ensureSupplierHistoryTable', ensureSupplierHistoryTable],
+    ['normalizeLegacySupplierTechnicalReferences', normalizeLegacySupplierTechnicalReferences],
     ['ensureEvaluationTicketColumns', ensureEvaluationTicketColumns],
     ['ensureEvaluationRoundColumns', ensureEvaluationRoundColumns],
     ['ensureCorrectiveActionColumns', ensureCorrectiveActionColumns],
@@ -229,6 +230,30 @@ function ensureSupplierHistoryTable() {
     );
     CREATE INDEX IF NOT EXISTS idx_supplier_master_history_code_time ON supplier_master_history(supplier_code, created_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_supplier_master_history_supplier_time ON supplier_master_history(supplier_id, created_at DESC, id DESC);
+  `);
+}
+
+function normalizeLegacySupplierTechnicalReferences() {
+  if (!tableExists('supplier_master')) return;
+  db.exec(`
+    UPDATE supplier_master
+    SET source_type = 'MANUAL'
+    WHERE source_type NOT IN ('EXCEL_UPLOAD', 'MANUAL') OR source_type IS NULL;
+
+    UPDATE supplier_master
+    SET import_batch_id = NULL
+    WHERE import_batch_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM supplier_import_batches b WHERE b.id = supplier_master.import_batch_id);
+
+    UPDATE supplier_master
+    SET created_by = NULL
+    WHERE created_by IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.email = supplier_master.created_by);
+
+    UPDATE supplier_master
+    SET updated_by = NULL
+    WHERE updated_by IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.email = supplier_master.updated_by);
   `);
 }
 

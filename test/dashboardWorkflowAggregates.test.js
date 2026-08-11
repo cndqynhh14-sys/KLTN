@@ -76,32 +76,24 @@ function seedUsers(db) {
 function insertSupplier(db, code, name, extra = {}) {
   return db.prepare(`
     INSERT INTO supplier_master (
-      supplier_code, supplier_name, tax_code, address, production_address, evaluation_address,
-      region, province, business_type, contact_name, contact_email, contact_phone,
-      mch2, mch3, product_group, product_name, status, source_type, created_by
+      supplier_code, supplier_name, tax_code, address, region, province, business_type,
+      contact_name, contact_email, contact_phone, status, source_type, created_by
     )
     VALUES (
-      @supplier_code, @supplier_name, @tax_code, @address, @production_address, @evaluation_address,
-      @region, @province, @business_type, @contact_name, @contact_email, @contact_phone,
-      @mch2, @mch3, @product_group, @product_name, 'ACTIVE', 'MANUAL', 'admin@masangroup.com'
+      @supplier_code, @supplier_name, @tax_code, @address, @region, @province, @business_type,
+      @contact_name, @contact_email, @contact_phone, 'ACTIVE', 'MANUAL', 'admin@masangroup.com'
     )
   `).run({
     supplier_code: code,
     supplier_name: name,
     tax_code: extra.tax_code || `${code}-TAX`,
     address: 'HQ',
-    production_address: 'Factory',
-    evaluation_address: 'Audit site',
     region: 'MB',
     province: 'Thành phố Hà Nội',
     business_type: 'Tự sản xuất',
     contact_name: 'Contact',
     contact_email: `${code.toLowerCase()}@example.com`,
     contact_phone: '0900000000',
-    mch2: extra.mch2 || 'Thực phẩm công nghệ',
-    mch3: extra.mch3 || 'Thực phẩm khô',
-    product_group: extra.product_group || null,
-    product_name: extra.product_name || 'Product',
   }).lastInsertRowid;
 }
 
@@ -365,20 +357,16 @@ test('evaluation dashboard routes preserve auth, strict month errors and unmount
   }
 });
 
-test('NCC evaluation dashboard frontend renders its workflow API contract and violation bars', () => {
+test('RUN-30 removes the standalone NCC evaluation screen while retaining the backend aggregate contract', () => {
   const root = path.resolve(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   const stateJs = fs.readFileSync(path.join(root, 'public/js/state.js'), 'utf8');
 
-  assert.match(stateJs, /nccEvaluationsDashboard:\s*\{[\s\S]*status:\s*'idle'[\s\S]*requestId:\s*0/);
-  assert.match(html, /id="ncc-eval-summary" class="kpi-strip col3"/);
-  assert.match(html, /id="ncc-eval-state" class="dashboard-state hidden"/);
-  assert.match(html, /id="ncc-violations-chart" class="ncc-violation-chart"/);
-  assert.match(app, /validNccEvalResponse\(data\)[\s\S]*data\.overview[\s\S]*Array\.isArray\(data\.violations\)/);
-  assert.match(app, /state\.nccEvaluationsDashboard\.requestId !== requestId/);
-  assert.match(app, /NCC_EVALUATION_VIOLATION_ORDER = \[[\s\S]*'LEGAL'[\s\S]*'QUALITY_CONTROL'[\s\S]*'TRACEABILITY'[\s\S]*'FOOD_SAFETY'/);
-  assert.match(app, /role:\s*'group'[\s\S]*aria-label[\s\S]*bar-fill/);
+  assert.doesNotMatch(stateJs, /nccEvaluationsDashboard/);
+  assert.doesNotMatch(html, /id="view-ncc-eval"|id="ncc-eval-summary"|id="ncc-violations-chart"/);
+  assert.match(html, /id="dashboard-view-segment"[\s\S]*data-dashboard-mode="overview"[\s\S]*data-dashboard-mode="detail"/);
+  assert.match(app, /route\.split\('\?'\)\[0\] !== '\/dashboard\/ncc-evaluations'/);
   assert.doesNotMatch(stateJs, /nccDocsDashboard/);
   assert.doesNotMatch(html, /id="ncc-summary"|id="view-ncc-docs"/);
   assert.doesNotMatch(app, /validNccDocsResponse|\/dashboard\/ncc-docs/);
