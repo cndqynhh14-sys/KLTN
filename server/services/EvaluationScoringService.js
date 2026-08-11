@@ -14,6 +14,7 @@ const { PERMISSIONS } = require('../authorization/permissionCatalog');
 const { resourceContext } = require('./PolicyService');
 const { WORKFLOW_STATUSES } = require('../domain/workflowHistory');
 const logger = require('../logger');
+const { assertTicketMutable } = require('../domain/historicalEvaluation');
 
 function calculatedScore(score, definition) {
   const value = definition?.score_values?.[score];
@@ -433,6 +434,8 @@ class EvaluationScoringService {
     const ticket = this.ticketRepository.getByIdOrCode(ticketId);
     if (!ticket) throw Object.assign(new Error('ticket_not_found'), { status: 404, payload: { error: 'ticket_not_found' } });
     this.assertVisible(ticket, user);
+    assertTicketMutable(ticket);
+    assertTicketMutable(ticket);
     const round = this.ensureRound(ticket, roundNo, user);
     if (!round) throw Object.assign(new Error('round_not_found'), { status: 404, payload: { error: 'round_not_found' } });
     if (round.locked_at) throw Object.assign(new Error('round_locked'), { status: 403, payload: { error: 'round_locked' } });
@@ -472,6 +475,7 @@ class EvaluationScoringService {
     const ticket = this.ticketRepository.getByIdOrCode(ticketId);
     if (!ticket) throw Object.assign(new Error('ticket_not_found'), { status: 404, payload: { error: 'ticket_not_found' } });
     this.assertVisible(ticket, user);
+    assertTicketMutable(ticket);
     const round = this.ensureRound(ticket, roundNo, user);
     if (!round) throw Object.assign(new Error('round_not_found'), { status: 404, payload: { error: 'round_not_found' } });
     if (round.locked_at) throw Object.assign(new Error('round_locked'), { status: 403, payload: { error: 'round_locked' } });
@@ -620,6 +624,7 @@ class EvaluationScoringService {
     const ticket = this.ticketRepository.getByCode(code);
     if (!ticket) throw Object.assign(new Error('ticket_not_found'), { status: 404, payload: { error: 'ticket_not_found' } });
     this.assertVisible(ticket, user);
+    assertTicketMutable(ticket);
     if (this.getRound(ticket.id, 2)) throw Object.assign(new Error('round_2_exists'), { status: 409, payload: { error: 'round_2_exists' } });
     const gate = this.round2Gate(ticket);
     if (!gate.eligible) {

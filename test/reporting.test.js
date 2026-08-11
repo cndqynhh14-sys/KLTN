@@ -69,10 +69,10 @@ test('DOC-4 report context includes input columns, sections, category percentage
     const ticketInfo = db.prepare(`
       INSERT INTO evaluation_tickets (
         ticket_code, supplier_id, supplier_code, supplier_name, tax_code, supplier_address,
-        production_address, evaluation_address, linked_facility_address, region, province,
+        production_address, snapshot_evaluation_address, snapshot_linked_facility_address, region, province,
         business_type, cmc_owner, cmc_head, business_license_file, attp_certificate_type,
         attp_certificate_file, contact_name, contact_email, contact_phone, mch2, mch3,
-        product_group, product_name, evaluation_type, template_id, question_template_version_id, facility_type, supplier_scale,
+        product_group, snapshot_product_name, evaluation_type, template_id, question_template_version_id, facility_type, supplier_scale,
         evaluation_method, evaluation_department,
         planned_date, actual_evaluation_date, current_status, current_round_no,
         score_percent, grade_code, result_label, result_reason, corrected_score_percent,

@@ -73,6 +73,12 @@ test.describe('@smoke RUN-05 scoring nonconformity rendering', () => {
         evaluation_method: 'Trực tiếp',
         planned_date: '2026-08-01',
         actual_evaluation_date: '2026-08-03',
+        snapshot_evaluation_address: 'Synthetic evaluation site',
+        cmc_owner: 'RUN-05 CMC owner',
+        cmc_head: 'RUN-05 CMC head',
+        mch2: 'Homeline',
+        mch3: 'Đồ chơi/Giải trí thể thao',
+        snapshot_product_name: 'RUN-05 synthetic product',
       },
     });
     expect(created.status).toBe(201);

@@ -11,6 +11,7 @@ const { PERMISSIONS } = require('../authorization/permissionCatalog');
 const { resourceContext: baseResourceContext } = require('../services/PolicyService');
 const { finalConclusionFromScore } = require('../domain/evaluationRules');
 const { WORKFLOW_STATUSES } = require('../domain/workflowHistory');
+const { isHistoricalTicket } = require('../domain/historicalEvaluation');
 const { assertValidDateField, isValidISODate } = require('../domain/dateValidation');
 const { calendarDateInTimeZone, defaultCorrectionDueDate: calculateDefaultCorrectionDueDate } = require('../domain/correctiveActionDueDate');
 const { sendEmail, buildWorkflowEmail } = require('../services/email');
@@ -279,6 +280,16 @@ function evaluationActionEnvelope(row, user) {
   expose('end', specialistCanCloseCompletedScoring(row), 'end_evaluation_not_allowed');
   expose('round2_start', round2.eligible, round2.reason || 'round_2_not_allowed');
   expose('submit_lead', specialistCanSubmitLead(row), 'lead_submission_not_eligible');
+  if (isHistoricalTicket(row)) {
+    [
+      'edit', 'delete', 'score', 'end', 'round2_start', 'submit_lead',
+      'cancellation_request', 'correction_extension', 'suspension_request',
+      'approve_lead', 'approve_tbp', 'approve_gdk', 'approve', 'reject', 'return',
+    ].forEach((action) => {
+      allowed.delete(action);
+      disabled[action] = 'historical_ticket_readonly';
+    });
+  }
   if (!evaluationTicketService.isWorkspaceVisible(row, user)) {
     allowed.delete('export');
     disabled.export = 'forbidden_scope';
@@ -354,6 +365,10 @@ function mapTicket(row, displayNames = new Map()) {
   const assignee = identity(owner) || identity(evaluator) || row.created_by;
   return {
     id: row.id,
+    source_kind: row.source_kind || 'NATIVE',
+    is_historical: isHistoricalTicket(row),
+    read_only: isHistoricalTicket(row),
+    historical_source_stt: row.historical_source_stt || null,
     ticket_code: row.ticket_code,
     supplier_id: row.supplier_id,
     supplier: {
@@ -363,10 +378,13 @@ function mapTicket(row, displayNames = new Map()) {
       tax_code: row.tax_code,
       address: row.supplier_address,
       production_address: row.production_address,
-      evaluation_address: row.evaluation_address,
+      evaluation_address: row.snapshot_evaluation_address,
+      snapshot_evaluation_address: row.snapshot_evaluation_address,
       linked_facility_code: row.linked_facility_code,
-      linked_facility_name: row.linked_facility_name,
-      linked_facility_address: row.linked_facility_address,
+      linked_facility_name: row.snapshot_linked_facility_name,
+      linked_facility_address: row.snapshot_linked_facility_address,
+      snapshot_linked_facility_name: row.snapshot_linked_facility_name,
+      snapshot_linked_facility_address: row.snapshot_linked_facility_address,
       linked_facility_type: row.linked_facility_type,
       region: row.region,
       province: row.province,
@@ -383,7 +401,8 @@ function mapTicket(row, displayNames = new Map()) {
     evaluation_type: row.evaluation_type,
     merchandising: { mch2: row.mch2, mch3: row.mch3 },
     product_group: row.product_group,
-    product_name: row.product_name,
+    snapshot_product_name: row.snapshot_product_name,
+    product_name: row.snapshot_product_name,
     template_code: row.template_code,
     template_id: row.template_id,
     question_template_version_id: row.question_template_version_id,
@@ -1282,6 +1301,7 @@ router.post('/:ticketId/reports/export-print', canExportEvaluation, (req, res) =
 router.put('/:ticketId/nonconformities/:nonconformityId', canEditEvaluation, (req, res) => {
   const ticket = visibleTicketOrResponse(req, res, req.params.ticketId);
   if (!ticket) return;
+  if (isHistoricalTicket(ticket)) return res.status(409).json({ error: 'historical_ticket_readonly' });
   const id = parseInt(req.params.nonconformityId, 10);
   const existing = correctiveActionRepository.getNonconformityForTicket(id, ticket.id);
   if (!existing) return res.status(404).json({ error: 'nonconformity_not_found' });
@@ -1317,6 +1337,7 @@ router.put('/:ticketId/nonconformities/:nonconformityId', canEditEvaluation, (re
 router.post('/:ticketId/extensions', canEditEvaluation, (req, res) => {
   const ticket = visibleTicketOrResponse(req, res, req.params.ticketId);
   if (!ticket) return;
+  if (isHistoricalTicket(ticket)) return res.status(409).json({ error: 'historical_ticket_readonly' });
   if (!round2NotPassed(ticket)) {
     return res.status(400).json({ error: 'round_2_not_passed_required' });
   }
@@ -1365,6 +1386,7 @@ router.post('/:ticketId/extensions', canEditEvaluation, (req, res) => {
 router.post('/:ticketId/proposals', canEditEvaluation, (req, res) => {
   const ticket = visibleTicketOrResponse(req, res, req.params.ticketId);
   if (!ticket) return;
+  if (isHistoricalTicket(ticket)) return res.status(409).json({ error: 'historical_ticket_readonly' });
   const body = req.body || {};
   const type = String(body.type || '').trim();
   if (!['EXTENSION', 'SUSPENSION'].includes(type)) return res.status(400).json({ error: 'invalid_proposal_type' });

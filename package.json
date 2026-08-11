@@ -29,6 +29,8 @@
     "uat:verify-evidence": "node scripts/verify-uat-evidence.js",
     "migrations:status": "node scripts/migrations.js status",
     "migrations:dry-run": "node scripts/migrations.js dry-run",
+    "historical-evaluations:dry-run": "node scripts/import-historical-evaluations.js",
+    "historical-evaluations:commit": "node scripts/commit-historical-evaluations.js",
     "question-seed:verify": "node scripts/verify-question-seed.js",
     "question-import-template:generate": "node scripts/generate-question-import-workbook.js",
     "personnel-import-workbooks:generate": "node scripts/generate-personnel-import-workbooks.js",

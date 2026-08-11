@@ -75,19 +75,14 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (
-        supplier_code, supplier_name, tax_code, address, production_address, evaluation_address,
-        linked_facility_code, linked_facility_name, linked_facility_address, linked_facility_type,
-        region, province, business_type, cmc_owner, cmc_head,
-        business_license_file, attp_certificate_type, attp_certificate_file,
-        contact_name, contact_email, contact_phone, mch2, mch3, product_group, product_name,
+        supplier_code, supplier_name, tax_code, address, region, province, business_type,
+        contact_name, contact_email, contact_phone,
         status, source_type, created_by
       )
       VALUES (
-        'NCC-AUTO', 'Auto Supplier', 'TAX-1', 'Supplier HQ', 'Plant A', 'Audit Site A',
-        'LF-1', 'Linked Facility', 'Linked Address', 'Gia công',
-        'MB', 'Thành phố Hà Nội', 'Tự sản xuất', 'CMC Owner', 'CMC Head',
-        'license.pdf', 'HACCP', 'attp.pdf',
-        'Nguyen Van A', 'supplier@example.com', '0900000000', 'Thực phẩm công nghệ', 'Thực phẩm khô', 'Food', 'Product A',
+        'NCC-AUTO', 'Auto Supplier', 'TAX-1', 'Supplier HQ',
+        'MB', 'Thành phố Hà Nội', 'Tự sản xuất',
+        'Nguyen Van A', 'supplier@example.com', '0900000000',
         'ACTIVE', 'MANUAL', 'admin@masangroup.com'
       )
     `).run();
@@ -120,6 +115,8 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
         region: 'MB',
         province: 'Thành phố Hồ Chí Minh',
         business_type: 'Sản xuất',
+        mch2: 'Thực phẩm công nghệ',
+        mch3: 'Thực phẩm khô',
       }),
     });
     const invalidMasterDataJson = await invalidMasterDataRes.json();
@@ -145,6 +142,21 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
         qa_support_ids: ['support-a@masangroup.com'],
         evaluation_department: 'QA Fresh',
         actual_evaluation_date: '2026-07-02',
+        production_address: 'Plant A',
+        evaluation_address: 'Audit Site A',
+        linked_facility_code: 'LF-1',
+        linked_facility_name: 'Linked Facility',
+        linked_facility_address: 'Linked Address',
+        linked_facility_type: 'Gia công',
+        cmc_owner: 'CMC Owner',
+        cmc_head: 'CMC Head',
+        business_license_file: 'license.pdf',
+        attp_certificate_type: 'HACCP',
+        attp_certificate_file: 'attp.pdf',
+        mch2: 'Thực phẩm công nghệ',
+        mch3: 'Thực phẩm khô',
+        product_group: 'Food',
+        product_name: 'Product A',
       }),
     });
     const json = await res.json();
@@ -180,7 +192,7 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     assert.ok(row.question_template_version_id > 0);
     assert.equal(json.ticket.question_template_version_id, row.question_template_version_id);
     assert.equal(json.ticket.question_template_version_status, 'PUBLISHED');
-    assert.equal(row.linked_facility_address, 'Linked Address');
+    assert.equal(row.snapshot_linked_facility_address, 'Linked Address');
     assert.equal(row.business_license_file, 'license.pdf');
     assert.equal(row.attp_certificate_file, 'attp.pdf');
     assert.ok(!db.pragma("table_info('evaluation_tickets')").some((column) => column.name === 'qa_support_ids'));
@@ -1993,13 +2005,25 @@ test('ticket legal documents upload, validate type, and expose download links', 
     const baseFields = {
       supplier_code: 'NCC-FILE',
       supplier_name: 'File Supplier',
+      tax_code: 'NCC-FILE-TAX',
+      address: 'File Supplier HQ',
+      region: 'MB',
+      province: 'Thành phố Hà Nội',
+      business_type: 'Tự sản xuất',
+      contact_name: 'File Contact',
+      contact_email: 'file-contact@example.test',
+      contact_phone: '0900000019',
       evaluation_type: 'Dinh ky',
       template: 'BM04',
       facility_type: 'CHUNG',
       supplier_scale: 'LARGE',
       planned_date: '2026-07-15',
+      cmc_owner: 'CMC Owner',
+      cmc_head: 'CMC Head',
       mch2: 'Th\u1ef1c ph\u1ea9m c\u00f4ng ngh\u1ec7',
       mch3: 'Th\u1ef1c ph\u1ea9m kh\u00f4',
+      product_name: 'File product',
+      snapshot_evaluation_address: 'File audit address',
     };
 
     const invalidForm = new FormData();

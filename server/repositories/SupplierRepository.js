@@ -1,10 +1,10 @@
+const { normalizeSupplierCode } = require('../domain/supplierCode');
+
 const FILTERS = {
   q: {
     condition: '(supplier_code LIKE @q OR supplier_name LIKE @q OR tax_code LIKE @q)',
     value: (value) => `%${value}%`,
   },
-  mch2: { condition: 'mch2 = @mch2', value: (value) => value },
-  mch3: { condition: 'mch3 = @mch3', value: (value) => value },
   status: { condition: 'status = @status', value: (value) => value },
 };
 
@@ -23,34 +23,19 @@ class SupplierRepository {
     `;
     this.statements = {
       getById: db.prepare(`${detailSelect} WHERE sm.id = ?`),
-      getByCode: db.prepare(`${detailSelect} WHERE sm.supplier_code = ?`),
+      getByCode: db.prepare(`${detailSelect} WHERE UPPER(TRIM(sm.supplier_code)) = ?`),
       update: db.prepare(`
         UPDATE supplier_master SET
           supplier_code = @supplier_code,
           supplier_name = @supplier_name,
           tax_code = @tax_code,
           address = @address,
-          production_address = @production_address,
-          evaluation_address = @evaluation_address,
-          linked_facility_code = @linked_facility_code,
-          linked_facility_name = @linked_facility_name,
-          linked_facility_address = @linked_facility_address,
-          linked_facility_type = @linked_facility_type,
           region = @region,
           province = @province,
           business_type = @business_type,
-          cmc_owner = @cmc_owner,
-          cmc_head = @cmc_head,
-          business_license_file = @business_license_file,
-          attp_certificate_type = @attp_certificate_type,
-          attp_certificate_file = @attp_certificate_file,
           contact_name = @contact_name,
           contact_email = @contact_email,
           contact_phone = @contact_phone,
-          mch2 = @mch2,
-          mch3 = @mch3,
-          product_group = @product_group,
-          product_name = @product_name,
           status = @status,
           source_type = @source_type,
           updated_at = datetime('now'),
@@ -77,10 +62,10 @@ class SupplierRepository {
     };
   }
 
-  list({ q, mch2, mch3, status, pageSize, offset, scopeFilter = null }) {
+  list({ q, status, pageSize, offset, scopeFilter = null }) {
     const where = [];
     const params = { pageSize, offset };
-    const values = { q, mch2, mch3, status };
+    const values = { q, status };
 
     Object.entries(values).forEach(([key, raw]) => {
       if (!raw || !FILTERS[key]) return;
@@ -130,7 +115,7 @@ class SupplierRepository {
   }
 
   getByCode(code) {
-    return this.statements.getByCode.get(code);
+    return this.statements.getByCode.get(normalizeSupplierCode(code));
   }
 
   getByIdOrCode(value) {

@@ -85,6 +85,7 @@
     define('dashboard.period_next', 'Xem kỳ báo cáo sau', { icon: 'arrow', permission: 'DASHBOARD.READ', entity: 'DASHBOARD' }),
     define('dashboard.period_current', 'Về kỳ báo cáo hiện tại', { icon: 'refresh', permission: 'DASHBOARD.READ', entity: 'DASHBOARD' }),
     define('dashboard.period_type', 'Đổi loại kỳ báo cáo', { icon: 'calendar', permission: 'DASHBOARD.READ', entity: 'DASHBOARD' }),
+    define('dashboard.mode', 'Đổi chế độ dashboard', { icon: 'layout-dashboard', permission: 'DASHBOARD.READ', entity: 'DASHBOARD' }),
     define('dashboard.export', 'Xuất dashboard đánh giá NCC', { icon: 'download', placement: 'page', permission: 'DASHBOARD.READ', entity: 'DASHBOARD', mutation: true, success: 'Đã tạo báo cáo dashboard.', event: 'export.generated' }),
     define('session.logout', 'Đăng xuất', { icon: 'logout', entity: 'AUTH', mutation: true, success: 'Đã đăng xuất.', event: 'auth.logout.succeeded' }),
     define('auth.request_otp', 'Gửi mã xác thực', { icon: 'send', entity: 'AUTH', mutation: true, success: 'Đã gửi yêu cầu mã xác thực.', event: 'auth.otp.request.succeeded' }),

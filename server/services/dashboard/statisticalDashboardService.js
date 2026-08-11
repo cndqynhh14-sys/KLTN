@@ -1,5 +1,6 @@
 const { normalizeComparableText, safeRatio } = require('../../domain/reporting/month');
 const { offsetPeriod, parseDashboardPeriod, periodWindow } = require('../../domain/reporting/dashboardPeriod');
+const { EVALUATION_VIOLATION_GROUPS, resolveViolationGroup } = require('../../domain/reporting/evaluationViolationGroups');
 
 const STATUS_GROUPS = Object.freeze([
   { code: 'DRAFT', label: 'Khởi tạo', statuses: ['Khởi tạo'] },
@@ -65,6 +66,25 @@ function comparison(currentValue, previousValue, inverse = false) {
   };
 }
 
+function percentage(count, total) {
+  return total ? Math.round((count / total) * 1000) / 10 : 0;
+}
+
+function supplierKey(record) {
+  if (record.supplier_id != null) return `ID:${record.supplier_id}`;
+  const code = String(record.supplier_code || '').trim().toUpperCase();
+  if (code) return `CODE:${code}`;
+  const name = normalizeComparableText(record.supplier_name);
+  return name ? `NAME:${name}` : `TICKET:${record.ticket_code}`;
+}
+
+function compareCompletedRecords(a, b) {
+  return timeValue(b.completed_at) - timeValue(a.completed_at) ||
+    Number(b.final_round?.round_no || 0) - Number(a.final_round?.round_no || 0) ||
+    Number(b.final_round?.id || 0) - Number(a.final_round?.id || 0) ||
+    Number(b.id || 0) - Number(a.id || 0);
+}
+
 class StatisticalDashboardService {
   constructor({ repository }) {
     this.repository = repository;
@@ -92,20 +112,24 @@ class StatisticalDashboardService {
     return latest?.to_status || latest?.from_status || ticket.current_status;
   }
 
-  finalRoundAt(rounds, endExclusive) {
+  finalRoundAt(rounds, endExclusive, ticket = null) {
+    const historical = String(ticket?.source_kind || '').toUpperCase() === 'HISTORICAL';
     return rounds
-      .filter((row) => String(row.completed_at || row.locked_at || row.assessment_date || '') < endExclusive)
+      .filter((row) => historical || String(row.completed_at || row.locked_at || row.assessment_date || '') < endExclusive)
       .sort((a, b) => Number(b.round_no) - Number(a.round_no) || timeValue(b.completed_at || b.locked_at || b.assessment_date) - timeValue(a.completed_at || a.locked_at || a.assessment_date) || Number(b.id) - Number(a.id))[0] || null;
   }
 
   terminalAt(ticket, group, history, rounds, endExclusive) {
+    if (group.code === 'COMPLETED' && String(ticket.source_kind || '').toUpperCase() === 'HISTORICAL') {
+      return ticket.actual_evaluation_date || null;
+    }
     const matching = history.filter((row) => {
       if (String(row.created_at) >= endExclusive) return false;
       return statusGroup(row.to_status)?.code === group.code;
     });
     if (matching.length) return matching[matching.length - 1].created_at;
     if (group.code === 'CANCELLED') return ticket.cancelled_at || null;
-    const round = this.finalRoundAt(rounds, endExclusive);
+    const round = this.finalRoundAt(rounds, endExclusive, ticket);
     return round?.completed_at || round?.locked_at || round?.assessment_date || null;
   }
 
@@ -118,11 +142,18 @@ class StatisticalDashboardService {
       if (group?.code !== 'COMPLETED') return;
       const completedAt = this.terminalAt(ticket, group, history, rounds, period.periodEndExclusive);
       if (!completedAt || completedAt < period.periodStart || completedAt >= period.periodEndExclusive) return;
-      const finalRound = this.finalRoundAt(rounds, period.periodEndExclusive);
+      const finalRound = this.finalRoundAt(rounds, period.periodEndExclusive, ticket);
       const result = classifyResult(finalRound);
       const score = Number(finalRound?.total_score);
       if (!result || !Number.isFinite(score)) return;
-      records.push({ ...ticket, completed_at: completedAt, final_round: finalRound, result, final_score: score });
+      records.push({
+        ...ticket,
+        completed_at: completedAt,
+        final_round: finalRound,
+        completed_rounds: rounds,
+        result,
+        final_score: score,
+      });
     });
     return records;
   }
@@ -201,6 +232,101 @@ class StatisticalDashboardService {
     }).sort((a, b) => b.average_final_score - a.average_final_score || b.evaluation_count - a.evaluation_count || String(b.latest_evaluation_date).localeCompare(String(a.latest_evaluation_date)) || String(a.supplier_name).localeCompare(String(b.supplier_name), 'vi')).slice(0, 10).map((row, index) => ({ rank: index + 1, ...row }));
   }
 
+  latestSupplierRecords(records) {
+    const selected = new Map();
+    [...records].sort(compareCompletedRecords).forEach((record) => {
+      const key = supplierKey(record);
+      if (!selected.has(key)) selected.set(key, record);
+    });
+    return [...selected.values()];
+  }
+
+  ratingDistribution(records) {
+    const bands = [
+      { code: 'FAILED', label: 'Không đạt', count: 0 },
+      { code: 'BASIC', label: 'Đạt mức cơ bản', count: 0 },
+      { code: 'GOOD', label: 'Đạt mức khá', count: 0 },
+      { code: 'HIGH', label: 'Đạt mức cao', count: 0 },
+    ];
+    records.forEach((record) => {
+      const score = Number(record.final_score);
+      const band = score < 60 ? bands[0] : score <= 75 ? bands[1] : score <= 90 ? bands[2] : bands[3];
+      band.count += 1;
+    });
+    return {
+      total_suppliers: records.length,
+      items: bands.map((band) => ({ ...band, percentage: percentage(band.count, records.length) })),
+    };
+  }
+
+  industryPerformance(records) {
+    const industries = new Map();
+    records.forEach((record) => {
+      const industry = String(record.mch2 || '').trim() || 'Chưa xác định';
+      if (!industries.has(industry)) industries.set(industry, {
+        industry,
+        total_suppliers: 0,
+        passed_suppliers: 0,
+        failed_suppliers: 0,
+        score_sum: 0,
+      });
+      const row = industries.get(industry);
+      row.total_suppliers += 1;
+      row.score_sum += Number(record.final_score);
+      if (Number(record.final_score) >= 60) row.passed_suppliers += 1;
+      else row.failed_suppliers += 1;
+    });
+    return [...industries.values()].map((row) => ({
+      industry: row.industry,
+      total_suppliers: row.total_suppliers,
+      passed_suppliers: row.passed_suppliers,
+      failed_suppliers: row.failed_suppliers,
+      passed_percentage: percentage(row.passed_suppliers, row.total_suppliers),
+      failed_percentage: percentage(row.failed_suppliers, row.total_suppliers),
+      average_score: Math.round((row.score_sum / row.total_suppliers) * 10) / 10,
+    })).sort((a, b) => b.total_suppliers - a.total_suppliers || b.passed_percentage - a.passed_percentage || a.industry.localeCompare(b.industry, 'vi'));
+  }
+
+  violationDistribution(records) {
+    const roundIds = [...new Set(records.flatMap((record) => {
+      if (String(record.source_kind || '').toUpperCase() === 'HISTORICAL') {
+        return (record.completed_rounds || []).map((round) => Number(round.id));
+      }
+      return [Number(record.final_round?.id)];
+    }).filter(Number.isFinite))];
+    const sources = typeof this.repository.listViolationSources === 'function'
+      ? this.repository.listViolationSources(roundIds)
+      : { primary: [], fallback: [] };
+    const counts = new Map(EVALUATION_VIOLATION_GROUPS.map((group) => [group.code, 0]));
+    const primaryAnswerIds = new Set();
+    let unknown = 0;
+    const count = (row) => {
+      const group = resolveViolationGroup(row);
+      if (!group) { unknown += 1; return; }
+      counts.set(group.code, counts.get(group.code) + 1);
+    };
+    sources.primary.forEach((row) => {
+      if (row.evaluation_answer_id != null) primaryAnswerIds.add(Number(row.evaluation_answer_id));
+      count(row);
+    });
+    sources.fallback.forEach((row) => {
+      if (primaryAnswerIds.has(Number(row.evaluation_answer_id))) return;
+      count(row);
+    });
+    const total = [...counts.values()].reduce((sum, value) => sum + value, 0);
+    return {
+      total_violations: total,
+      excluded_unknown_violations: unknown,
+      items: EVALUATION_VIOLATION_GROUPS.map((group) => ({
+        code: group.code,
+        label: group.label,
+        count: counts.get(group.code),
+        percentage: percentage(counts.get(group.code), total),
+      })).filter((row) => row.count > 0)
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'vi')),
+    };
+  }
+
   get(input = {}) {
     const legacyValue = typeof input === 'string' ? input : null;
     const period = parseDashboardPeriod(legacyValue ? 'MONTH' : input.periodType, legacyValue || input.periodValue);
@@ -211,6 +337,7 @@ class StatisticalDashboardService {
     const previousFacts = this.factsThrough(previousPeriod, filters);
     const previous = this.summary(previousPeriod, previousFacts);
     const status = this.statusDistribution(period, facts);
+    const latestSupplierRecords = this.latestSupplierRecords(current.records);
     const trend = periodWindow(period, 6).map((item) => {
       const itemFacts = this.factsThrough(item, filters);
       const itemSummary = this.summary(item, itemFacts);
@@ -244,12 +371,19 @@ class StatisticalDashboardService {
       status_distribution: status,
       top_suppliers: this.ranking(current.records),
       trend,
+      details: {
+        rating_distribution: this.ratingDistribution(latestSupplierRecords),
+        industry_performance: this.industryPerformance(latestSupplierRecords),
+        violation_distribution: this.violationDistribution(latestSupplierRecords),
+      },
       meta: {
         data_source: 'workflow',
         status_rule: 'latest_workflow_status_at_period_end',
         completed_period_rule: 'transition_to_completed_at',
         final_score_rule: 'official_round_2_else_official_round_1',
         ratio_unit: 'fraction',
+        detail_supplier_grain: 'latest_completed_evaluation_per_supplier_in_filtered_period',
+        violation_unit: 'occurrence',
       },
       generated_at: new Date().toISOString(),
     };

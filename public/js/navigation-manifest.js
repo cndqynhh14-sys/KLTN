@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function navigationManifestFactory() {
   'use strict';
 
-  const NAVIGATION_VERSION = 8;
+  const NAVIGATION_VERSION = 9;
   const DEFAULT_FEATURE_FLAGS = Object.freeze({
     ADMIN_UAT_RUNS: false,
   });
@@ -78,11 +78,6 @@
       label: 'Báo cáo', short_label: 'Báo cáo', description: 'Tìm, xem và xuất báo cáo đánh giá NCC.',
       icon: 'report', order: 23, active_match: ['/reports'], permissions: ['REPORT.READ'], permission_mode: 'all',
       feature_flag: null, mobile_priority: null, breadcrumbs: ['supplier-business', 'evaluations'], contextual: true }),
-    define({ id: 'ncc-eval', kind: 'route', parent: 'analytics', route: '/dashboard/ncc-evaluations', view: 'view-ncc-eval',
-      label: 'Phân tích đánh giá NCC', short_label: 'Đánh giá NCC', description: 'Phân tích kết quả và xu hướng đánh giá NCC.',
-      icon: 'evaluation', order: 30, active_match: ['/dashboard/ncc-evaluations'], permissions: ['DASHBOARD.READ'], permission_mode: 'all',
-      feature_flag: null, mobile_priority: 32, breadcrumbs: ['analytics'], contextual: false, sidebar: false, sidebar_active: 'overview' }),
-
     define({ id: 'administration', kind: 'section', parent: null, route: null, view: null,
       label: 'Quản trị', short_label: 'Quản trị', description: 'Cấu hình hệ thống và kiểm soát truy cập.',
       icon: 'settings', order: 40, active_match: [], permissions: [], permission_mode: 'all',

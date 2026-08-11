@@ -15,7 +15,7 @@ const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
 test('navigation manifest is complete, unique and permission-safe', () => {
   const errors = navigation.validateManifest();
   assert.deepEqual(errors, []);
-  assert.equal(navigation.NAVIGATION_VERSION, 8);
+  assert.equal(navigation.NAVIGATION_VERSION, 9);
 
   const requiredFields = [
     'id', 'parent', 'route', 'view', 'label', 'short_label', 'description',
@@ -63,7 +63,6 @@ test('route resolver preserves bookmarks and fails closed before a loader is sel
     '/evaluations': 'evaluations',
     '/suppliers': 'suppliers',
     '/reports': 'reports',
-    '/dashboard/ncc-evaluations': 'ncc-eval',
     '/admin/users': 'admin-users',
     '/admin/roles': 'admin-roles',
     '/admin/personnel-import': 'admin-personnel-import',
@@ -164,7 +163,7 @@ test('menu action matrix is reproducibly generated and reports no enabled orphan
   const generated = generateMenuActionMatrix({ root });
   const stored = fs.readFileSync(path.join(root, 'docs', 'menu-action-matrix.md'), 'utf8');
   assert.equal(stored.replace(/\r\n/g, '\n'), generated.replace(/\r\n/g, '\n'));
-  assert.match(generated, /Navigation manifest version: `8`/);
+  assert.match(generated, /Navigation manifest version: `9`/);
   assert.match(generated, /Enabled orphan routes: `0`/);
   assert.match(generated, /Enabled orphan views: `0`/);
   assert.match(generated, /Unknown permissions: `0`/);

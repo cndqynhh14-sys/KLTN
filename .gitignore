@@ -21,3 +21,10 @@ output/
 tmp/
 data/*.db.report-artifacts/
 data/*.db.report-artifacts/
+# Local run/import evidence and generated outputs
+outputs/
+artifacts/run31-cleanup/
+artifacts/run32-supplier-master/
+artifacts/run33-evaluation-tickets/
+artifacts/run34-historical-evaluations/
+artifacts/run35-historical-evaluations/

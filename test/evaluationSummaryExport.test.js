@@ -122,15 +122,12 @@ test('evaluation summary route exports filtered rows using template columns and 
     upsertCanonicalUser(db, { email: 'qa.lead@masangroup.com', role: 'Chuyên viên' });
     const supplier = db.prepare(`
       INSERT INTO supplier_master (
-        supplier_code, supplier_name, address, evaluation_address, linked_facility_address,
-        region, province, business_type, cmc_owner, cmc_head, contact_name, contact_email,
-        contact_phone, mch2, mch3, product_group, product_name, status, source_type
+        supplier_code, supplier_name, address, region, province, business_type,
+        contact_name, contact_email, contact_phone, status, source_type
       )
       VALUES (
-        'NCC-SUM', 'Summary Supplier', 'HQ Address', 'Master Audit Site', 'Linked Farm',
-        'MN', 'TPHCM', 'Sản xuất', 'CMC Owner', 'CMC Head', 'Supplier Contact',
-        'contact@example.com', '0900000000', 'Thực phẩm tươi sống, chế biến', 'Rau củ',
-        'Rau', 'Cà rốt', 'ACTIVE', 'MANUAL'
+        'NCC-SUM', 'Summary Supplier', 'HQ Address', 'MN', 'TPHCM', 'Sản xuất',
+        'Supplier Contact', 'contact@example.com', '0900000000', 'ACTIVE', 'MANUAL'
       )
     `).run();
     const otherSupplier = db.prepare(`
@@ -156,9 +153,9 @@ test('evaluation summary route exports filtered rows using template columns and 
 
     const ticket = db.prepare(`
       INSERT INTO evaluation_tickets (
-        ticket_code, supplier_id, supplier_code, supplier_name, evaluation_address, linked_facility_address,
+        ticket_code, supplier_id, supplier_code, supplier_name, snapshot_evaluation_address, snapshot_linked_facility_address,
         region, province, business_type, cmc_owner, cmc_head, contact_name, contact_email, contact_phone,
-        mch2, mch3, product_group, product_name, evaluation_type, template_id,
+        mch2, mch3, product_group, snapshot_product_name, evaluation_type, template_id,
         question_template_version_id, facility_type, supplier_scale,
         evaluation_method, evaluation_department,
         planned_date, actual_evaluation_date, current_status, current_round_no, completed_round,

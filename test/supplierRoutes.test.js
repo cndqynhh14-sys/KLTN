@@ -46,17 +46,12 @@ test('manual supplier dialog wires required field validation before submit', () 
   [
     'supplier-tax-code',
     'supplier-address',
-    'supplier-production-address',
-    'supplier-evaluation-address',
     'supplier-region',
     'supplier-province',
     'supplier-business-type',
     'supplier-contact-name',
     'supplier-contact-email',
     'supplier-contact-phone',
-    'supplier-mch2',
-    'supplier-mch3',
-    'supplier-product-name',
   ].forEach((id) => {
     assert.match(html, new RegExp(`id="${id}"[^>]*required`), id);
     assert.match(html, new RegExp(`data-supplier-error-for="${id}"`), id);
@@ -73,11 +68,12 @@ test('manual supplier dialog wires required field validation before submit', () 
   assert.match(html, /class="manual-supplier-grid"/);
   [
     'Thông tin nhà cung cấp',
-    'Đơn vị liên kết',
     'Thông tin liên hệ',
-    'Ngành hàng và Sản phẩm',
-    'Thông tin CMC',
   ].forEach((label) => assert.match(html, new RegExp(label), label));
+  [
+    'supplier-production-address', 'supplier-evaluation-address', 'supplier-linked-facility-code',
+    'supplier-mch2', 'supplier-mch3', 'supplier-product-name', 'supplier-cmc-owner',
+  ].forEach((id) => assert.doesNotMatch(html, new RegExp(`id="${id}"`), id));
   assert.match(html, /id="btn-cancel-supplier"[^>]*modal-x-button/);
   assert.doesNotMatch(html, /id="btn-cancel-supplier"[^>]*>Bỏ thay đổi</);
   assert.match(html, /id="btn-save-supplier" class="btn-primary">Lưu NCC<\/button>/);
@@ -108,17 +104,12 @@ test('manual supplier creation requires business fields before insert', async ()
     [
       'tax_code',
       'address',
-      'production_address',
-      'evaluation_address',
       'region',
       'province',
       'business_type',
       'contact_name',
       'contact_email',
       'contact_phone',
-      'mch2',
-      'mch3',
-      'product_name',
     ].forEach((field) => assert.equal(json.errors[field], 'required', field));
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM supplier_master WHERE supplier_code = ?').get('NCC-MISSING').count, 0);
   } finally {
@@ -180,6 +171,17 @@ test('manual supplier creation succeeds after required fields are provided', asy
     assert.equal(json.item.business_type, 'Tự sản xuất');
     assert.equal(json.item.contact_email, 'supplier@example.com');
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM supplier_master WHERE supplier_code = ?').get('NCC-OK').count, 1);
+    const duplicateRes = await fetch(`${appInfo.baseUrl}/suppliers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
+      body: JSON.stringify({
+        supplier_code: ' ncc-ok ', supplier_name: 'Duplicate Supplier', tax_code: '0109999999',
+        address: 'Other HQ', region: 'MB', province: 'Thành phố Hà Nội', business_type: 'Kinh doanh',
+        contact_name: 'Duplicate', contact_email: 'duplicate@example.com', contact_phone: '0911111111',
+      }),
+    });
+    assert.equal(duplicateRes.status, 409, JSON.stringify(await duplicateRes.json()));
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM supplier_master').get().count, 1);
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     db.close();

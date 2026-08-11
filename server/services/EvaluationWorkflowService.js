@@ -3,6 +3,7 @@ const { PERMISSIONS } = require('../authorization/permissionCatalog');
 const { resourceContext } = require('./PolicyService');
 const { WORKFLOW_STATUSES } = require('../domain/workflowHistory');
 const logger = require('../logger');
+const { assertTicketMutable } = require('../domain/historicalEvaluation');
 
 function parseTaskPayload(task) {
   try { return JSON.parse(task.comment || '{}'); } catch { return { comment: task.comment || '' }; }
@@ -379,6 +380,7 @@ class EvaluationWorkflowService {
   requireTicket(identifier) {
     const ticket = this.ticketRepository.getByIdOrCode(identifier);
     if (!ticket) throw this.httpError(404, { error: 'ticket_not_found' });
+    assertTicketMutable(ticket);
     return ticket;
   }
 

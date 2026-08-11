@@ -15,13 +15,8 @@ const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 const ROOT = path.resolve(__dirname, '..');
 const TEMPLATE_PATH = path.join(ROOT, 'database', 'templates', 'supplier-import-template.xlsx');
 const EXPECTED_HEADERS = [
-  'supplier_code', 'supplier_name', 'tax_code', 'address',
-  'production_address', 'evaluation_address', 'linked_facility_code',
-  'linked_facility_name', 'linked_facility_address', 'linked_facility_type',
-  'region', 'province', 'business_type', 'contact_name', 'contact_email',
-  'contact_phone', 'cmc_owner', 'cmc_head', 'business_license_file',
-  'attp_certificate_type', 'attp_certificate_file', 'mch2', 'mch3',
-  'product_group', 'product_name', 'status',
+  'supplier_code', 'supplier_name', 'tax_code', 'address', 'region', 'province',
+  'business_type', 'contact_name', 'contact_email', 'contact_phone', 'status',
 ];
 
 function workbookBuffer(rows, headers = EXPECTED_HEADERS) {
@@ -67,18 +62,18 @@ function startApp(router) {
   });
 }
 
-function validRow(merchandising, overrides = {}) {
-  const mch2 = merchandising.MCH2_VALUES[0];
-  const mch3 = merchandising.MCH3_BY_MCH2[mch2][0];
+function validRow(_merchandising, overrides = {}) {
   const values = {
     supplier_code: 'NCC-RUN03-001',
     supplier_name: 'NCC Synthetic RUN-03',
     tax_code: '0100000001',
     address: 'Địa chỉ synthetic',
+    region: 'MB',
+    province: 'Thành phố Hà Nội',
+    business_type: 'Kinh doanh',
+    contact_name: 'Nguyễn Văn A',
     contact_email: 'run03@example.invalid',
-    mch2,
-    mch3,
-    product_name: 'Sản phẩm synthetic',
+    contact_phone: '0900000000',
     status: 'ACTIVE',
     ...overrides,
   };
@@ -122,7 +117,7 @@ test('RUN-03 downloadable workbook matches the importer contract and its synthet
   const parsed = parseSupplierWorkbook(fs.readFileSync(TEMPLATE_PATH));
   assert.equal(parsed.errors.length, 0, JSON.stringify(parsed.errors));
   assert.equal(parsed.rows.length, 1);
-  assert.match(parsed.rows[0].supplier_code, /^NCC-MAU-/);
+  assert.equal(parsed.rows[0].supplier_code, 'NCC0001');
 });
 
 test('RUN-03 template endpoint downloads the canonical workbook with SUPPLIER.WRITE', async () => {
@@ -153,7 +148,7 @@ test('RUN-03 template endpoint downloads the canonical workbook with SUPPLIER.WR
       status: 'COMPLETED',
     });
     assert.equal(fx.db.prepare('SELECT COUNT(*) AS count FROM supplier_master WHERE supplier_code = ?')
-      .get('NCC-MAU-001').count, 1);
+      .get('NCC0001').count, 1);
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     fx.db.close();
