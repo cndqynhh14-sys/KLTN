@@ -27,7 +27,9 @@ class PolicyError extends Error {
 
 function resourceContext(row = {}) {
   return {
+    ownerUserId: row.created_by_user_id || row.owner_user_id || null,
     ownerId: row.created_by || row.owner_id || row.ownerId || null,
+    assignedPrincipalId: row.assigned_specialist_user_id || row.assigned_principal_id || null,
     assignedUserId: row.assigned_specialist_id || row.qa_owner || row.assigned_user_id || null,
     regionId: row.region_id || row.regionId || row.region || null,
     mch2Id: row.mch2_id || row.mch2Id || stableMch2Id(row.mch2) || null,
@@ -44,7 +46,7 @@ class PolicyService {
   capabilities(user) {
     const capabilities = Array.isArray(user?.capabilities)
       ? user.capabilities
-      : this.authorizationService.effectivePermissions(user?.email).permissions;
+      : this.authorizationService.effectivePermissions(user?.userId || user?.email).permissions;
     return capabilities.filter(isActivePermission);
   }
 
@@ -55,7 +57,7 @@ class PolicyService {
   scopeOptions(user, permissionCode) {
     const constrainedRoleCodes = NON_GLOBAL_SCOPE_ROLE_CODES_BY_PERMISSION[permissionCode] || [];
     if (!constrainedRoleCodes.length) return {};
-    const activeRoleCodes = new Set(user?.roleCodes || this.authorizationService.effectivePermissions(user?.email).roleCodes);
+    const activeRoleCodes = new Set(user?.roleCodes || this.authorizationService.effectivePermissions(user?.userId || user?.email).roleCodes);
     return {
       excludeGlobalRoleCodes: constrainedRoleCodes.filter((roleCode) => activeRoleCodes.has(roleCode)),
     };
@@ -65,18 +67,18 @@ class PolicyService {
     const allowedRoleCodes = ENTERPRISE_READ_ROLE_CODES_BY_PERMISSION[permissionCode] || [];
     if (!allowedRoleCodes.length) return false;
     const activeRoleCodes = new Set(
-      user?.roleCodes || this.authorizationService.effectivePermissions(user?.email).roleCodes
+      user?.roleCodes || this.authorizationService.effectivePermissions(user?.userId || user?.email).roleCodes
     );
     return allowedRoleCodes.some((roleCode) => activeRoleCodes.has(roleCode));
   }
 
   decision(user, permissionCode, options = {}) {
     if (!user || !this.has(user, permissionCode)) return { allowed: false, reason: 'forbidden_permission' };
-    if (options.requireGlobalScope && !this.authorizationService.hasGlobalScope(user.email)) {
+    if (options.requireGlobalScope && !this.authorizationService.hasGlobalScope(user.userId || user.email)) {
       return { allowed: false, reason: 'forbidden_scope' };
     }
     if (options.context && !this.hasEnterpriseRead(user, permissionCode) && !this.authorizationService.isInScope(
-      user.email,
+      user.userId || user.email,
       options.context,
       this.scopeOptions(user, permissionCode)
     )) {
@@ -96,7 +98,7 @@ class PolicyService {
     this.assert(user, permissionCode);
     if (this.hasEnterpriseRead(user, permissionCode)) return [...rows];
     return this.authorizationService.applyScope(
-      user.email,
+      user.userId || user.email,
       rows,
       contextFactory,
       this.scopeOptions(user, permissionCode)
@@ -104,7 +106,7 @@ class PolicyService {
   }
 
   sqlScope(user, options = {}) {
-    return this.authorizationService.buildSqlScope(user.email, options);
+    return this.authorizationService.buildSqlScope(user.userId || user.email, options);
   }
 
   approvalPermission(workflowType, level) {

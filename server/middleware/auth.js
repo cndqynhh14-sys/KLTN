@@ -29,7 +29,7 @@ function signToken(payload, ttlSeconds) {
     : 'guarded';
   const session = authzService().createSession(email, { ttlSeconds: ttl });
   return jwt.sign({
-    sub: email,
+    sub: session.identity.userId,
     sid: session.sessionId,
     av: session.authzVersion,
     am: authDeliveryMode,
@@ -49,6 +49,7 @@ function requireAuth(req, res, next) {
     const decoded = jwt.verify(token, SECRET, { issuer: 'masan-rms', audience: AUDIENCE });
     if (decoded.sub && decoded.sid && decoded.av !== undefined) {
       req.user = authzService().resolveSession(decoded.sid, decoded.sub, decoded.av);
+      req.actorUserId = req.user.userId;
       req.user.sessionId = decoded.sid;
       req.user.authDeliveryMode = decoded.am === 'screen' ? 'screen' : 'email';
       req.user.authSecurityProfile = decoded.asp === 'development_relaxed' ? 'development_relaxed' : 'guarded';

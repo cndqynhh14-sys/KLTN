@@ -111,8 +111,9 @@ test('admin user upsert and deactivation require a bounded reason and record ver
       }),
     });
     assert.equal(created.response.status, 200);
-    const createdUser = db.prepare(`SELECT is_active, display_name, authz_version
+    const createdUser = db.prepare(`SELECT user_id, is_active, display_name, authz_version
       FROM users WHERE email = ?`).get(target);
+    assert.equal(created.body.userId, createdUser.user_id);
     assert.equal(createdUser.is_active, 1);
     const targetSession = authorizationService.createSession(target, { ttlSeconds: 3600 });
 
@@ -135,7 +136,7 @@ test('admin user upsert and deactivation require a bounded reason and record ver
     assert.equal(rejectedDelete.body.error, 'change_reason_required');
     assert.equal(db.prepare('SELECT is_active FROM users WHERE email = ?').get(target).is_active, 1);
 
-    const deactivated = await requestJson(baseUrl, `/admin/users/${encodeURIComponent(target)}`, token, {
+    const deactivated = await requestJson(baseUrl, `/admin/users/${encodeURIComponent(createdUser.user_id)}`, token, {
       method: 'DELETE',
       requestId: 'request-admin-users-deactivate-0001',
       body: JSON.stringify({ reason: 'Deactivate the synthetic account after access review' }),

@@ -42,7 +42,7 @@ test('migration rehearsal upgrades a representative 0029 database without publis
     assert.match(report.backup.sha256, /^[a-f0-9]{64}$/);
     assert.equal(report.backup.integrity_check, 'ok');
     assert.equal(report.backup.foreign_key_violations, 0);
-    assert.deepEqual(report.migration.applied_ids, ['0030', '0031', '0032', '0033', '0034']);
+    assert.deepEqual(report.migration.applied_ids, ['0030', '0031', '0032', '0033', '0034', '0035']);
     assert.equal(report.migration.retry_pending_count, 0);
     assert.equal(report.parity.stage4c.status, 'PASS');
     assert.notEqual(report.parity.stage4d.status, 'FAILED');

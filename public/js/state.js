@@ -10,6 +10,7 @@ export const state = {
   authDeliveryMode: 'email',
   authSecurityProfile: 'guarded',
   email: null,
+  userId: null,
   displayName: '',
   isAdmin: false,
   roleCodes: [],

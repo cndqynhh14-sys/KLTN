@@ -5103,6 +5103,7 @@ import { state } from './js/state.js';
   function applySession(d) {
     const previousAuthzVersion = state.authzVersion;
     state.email = d.email;
+    state.userId = d.userId || d.user_id || null;
     state.authDeliveryMode = d.degradedAuth === true || d.authDeliveryMode === 'screen' ? 'screen' : 'email';
     state.authSecurityProfile = d.authSecurityProfile === 'development_relaxed' ? 'development_relaxed' : 'guarded';
     $('degraded-auth-banner').classList.toggle('hidden', state.authDeliveryMode !== 'screen');
@@ -5146,7 +5147,7 @@ import { state } from './js/state.js';
     if (!discard) return;
     await api('/auth/logout', { method: 'POST' });
     resetOtpChallenge();
-    Object.assign(state, { view: 'login', email: null, isAdmin: false, role: 'Chuyên viên', roleCodes: [], capabilities: [], authDeliveryMode: 'email', authSecurityProfile: 'guarded' });
+    Object.assign(state, { view: 'login', email: null, userId: null, isAdmin: false, role: 'Chuyên viên', roleCodes: [], capabilities: [], authDeliveryMode: 'email', authSecurityProfile: 'guarded' });
     state.notifications = [];
     state.notificationUnreadCount = 0;
     updateNotificationBadges();
@@ -8605,6 +8606,10 @@ import { state } from './js/state.js';
   let authzUserEditorTrigger = null;
   let authzRoleEditorTrigger = null;
 
+  function authzUserKey(user) {
+    return user?.user_id || user?.userId || user?.email || '';
+  }
+
   function requiredConfirmation(action, objectKey) {
     const labels = {
       PUBLISH_ROLE: 'PUBLISH ROLE',
@@ -8819,7 +8824,7 @@ import { state } from './js/state.js';
     const roleCode = $('authz-user-role-filter')?.value || 'all';
     const healthFilter = $('authz-user-health-filter')?.value || 'all';
     return authzUsers.filter((user) => {
-      const detail = authzUserDetails.get(user.email);
+      const detail = authzUserDetails.get(authzUserKey(user));
       const health = authzUserHealth(detail);
       const haystack = `${user.email} ${user.display_name || ''}`.toLocaleLowerCase('vi');
       if (query && !haystack.includes(query)) return false;
@@ -8837,8 +8842,8 @@ import { state } from './js/state.js';
     renderUsers(filtered);
     const summary = $('authz-user-filter-summary');
     if (summary) {
-      const conflictCount = authzUsers.filter((user) => authzUserHealth(authzUserDetails.get(user.email)).conflict).length;
-      const expiredCount = authzUsers.filter((user) => authzUserHealth(authzUserDetails.get(user.email)).expired).length;
+      const conflictCount = authzUsers.filter((user) => authzUserHealth(authzUserDetails.get(authzUserKey(user))).conflict).length;
+      const expiredCount = authzUsers.filter((user) => authzUserHealth(authzUserDetails.get(authzUserKey(user))).expired).length;
       summary.textContent = `${filtered.length}/${authzUsers.length} nhân sự · ${expiredCount} có role hết hạn · ${conflictCount} có xung đột DENY`;
     }
   }
@@ -8864,11 +8869,11 @@ import { state } from './js/state.js';
       ? (approvalsResponse.data.items || []).filter((item) => item.workflowType === 'EVALUATION')
       : [];
     const detailResponses = await Promise.all(authzUsers.map(async (user) => ({
-      email: user.email,
-      response: await api(`/admin/authorization/users/${encodeURIComponent(user.email)}`),
+      userId: authzUserKey(user),
+      response: await api(`/admin/authorization/users/${encodeURIComponent(authzUserKey(user))}`),
     })));
     authzUserDetails = new Map(detailResponses.filter((item) => item.response.ok)
-      .map((item) => [item.email, item.response.data]));
+      .map((item) => [item.userId, item.response.data]));
     renderAuthzUserFilters();
     renderFilteredAuthzUsers();
     renderAuthzRoleCatalog();
@@ -8879,7 +8884,7 @@ import { state } from './js/state.js';
     showAuthzState(authzUsers.length || authzCatalog.roles.length ? 'ready' : 'empty',
       authzUsers.length || authzCatalog.roles.length ? 'Sẵn sàng' : 'Chưa có dữ liệu phân quyền.');
     if (!authzSelectedRole && authzCatalog.roles.length) await loadAuthzRole(authzCatalog.roles[0].roleCode);
-    if (!authzSelectedUser && authzUsers.length) await loadAuthzUser(authzUsers[0].email);
+    if (!authzSelectedUser && authzUsers.length) await loadAuthzUser(authzUserKey(authzUsers[0]));
   }
 
   function renderAuthzRoleCatalog() {
@@ -9138,16 +9143,16 @@ import { state } from './js/state.js';
   }
 
   function renderAuthzUserSelects() {
-    const choices = authzUsers.map((user) => ({ value: user.email, label: `${user.display_name || user.email} · ${user.email}` }));
+    const choices = authzUsers.map((user) => ({ value: authzUserKey(user), label: `${user.display_name || user.email} · ${user.email}` }));
     fillSelect($('authz-scope-user'), choices, authzSelectedUser);
     if (authzCatalog) {
       fillSelect($('authz-scope-role'), [{ value: '', label: 'Override trực tiếp người dùng' }, ...authzCatalog.roles.map((role) => ({ value: role.roleCode, label: role.displayLabel }))], '');
     }
   }
 
-  async function loadAuthzUser(email) {
+  async function loadAuthzUser(userId) {
     const requestSequence = ++authzUserRequestSequence;
-    if (authzUnsaved && authzSelectedUser && authzSelectedUser !== email) {
+    if (authzUnsaved && authzSelectedUser && authzSelectedUser !== userId) {
       const discard = await confirmAction({
         title: 'Bỏ bản nháp phân vai?', message: 'Các thay đổi role và validity window chưa lưu sẽ bị mất.',
         cancelLabel: 'Tiếp tục chỉnh sửa', confirmLabel: 'Bỏ bản nháp', destructive: true,
@@ -9156,26 +9161,26 @@ import { state } from './js/state.js';
       if (!discard) return false;
       setAuthzUnsaved(false);
     }
-    const response = await api(`/admin/authorization/users/${encodeURIComponent(email)}`);
+    const response = await api(`/admin/authorization/users/${encodeURIComponent(userId)}`);
     if (requestSequence !== authzUserRequestSequence) return false;
     if (!response.ok) { showAuthzState('error', authzErrorMessage(response)); return false; }
-    authzSelectedUser = email;
+    authzSelectedUser = response.data.user.userId || response.data.user.user_id || userId;
     authzUserDetail = response.data;
-    authzUserDetails.set(email, response.data);
+    authzUserDetails.set(authzSelectedUser, response.data);
     authzScopeDrafts = authzUserDetail.scopes.filter((scope) => scope.source === 'MANUAL' && scope.active).map((scope) => ({ ...scope }));
     $('authz-user-role-reason').value = '';
     $('authz-user-role-confirm').value = '';
     renderAuthzUserDetail();
     renderAuthzScopes();
     renderAuthzUserSelects();
-    if ($('authz-scope-user')) $('authz-scope-user').value = email;
+    if ($('authz-scope-user')) $('authz-scope-user').value = authzSelectedUser;
     renderFilteredAuthzUsers();
     setAuthzUnsaved(false);
     return true;
   }
 
-  async function openAuthzUserEditor(email, trigger = null) {
-    const loaded = await loadAuthzUser(email);
+  async function openAuthzUserEditor(userId, trigger = null) {
+    const loaded = await loadAuthzUser(userId);
     if (!loaded) return;
     setAuthzDrawerState('role', false, null, false);
     setAuthzDrawerState('user', true, trigger);
@@ -9266,12 +9271,12 @@ import { state } from './js/state.js';
       effective.appendChild(list);
     }
     effective.appendChild(el('p', { className: 'authz-deny-wins', text: 'DENY_WINS: nếu cùng quyền có cả ALLOW và DENY, kết quả cuối cùng luôn là từ chối.' }));
-    if (authzSelectedUser === state.email) effective.appendChild(el('p', {
+    if (authzSelectedUser === state.userId) effective.appendChild(el('p', {
       className: 'authz-warning',
       text: 'Bạn đang chỉnh quyền của chính mình. Backend sẽ chặn mọi thay đổi làm tăng quyền hoặc phạm vi.',
       attrs: { role: 'note' },
     }));
-    $('authz-user-role-confirm').placeholder = requiredConfirmation('ASSIGN_ROLES', authzSelectedUser);
+    $('authz-user-role-confirm').placeholder = requiredConfirmation('ASSIGN_ROLES', authzUserDetail.user.email);
   }
 
   function renderAuthzScopes() {
@@ -9305,7 +9310,7 @@ import { state } from './js/state.js';
       const values = conflicts.get(key) || new Set(); values.add(scope.effect); conflicts.set(key, values);
     });
     [...conflicts].filter(([, effects]) => effects.size > 1).forEach(([key]) => preview.appendChild(el('p', { text: `${key}: DENY sẽ thắng ALLOW.` })));
-    $('authz-scope-confirm').placeholder = requiredConfirmation('ASSIGN_SCOPE', authzSelectedUser || 'email');
+    $('authz-scope-confirm').placeholder = requiredConfirmation('ASSIGN_SCOPE', authzUserDetail?.user?.email || 'email');
   }
 
   function renderApprovalAssignments() {
@@ -11972,13 +11977,14 @@ import { state } from './js/state.js';
       return;
     }
     items.forEach((u) => {
-      const detail = authzUserDetails.get(u.email);
+      const userId = authzUserKey(u);
+      const detail = authzUserDetails.get(userId);
       const health = authzUserHealth(detail);
       const tr = el('tr', { attrs: {
         tabindex: '0',
-        'data-authz-user-email': u.email,
+        'data-authz-user-id': userId,
         'aria-label': `Mở phân quyền của ${u.email}`,
-        ...(authzSelectedUser === u.email && authzUserEditorOpen ? { 'aria-current': 'true' } : {}),
+        ...(authzSelectedUser === userId && authzUserEditorOpen ? { 'aria-current': 'true' } : {}),
       } });
       const tdPerson = el('td');
       tdPerson.appendChild(el('strong', { text: u.display_name || u.email }));
@@ -12011,20 +12017,20 @@ import { state } from './js/state.js';
       tr.appendChild(tdStatus);
       const tdAct = el('td', { className: 'table-action-cell text-right' });
       const rowMenu = RowActionGroup([
-        actionDescriptor('authorization.tab_open', () => openAuthzUserEditor(u.email, tr), null, { label: 'Điều chỉnh', announceSuccess: false }),
+        actionDescriptor('authorization.tab_open', () => openAuthzUserEditor(userId, tr), null, { label: 'Điều chỉnh', announceSuccess: false }),
       ], u.is_active
-        ? (u.email !== state.email ? [actionDescriptor('authorization.user_deactivate', () => deactivateUser(u.email), null, { confirm: false, objectIdentity: u.email })] : [])
-        : [actionDescriptor('authorization.user_reactivate', () => reactivateUser(u.email), null, { confirm: false, objectIdentity: u.email })]);
+        ? (userId !== state.userId ? [actionDescriptor('authorization.user_deactivate', () => deactivateUser(userId, u.email), null, { confirm: false, objectIdentity: u.email })] : [])
+        : [actionDescriptor('authorization.user_reactivate', () => reactivateUser(userId, u.email), null, { confirm: false, objectIdentity: u.email })]);
       tdAct.appendChild(rowMenu);
       tr.appendChild(tdAct);
       tr.addEventListener('click', (event) => {
         if (event.target.closest('button')) return;
-        openAuthzUserEditor(u.email, tr);
+        openAuthzUserEditor(userId, tr);
       });
       tr.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          openAuthzUserEditor(u.email, tr);
+          openAuthzUserEditor(userId, tr);
         }
       });
       tbody.appendChild(tr);
@@ -12669,7 +12675,7 @@ import { state } from './js/state.js';
     }
   }, { event: 'submit', preventDefault: true, trigger: $('btn-submit-add-user'), announceSuccess: false });
 
-  async function deactivateUser(email) {
+  async function deactivateUser(userId, email = userId) {
     const confirmed = await confirmAction({
       title: 'Khóa người dùng?',
       message: email + ' sẽ không thể đăng nhập cho đến khi được mở lại.',
@@ -12680,7 +12686,7 @@ import { state } from './js/state.js';
       reasonPlaceholder: `Lý do khóa ${email}`,
     });
     if (!confirmed) return;
-    const r = await api('/admin/users/' + encodeURIComponent(email), { method: 'DELETE', body: { reason: confirmed } });
+    const r = await api('/admin/users/' + encodeURIComponent(userId), { method: 'DELETE', body: { reason: confirmed } });
     if (r.ok) {
       showToast('Đã khóa người dùng ' + email + '.', 'ok');
       loadAdmin();
@@ -12689,7 +12695,7 @@ import { state } from './js/state.js';
     }
   }
 
-  async function reactivateUser(email) {
+  async function reactivateUser(userId, email = userId) {
     const reason = await confirmAction({
       title: 'Mở lại tài khoản?',
       message: `${email} sẽ có thể đăng nhập lại với nguyên vai trò và phạm vi hiện có.`,
@@ -12699,7 +12705,7 @@ import { state } from './js/state.js';
       reasonPlaceholder: `Lý do mở lại ${email}`,
     });
     if (!reason) return;
-    const response = await api(`/admin/users/${encodeURIComponent(email)}/reactivate`, {
+    const response = await api(`/admin/users/${encodeURIComponent(userId)}/reactivate`, {
       method: 'PATCH', body: { reason },
     });
     if (response.ok) {

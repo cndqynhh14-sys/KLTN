@@ -31,8 +31,8 @@ class EvaluationParticipantRepository {
       roundParticipants: db.prepare(`SELECT * FROM evaluation_participants
         WHERE round_id = ? AND active = 1
         ORDER BY participant_role, id`),
-      usersByEmail: db.prepare(`SELECT email, display_name FROM users
-        WHERE lower(email) = lower(?) ORDER BY email`),
+      usersByIdentifier: db.prepare(`SELECT user_id, email, display_name FROM users
+        WHERE user_id = ? OR lower(email) = lower(?) ORDER BY email`),
       deleteTicketProjection: db.prepare(`DELETE FROM evaluation_participants
         WHERE ticket_id = ? AND participant_role IN ('OWNER', 'QA_LEAD', 'QA_SUPPORT', 'EVALUATOR')`),
       deleteRoundEvaluator: db.prepare(`DELETE FROM evaluation_participants
@@ -40,11 +40,11 @@ class EvaluationParticipantRepository {
       deleteRoundAttendees: db.prepare(`DELETE FROM evaluation_participants
         WHERE round_id = ? AND participant_role = 'ATTENDEE'`),
       insert: db.prepare(`INSERT INTO evaluation_participants (
-        ticket_id, round_id, user_id, display_name, participant_role,
-        opening_meeting, closing_meeting, assigned_at, assigned_by
+        ticket_id, round_id, user_id, principal_id, display_name, participant_role,
+        opening_meeting, closing_meeting, assigned_at, assigned_by, assigned_by_user_id
       ) VALUES (
-        @ticket_id, @round_id, @user_id, @display_name, @participant_role,
-        @opening_meeting, @closing_meeting, @assigned_at, @assigned_by
+        @ticket_id, @round_id, @user_id, @principal_id, @display_name, @participant_role,
+        @opening_meeting, @closing_meeting, @assigned_at, @assigned_by, @assigned_by_user_id
       )`),
     };
   }
@@ -52,7 +52,7 @@ class EvaluationParticipantRepository {
   user(value) {
     const normalized = String(value || '').trim();
     if (!normalized) return null;
-    const rows = this.statements.usersByEmail.all(normalized);
+    const rows = this.statements.usersByIdentifier.all(normalized, normalized);
     return rows.length === 1 ? rows[0] : null;
   }
 
@@ -107,18 +107,21 @@ class EvaluationParticipantRepository {
   insertParticipant({ ticketId = null, roundId = null, identity = null, displayName = null,
     role, opening = false, closing = false, assignedAt = null, assignedBy = null }) {
     const user = this.user(identity);
+    const actor = this.user(assignedBy);
     const name = String(displayName || user?.display_name || user?.email || identity || '').trim();
     if (!name) return;
     this.statements.insert.run({
       ticket_id: ticketId,
       round_id: roundId,
       user_id: user?.email || null,
+      principal_id: user?.user_id || null,
       display_name: name,
       participant_role: role,
       opening_meeting: opening ? 1 : 0,
       closing_meeting: closing ? 1 : 0,
       assigned_at: assignedAt || new Date().toISOString(),
-      assigned_by: this.actor(assignedBy),
+      assigned_by: actor?.email || null,
+      assigned_by_user_id: actor?.user_id || null,
     });
   }
 

@@ -87,7 +87,7 @@ function latestMigration(db) {
 function assertPreflight(db, workbook) {
   migrationStatus(db, { migrationsDir: MIGRATIONS_DIR });
   const migration = latestMigration(db);
-  if (!['0033', '0034'].includes(migration)) throw new Error(`unexpected_migration:${migration}`);
+  if (!['0033', '0034', '0035'].includes(migration)) throw new Error(`unexpected_migration:${migration}`);
   const before = counts(db);
   if (before.evaluation_tickets !== 0
     || before.historical_round_1 !== 0

@@ -244,6 +244,8 @@ function createAuthRouter(options = {}) {
       });
 
       return res.json({
+        userId: identity.userId,
+        user_id: identity.userId,
         email,
         isAdmin: identity.isAdmin,
         role: identity.role,
@@ -282,6 +284,8 @@ function createAuthRouter(options = {}) {
       ? 'development_relaxed'
       : 'guarded';
     res.json({
+      userId: identity.userId,
+      user_id: identity.userId,
       email: identity.email,
       isAdmin: !!identity.isAdmin,
       role: identity.role,

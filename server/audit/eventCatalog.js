@@ -1,6 +1,6 @@
 'use strict';
 
-const AUDIT_CATALOG_VERSION = '1.7.0';
+const AUDIT_CATALOG_VERSION = '1.8.0';
 const AUDIT_CATEGORIES = Object.freeze([
   'auth', 'authz', 'user', 'role', 'supplier', 'dossier', 'evaluation',
   'approval', 'question', 'report', 'scoring', 'import', 'export',

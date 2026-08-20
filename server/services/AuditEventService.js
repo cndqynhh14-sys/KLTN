@@ -45,15 +45,22 @@ class AuditEventService {
     this.clock = options.clock || (() => new Date());
     this.insert = db.prepare(`INSERT INTO audit_events (
       occurred_at, catalog_version, category, event_name, severity,
-      actor_user_id, actor_roles_json, request_id, correlation_id, uat_run_id,
+      actor_user_id, actor_principal_id, actor_roles_json, request_id, correlation_id, uat_run_id,
       entity_type, entity_id, action, outcome, reason_code, summary, metadata_json,
       idempotency_key, previous_hash, event_hash
     ) VALUES (
       @occurred_at, @catalog_version, @category, @event_name, @severity,
-      @actor_user_id, @actor_roles_json, @request_id, @correlation_id, @uat_run_id,
+      @actor_user_id, @actor_principal_id, @actor_roles_json, @request_id, @correlation_id, @uat_run_id,
       @entity_type, @entity_id, @action, @outcome, @reason_code, @summary, @metadata_json,
       @idempotency_key, @previous_hash, @event_hash
     )`);
+  }
+
+  actorIdentity(identifier) {
+    if (!identifier) return null;
+    const value = String(identifier).trim();
+    return this.db.prepare(`SELECT user_id, email FROM users
+      WHERE user_id = ? OR lower(email) = lower(?)`).get(value, value) || null;
   }
 
   actorRoles(actorUserId, suppliedRoles) {
@@ -62,8 +69,9 @@ class AuditEventService {
     try {
       return this.db.prepare(`SELECT DISTINCT r.role_code FROM user_roles ur
         JOIN roles r ON r.id = ur.role_id
-        WHERE ur.user_id = ? AND ur.active = 1 AND r.active = 1
-        ORDER BY r.role_code`).all(actorUserId).map((row) => row.role_code);
+        WHERE (ur.principal_id = ? OR (ur.principal_id IS NULL AND lower(ur.user_id) = lower(?)))
+          AND ur.active = 1 AND r.active = 1
+        ORDER BY r.role_code`).all(actorUserId, actorUserId).map((row) => row.role_code);
     } catch {
       return [];
     }
@@ -81,14 +89,16 @@ class AuditEventService {
       metadata.changed_fields = Object.keys(changes).sort();
       metadata.changes = changes;
     }
+    const actor = this.actorIdentity(event.actorPrincipalId || event.actorUserId);
     const row = {
       occurred_at: this.clock().toISOString(),
       catalog_version: AUDIT_CATALOG_VERSION,
       category: definition.category,
       event_name: definition.name,
       severity: event.severity || definition.severity,
-      actor_user_id: event.actorUserId ? sanitizeString(event.actorUserId, 320).toLowerCase() : null,
-      actor_roles_json: canonicalJson(this.actorRoles(event.actorUserId, event.actorRoles)),
+      actor_user_id: actor?.email || (event.actorUserId ? sanitizeString(event.actorUserId, 320).toLowerCase() : null),
+      actor_principal_id: actor?.user_id || (event.actorPrincipalId ? sanitizeString(event.actorPrincipalId, 64) : null),
+      actor_roles_json: canonicalJson(this.actorRoles(actor?.user_id || event.actorUserId, event.actorRoles)),
       request_id: sanitizeString(event.requestId || context.request_id || '', 128) || null,
       correlation_id: sanitizeString(event.correlationId || context.correlation_id || '', 128) || null,
       uat_run_id: sanitizeString(event.uatRunId || context.uat_run_id || '', 128) || null,
@@ -134,7 +144,7 @@ class AuditEventService {
     const failures = [];
     let previousHash = GENESIS_HASH;
     for (const row of rows) {
-      const expected = hashPayload({
+      const payload = {
         occurred_at: row.occurred_at,
         catalog_version: row.catalog_version,
         category: row.category,
@@ -154,7 +164,11 @@ class AuditEventService {
         metadata_json: row.metadata_json,
         idempotency_key: row.idempotency_key,
         previous_hash: row.previous_hash,
-      });
+      };
+      if (String(row.catalog_version).localeCompare('1.8.0', undefined, { numeric: true }) >= 0) {
+        payload.actor_principal_id = row.actor_principal_id;
+      }
+      const expected = hashPayload(payload);
       if (row.previous_hash !== previousHash || row.event_hash !== expected) {
         failures.push({ id: row.id, previous_hash_valid: row.previous_hash === previousHash, event_hash_valid: row.event_hash === expected });
       }

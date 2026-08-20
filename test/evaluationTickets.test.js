@@ -92,7 +92,7 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     server = appInfo.server;
     const token = signToken({ email: 'admin@masangroup.com', isAdmin: true, role: 'Admin' }, 3600);
     const tokenClaims = jwt.decode(token);
-    assert.equal(tokenClaims.sub, 'admin@masangroup.com');
+    assert.equal(tokenClaims.sub, db.prepare('SELECT user_id FROM users WHERE email = ?').get('admin@masangroup.com').user_id);
     assert.equal(typeof tokenClaims.sid, 'string');
     assert.equal(Number.isInteger(tokenClaims.av), true);
     for (const forbiddenClaim of ['email', 'isAdmin', 'role', 'displayName', 'permissions']) {

@@ -5,8 +5,10 @@ class WorkflowHistoryRepository {
     this.db = db;
     this.statements = {
       insert: db.prepare(`
-        INSERT INTO workflow_history (ticket_id, actor_user_id, actor_role, action, from_status, to_status, comment)
-        VALUES (@ticket_id, @actor_user_id, @actor_role, @action, @from_status, @to_status, @comment)
+        INSERT INTO workflow_history
+          (ticket_id, actor_user_id, actor_principal_id, actor_role, action, from_status, to_status, comment)
+        VALUES
+          (@ticket_id, @actor_user_id, @actor_principal_id, @actor_role, @action, @from_status, @to_status, @comment)
       `),
       listByTicket: db.prepare('SELECT * FROM workflow_history WHERE ticket_id = ? ORDER BY created_at DESC, id DESC LIMIT 50'),
       rejectionHistory: db.prepare(`
@@ -29,6 +31,7 @@ class WorkflowHistoryRepository {
     return this.statements.insert.run({
       ticket_id: ticketId,
       actor_user_id: user.email,
+      actor_principal_id: user.userId || user.id || null,
       actor_role: user.primaryRoleCode || user.roleCodes?.[0] || null,
       action,
       from_status: fromStatus || null,

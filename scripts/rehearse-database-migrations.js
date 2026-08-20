@@ -295,7 +295,7 @@ async function runRehearsal({ outputDir, withUat = false }) {
     const retryPending = retry.results.filter((item) => item.state !== 'already-applied').length;
     const hardPass = backupChecks.integrity_check === 'ok'
       && backupChecks.foreign_key_violations === 0
-      && JSON.stringify(appliedIds) === JSON.stringify(['0030', '0031', '0032', '0033', '0034'])
+      && JSON.stringify(appliedIds) === JSON.stringify(['0030', '0031', '0032', '0033', '0034', '0035'])
       && retryPending === 0
       && parity.stage4c.status === 'PASS'
       && parity.stage4d.status !== 'FAILED'

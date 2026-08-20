@@ -308,6 +308,8 @@ test('valid approval assignment publishes its fixture preview and audit record',
 test('Phase 2 user authorization save is atomic across roles and scopes', () => {
   const { db, service } = fixture();
   try {
+    const targetUserId = db.prepare('SELECT user_id FROM users WHERE email = ?').get(TARGET).user_id;
+    assert.equal(service.userDetail(targetUserId).user.email, TARGET);
     const rolesBefore = db.prepare(`SELECT r.role_code, ur.active, ur.source
       FROM user_roles ur JOIN roles r ON r.id = ur.role_id
       WHERE ur.user_id = ? ORDER BY r.role_code`).all(TARGET);
@@ -331,7 +333,7 @@ test('Phase 2 user authorization save is atomic across roles and scopes', () => 
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM authz_change_log').get().count, historyBefore);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM audit_events').get().count, auditBefore);
 
-    const saved = service.saveUserAuthorization(TARGET, {
+    const saved = service.saveUserAuthorization(targetUserId, {
       roles: [
         { roleCode: ROLE_CODES.QLCL_SPECIALIST },
         { roleCode: ROLE_CODES.READ_ONLY_VIEWER },

@@ -80,6 +80,7 @@ class AuditReadService {
       event_name: row.event_name,
       severity: row.severity,
       actor_user_id: row.actor_user_id,
+      actor_principal_id: row.actor_principal_id,
       actor_roles: parseSafeJson(row.actor_roles_json, []),
       request_id: row.request_id,
       correlation_id: row.correlation_id,
@@ -148,7 +149,7 @@ class AuditReadService {
       };
     }
     const fields = [
-      'id', 'occurred_at', 'category', 'event_name', 'severity', 'actor_user_id', 'actor_roles',
+      'id', 'occurred_at', 'category', 'event_name', 'severity', 'actor_user_id', 'actor_principal_id', 'actor_roles',
       'request_id', 'correlation_id', 'uat_run_id', 'entity_type', 'entity_id', 'action',
       'outcome', 'reason_code', 'summary', 'retention_class', 'metadata',
     ];

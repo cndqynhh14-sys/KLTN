@@ -19,7 +19,7 @@ function updateContext(values) {
 
 function actorContext(user) {
   if (!user) return null;
-  const stableIdentity = String(user.id || user.email || user.sub || 'unknown').trim().toLowerCase();
+  const stableIdentity = String(user.userId || user.id || user.email || user.sub || 'unknown').trim().toLowerCase();
   return {
     id_hash: crypto.createHash('sha256').update(stableIdentity).digest('hex').slice(0, 16),
     role: user.primaryRoleCode || user.roleCodes?.[0] || null,

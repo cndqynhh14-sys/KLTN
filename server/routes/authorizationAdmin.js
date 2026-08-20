@@ -45,6 +45,7 @@ function createAuthorizationAdminRouter(options = {}) {
 
   const context = (req) => ({
     actor: req.user.email,
+    actorUserId: req.user.userId,
     requestId: req.requestId,
     correlationId: req.correlationId,
   });
@@ -109,10 +110,12 @@ function createAuthorizationAdminRouter(options = {}) {
   router.put('/roles/:roleCode/permissions', asyncBoundary((req, res) => res.json(service.setRolePermissions(req.params.roleCode, req.body || {}, context(req)))));
   router.put('/roles/:roleCode/configuration', asyncBoundary((req, res) => res.json(service.saveRoleConfiguration(req.params.roleCode, req.body || {}, context(req)))));
 
-  router.get('/users/:email', (req, res) => res.json(service.userDetail(req.params.email)));
-  router.put('/users/:email/roles', asyncBoundary((req, res) => res.json(service.setUserRoles(req.params.email, req.body || {}, context(req)))));
-  router.put('/users/:email/scopes', asyncBoundary((req, res) => res.json(service.setUserScopes(req.params.email, req.body || {}, context(req)))));
-  router.put('/users/:email/authorization', asyncBoundary((req, res) => res.json(service.saveUserAuthorization(req.params.email, req.body || {}, context(req)))));
+  // :userId is canonical. Email identifiers remain accepted by the service for
+  // clients using the Phase 2 URL shape.
+  router.get('/users/:userId', (req, res) => res.json(service.userDetail(req.params.userId)));
+  router.put('/users/:userId/roles', asyncBoundary((req, res) => res.json(service.setUserRoles(req.params.userId, req.body || {}, context(req)))));
+  router.put('/users/:userId/scopes', asyncBoundary((req, res) => res.json(service.setUserScopes(req.params.userId, req.body || {}, context(req)))));
+  router.put('/users/:userId/authorization', asyncBoundary((req, res) => res.json(service.saveUserAuthorization(req.params.userId, req.body || {}, context(req)))));
 
   router.get('/approval-assignments', (req, res) => res.json({ items: service.listApprovalAssignments() }));
   router.post('/approval-assignments/preview', (req, res) => res.json(service.previewApprovalAssignment(req.body || {})));

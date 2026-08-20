@@ -298,7 +298,10 @@ class EvaluationTicketService {
     if (!isOperator) return { where: '0 = 1', params: {} };
     const scope = this.scopeForUser(user, alias);
     return {
-      where: `(${scope.where}) AND LOWER(COALESCE(${alias}.created_by, '')) = LOWER(@scope_user_id)`,
+      where: `(${scope.where}) AND (
+        COALESCE(${alias}.created_by_user_id, '') = @scope_user_id
+        OR LOWER(COALESCE(${alias}.created_by, '')) = LOWER(@scope_user_email)
+      )`,
       params: scope.params,
     };
   }

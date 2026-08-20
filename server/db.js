@@ -640,7 +640,7 @@ authorizationService.setAuditEventService(auditEventService);
 // Prepared statements — created once, reused per request.
 const stmts = {
   // ---- Auth ----
-  getUser: db.prepare('SELECT email, is_active, display_name, authz_version FROM users WHERE email = ? AND is_active = 1'),
+  getUser: db.prepare('SELECT user_id, email, is_active, display_name, authz_version FROM users WHERE email = ? AND is_active = 1'),
   upsertUser: db.prepare(
     `INSERT INTO users (email, is_active, display_name, created_by)
      VALUES (@email, 1, @display_name, @created_by)
@@ -650,10 +650,10 @@ const stmts = {
   ),
   deactivateUser: db.prepare('UPDATE users SET is_active = 0 WHERE email = ?'),
   reactivateUser: db.prepare('UPDATE users SET is_active = 1 WHERE email = ? AND is_active = 0'),
-  listUsers: db.prepare(`SELECT u.email,
+  listUsers: db.prepare(`SELECT u.user_id, u.email,
       CASE WHEN EXISTS (
         SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-        WHERE ur.user_id = u.email AND ur.active = 1 AND r.active = 1
+        WHERE (ur.principal_id = u.user_id OR (ur.principal_id IS NULL AND ur.user_id = u.email)) AND ur.active = 1 AND r.active = 1
           AND r.role_code = 'SYS_ADMIN'
       ) THEN 1 ELSE 0 END AS is_admin,
       CASE

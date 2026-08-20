@@ -16,8 +16,8 @@ const { sanitizeString } = require('../observability/redact');
 const logger = require('../logger');
 
 const router = express.Router();
-const getUserAuditRow = db.prepare(`SELECT email, is_active, display_name, authz_version
-  FROM users WHERE email = ?`);
+const getUserAuditRow = db.prepare(`SELECT user_id, email, is_active, display_name, authz_version
+  FROM users WHERE user_id = ? OR lower(email) = lower(?)`);
 const getPrimaryRoleCode = db.prepare(`SELECT r.role_code
   FROM user_roles ur JOIN roles r ON r.id = ur.role_id
   WHERE ur.user_id = ? AND ur.active = 1 AND r.active = 1
@@ -57,6 +57,11 @@ function userAuditSnapshot(row) {
     display_name: row.display_name || null,
     role_code: roleCode,
   };
+}
+
+function resolveUser(identifier) {
+  const value = String(identifier || '').trim();
+  return getUserAuditRow.get(value, value) || null;
 }
 
 function requireRestoreToken(req, res, next) {
@@ -129,7 +134,7 @@ router.post('/users', (req, res) => {
   if (!ROLE_VALUES.includes(role)) return res.status(400).json({ error: 'invalid_role' });
   if (!reason) return res.status(400).json({ error: 'change_reason_required' });
 
-  const before = userAuditSnapshot(getUserAuditRow.get(email));
+  const before = userAuditSnapshot(resolveUser(email));
   let identity;
   try {
     stmts.upsertUser.run({ email, display_name, created_by: req.user.email });
@@ -146,7 +151,7 @@ router.post('/users', (req, res) => {
     }
     throw error;
   }
-  const stored = getUserAuditRow.get(email);
+  const stored = resolveUser(email);
   const after = userAuditSnapshot(stored);
   logAccess({
     email: req.user.email,
@@ -163,18 +168,20 @@ router.post('/users', (req, res) => {
     },
     ip: req.ip,
   });
-  res.json({ ok: true, email, role: identity.role, is_admin: identity.isAdmin, authz_version: Number(stored.authz_version) });
+  res.json({ ok: true, userId: stored.user_id, user_id: stored.user_id, email, role: identity.role, is_admin: identity.isAdmin, authz_version: Number(stored.authz_version) });
 });
 
 // DELETE /admin/users/:email — deactivate (soft delete). Users giữ lại trong access_log.
-router.delete('/users/:email', (req, res) => {
-  const email = String(req.params.email || '').toLowerCase();
+router.delete('/users/:userId', (req, res) => {
+  const target = resolveUser(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'not_found' });
+  const email = target.email;
   if (email === req.user.email) {
     return res.status(400).json({ error: 'cannot_deactivate_self' });
   }
   const reason = normalizeChangeReason(req.body?.reason);
   if (!reason) return res.status(400).json({ error: 'change_reason_required' });
-  const beforeRow = getUserAuditRow.get(email);
+  const beforeRow = target;
   const before = userAuditSnapshot(beforeRow);
   let info;
   try {
@@ -186,7 +193,7 @@ router.delete('/users/:email', (req, res) => {
     throw error;
   }
   if (info.changes === 0) return res.status(404).json({ error: 'not_found' });
-  const stored = getUserAuditRow.get(email);
+  const stored = resolveUser(target.user_id);
   logAccess({
     email: req.user.email,
     action: 'USER_DEACTIVATE',
@@ -203,17 +210,18 @@ router.delete('/users/:email', (req, res) => {
 });
 
 // PATCH /admin/users/:email/reactivate — restore login access without changing roles/scopes.
-router.patch('/users/:email/reactivate', (req, res) => {
-  const email = String(req.params.email || '').trim().toLowerCase();
+router.patch('/users/:userId/reactivate', (req, res) => {
+  const target = resolveUser(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'not_found' });
+  const email = target.email;
   const reason = normalizeChangeReason(req.body?.reason);
   if (!reason) return res.status(400).json({ error: 'change_reason_required' });
-  const beforeRow = getUserAuditRow.get(email);
-  if (!beforeRow) return res.status(404).json({ error: 'not_found' });
+  const beforeRow = target;
   if (beforeRow.is_active) return res.status(409).json({ error: 'account_already_active' });
   const before = userAuditSnapshot(beforeRow);
   const info = stmts.reactivateUser.run(email);
   if (info.changes === 0) return res.status(409).json({ error: 'account_state_conflict' });
-  const stored = getUserAuditRow.get(email);
+  const stored = resolveUser(email);
   logAccess({
     email: req.user.email,
     action: 'USER_REACTIVATE',
