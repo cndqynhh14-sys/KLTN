@@ -649,6 +649,7 @@ const stmts = {
        display_name = COALESCE(excluded.display_name, users.display_name)`
   ),
   deactivateUser: db.prepare('UPDATE users SET is_active = 0 WHERE email = ?'),
+  reactivateUser: db.prepare('UPDATE users SET is_active = 1 WHERE email = ? AND is_active = 0'),
   listUsers: db.prepare(`SELECT u.email,
       CASE WHEN EXISTS (
         SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id

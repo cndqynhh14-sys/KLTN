@@ -160,7 +160,42 @@ test('admin user upsert and deactivation require a bounded reason and record ver
     assert.deepEqual(deleteMetadata.changed_fields, ['active']);
     assert.deepEqual(deleteMetadata.changes.active, { before: true, after: false });
 
-    for (const action of ['USER_UPSERT', 'USER_DEACTIVATE']) {
+    const assignmentsBeforeReactivate = {
+      roles: db.prepare(`SELECT role_id, active, valid_from, valid_until, source
+        FROM user_roles WHERE user_id = ? ORDER BY id`).all(target),
+      scopes: db.prepare(`SELECT role_id, scope_type, scope_value, effect, active, valid_from, valid_until, source
+        FROM user_scope_assignments WHERE user_id = ? ORDER BY id`).all(target),
+    };
+    const reactivated = await requestJson(baseUrl, `/admin/users/${encodeURIComponent(target)}/reactivate`, token, {
+      method: 'PATCH',
+      requestId: 'request-admin-users-reactivate-0001',
+      body: JSON.stringify({ reason: 'Reactivate the approved synthetic account after access review' }),
+    });
+    assert.equal(reactivated.response.status, 200);
+    const reactivatedUser = db.prepare(`SELECT is_active, authz_version
+      FROM users WHERE email = ?`).get(target);
+    assert.equal(reactivatedUser.is_active, 1);
+    assert.ok(reactivatedUser.authz_version > deactivatedUser.authz_version);
+    assert.deepEqual({
+      roles: db.prepare(`SELECT role_id, active, valid_from, valid_until, source
+        FROM user_roles WHERE user_id = ? ORDER BY id`).all(target),
+      scopes: db.prepare(`SELECT role_id, scope_type, scope_value, effect, active, valid_from, valid_until, source
+        FROM user_scope_assignments WHERE user_id = ? ORDER BY id`).all(target),
+    }, assignmentsBeforeReactivate);
+    const reactivateAudit = db.prepare(`SELECT metadata_json, request_id
+      FROM audit_events WHERE event_name = 'user.account.reactivated' ORDER BY id DESC LIMIT 1`).get();
+    assert.equal(reactivateAudit.request_id, 'request-admin-users-reactivate-0001');
+    const reactivateMetadata = JSON.parse(reactivateAudit.metadata_json);
+    assert.equal(reactivateMetadata.reason, 'Reactivate the approved synthetic account after access review');
+    assert.deepEqual(reactivateMetadata.changes.active, { before: false, after: true });
+
+    const alreadyActive = await requestJson(baseUrl, `/admin/users/${encodeURIComponent(target)}/reactivate`, token, {
+      method: 'PATCH', body: JSON.stringify({ reason: 'Reject duplicate account reactivation attempts safely' }),
+    });
+    assert.equal(alreadyActive.response.status, 409);
+    assert.equal(alreadyActive.body.error, 'account_already_active');
+
+    for (const action of ['USER_UPSERT', 'USER_DEACTIVATE', 'USER_REACTIVATE']) {
       const access = db.prepare('SELECT details FROM access_log WHERE action = ? ORDER BY id DESC LIMIT 1').get(action);
       const details = JSON.parse(access.details);
       assert.ok(details.reason.length >= 8);

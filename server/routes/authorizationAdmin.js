@@ -94,20 +94,30 @@ function createAuthorizationAdminRouter(options = {}) {
   );
 
   router.get('/catalog', (req, res) => res.json(service.catalog()));
+  router.get('/export.xlsx', asyncBoundary((req, res) => {
+    const result = service.exportWorkbook(req.query || {}, context(req));
+    const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+    res.setHeader('Content-Type', XLSX_MIME);
+    res.setHeader('Content-Disposition', `attachment; filename="authorization-${stamp}.xlsx"`);
+    res.setHeader('X-Authorization-Row-Count', String(result.rowCount));
+    res.send(result.buffer);
+  }));
   router.get('/roles/:roleCode', (req, res) => res.json(service.roleDetail(req.params.roleCode)));
   router.post('/roles', asyncBoundary((req, res) => res.status(201).json(service.createRole(req.body || {}, context(req)))));
   router.patch('/roles/:roleCode', asyncBoundary((req, res) => res.json(service.updateRole(req.params.roleCode, req.body || {}, context(req)))));
   router.delete('/roles/:roleCode', asyncBoundary((req, res) => res.json(service.deleteRole(req.params.roleCode, req.body || {}, context(req)))));
   router.put('/roles/:roleCode/permissions', asyncBoundary((req, res) => res.json(service.setRolePermissions(req.params.roleCode, req.body || {}, context(req)))));
+  router.put('/roles/:roleCode/configuration', asyncBoundary((req, res) => res.json(service.saveRoleConfiguration(req.params.roleCode, req.body || {}, context(req)))));
 
   router.get('/users/:email', (req, res) => res.json(service.userDetail(req.params.email)));
   router.put('/users/:email/roles', asyncBoundary((req, res) => res.json(service.setUserRoles(req.params.email, req.body || {}, context(req)))));
   router.put('/users/:email/scopes', asyncBoundary((req, res) => res.json(service.setUserScopes(req.params.email, req.body || {}, context(req)))));
+  router.put('/users/:email/authorization', asyncBoundary((req, res) => res.json(service.saveUserAuthorization(req.params.email, req.body || {}, context(req)))));
 
   router.get('/approval-assignments', (req, res) => res.json({ items: service.listApprovalAssignments() }));
   router.post('/approval-assignments/preview', (req, res) => res.json(service.previewApprovalAssignment(req.body || {})));
   router.post('/approval-assignments/publish', asyncBoundary((req, res) => res.json(service.publishApprovalAssignment(req.body || {}, context(req)))));
-  router.get('/history', (req, res) => res.json({ items: service.history(req.query.limit) }));
+  router.get('/history', (req, res) => res.json(service.historyPage(req.query || {})));
 
   router.use((error, req, res, next) => {
     const personnelError = error?.name === 'PersonnelImportError'

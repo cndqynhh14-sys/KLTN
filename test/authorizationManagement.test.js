@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const Database = require('better-sqlite3');
+const XLSX = require('xlsx');
 const { migrateDatabase } = require('../server/database/migrationRunner');
 const { AuditEventService } = require('../server/services/AuditEventService');
 const { AuthorizationService } = require('../server/services/AuthorizationService');
@@ -304,6 +305,129 @@ test('valid approval assignment publishes its fixture preview and audit record',
   } finally { close(db); }
 });
 
+test('Phase 2 user authorization save is atomic across roles and scopes', () => {
+  const { db, service } = fixture();
+  try {
+    const rolesBefore = db.prepare(`SELECT r.role_code, ur.active, ur.source
+      FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = ? ORDER BY r.role_code`).all(TARGET);
+    const historyBefore = db.prepare('SELECT COUNT(*) AS count FROM authz_change_log').get().count;
+    const auditBefore = db.prepare('SELECT COUNT(*) AS count FROM audit_events').get().count;
+
+    assert.throws(() => service.saveUserAuthorization(TARGET, {
+      roles: [
+        { roleCode: ROLE_CODES.QLCL_SPECIALIST },
+        { roleCode: ROLE_CODES.READ_ONLY_VIEWER },
+      ],
+      scopes: [{ roleCode: ROLE_CODES.READ_ONLY_VIEWER, scopeType: 'MCH2', scopeValue: 'not-canonical', effect: 'ALLOW' }],
+      reason: 'Reject an invalid scope without partially changing assigned roles',
+      roleConfirmation: requiredConfirmation('ASSIGN_ROLES', TARGET),
+      expectedAuthzVersion: service.userDetail(TARGET).user.authzVersion,
+    }, context()), (error) => error.code === 'invalid_mch2_id');
+
+    assert.deepEqual(db.prepare(`SELECT r.role_code, ur.active, ur.source
+      FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = ? ORDER BY r.role_code`).all(TARGET), rolesBefore);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM authz_change_log').get().count, historyBefore);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM audit_events').get().count, auditBefore);
+
+    const saved = service.saveUserAuthorization(TARGET, {
+      roles: [
+        { roleCode: ROLE_CODES.QLCL_SPECIALIST },
+        { roleCode: ROLE_CODES.READ_ONLY_VIEWER },
+      ],
+      scopes: [{ roleCode: ROLE_CODES.READ_ONLY_VIEWER, scopeType: 'REGION', scopeValue: 'MB', effect: 'ALLOW' }],
+      reason: 'Save the approved Phase 2 roles and scopes as one transaction',
+      roleConfirmation: requiredConfirmation('ASSIGN_ROLES', TARGET),
+      expectedAuthzVersion: service.userDetail(TARGET).user.authzVersion,
+    }, context());
+    assert.deepEqual(saved.roles.filter((item) => item.source === 'MANUAL' && item.active)
+      .map((item) => item.roleCode).sort(), [ROLE_CODES.QLCL_SPECIALIST, ROLE_CODES.READ_ONLY_VIEWER].sort());
+    assert.deepEqual(saved.scopes.filter((item) => item.source === 'MANUAL' && item.active)
+      .map((item) => [item.roleCode, item.scopeType, item.scopeValue, item.effect]),
+    [[ROLE_CODES.READ_ONLY_VIEWER, 'REGION', 'MB', 'ALLOW']]);
+
+    const scopeOnlySave = service.saveUserAuthorization(TARGET, {
+      roles: [
+        { roleCode: ROLE_CODES.QLCL_SPECIALIST },
+        { roleCode: ROLE_CODES.READ_ONLY_VIEWER },
+      ],
+      scopes: [{ roleCode: ROLE_CODES.READ_ONLY_VIEWER, scopeType: 'REGION', scopeValue: 'MN', effect: 'ALLOW' }],
+      reason: 'Update scopes atomically without republishing unchanged roles',
+      expectedAuthzVersion: saved.user.authzVersion,
+    }, context());
+    assert.deepEqual(scopeOnlySave.scopes.filter((item) => item.source === 'MANUAL' && item.active)
+      .map((item) => item.scopeValue), ['MN']);
+
+    assert.throws(() => service.saveUserAuthorization(TARGET, {
+      roles: [{ roleCode: ROLE_CODES.QLCL_SPECIALIST }], scopes: [],
+      reason: 'Reject a stale authorization editor without overwriting a newer save',
+      expectedAuthzVersion: 1,
+    }, context()), (error) => error.code === 'authz_version_conflict');
+  } finally { close(db); }
+});
+
+test('Phase 2 role configuration save rolls back metadata when permissions fail', () => {
+  const { db, service } = fixture();
+  try {
+    service.createRole({
+      roleCode: 'PHASE2_ATOMIC_ROLE', displayLabel: 'Phase 2 original role',
+      reason: 'Create a synthetic role for atomic configuration verification',
+    }, context());
+    const historyBefore = db.prepare('SELECT COUNT(*) AS count FROM authz_change_log').get().count;
+    assert.throws(() => service.saveRoleConfiguration('PHASE2_ATOMIC_ROLE', {
+      displayLabel: 'This label must roll back', active: true,
+      permissions: [{ permissionCode: 'UNKNOWN.PERMISSION', effect: 'ALLOW' }],
+      reason: 'Reject an invalid permission without changing role metadata',
+    }, context()), (error) => error.code === 'permission_not_found');
+    assert.equal(service.roleDetail('PHASE2_ATOMIC_ROLE').display_label, 'Phase 2 original role');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM authz_change_log').get().count, historyBefore);
+
+    const saved = service.saveRoleConfiguration('PHASE2_ATOMIC_ROLE', {
+      displayLabel: 'Phase 2 configured role', active: true,
+      permissions: [{ permissionCode: PERMISSIONS.REPORT_READ, effect: 'ALLOW' }],
+      reason: 'Publish role metadata and permissions in one transaction',
+    }, context());
+    assert.equal(saved.display_label, 'Phase 2 configured role');
+    assert.deepEqual(saved.permissions, [{ permission_code: PERMISSIONS.REPORT_READ, effect: 'ALLOW' }]);
+  } finally { close(db); }
+});
+
+test('Phase 2 history uses server filters and pagination and export produces an audited XLSX', () => {
+  const { db, service } = fixture();
+  try {
+    const insert = db.prepare(`INSERT INTO authz_change_log
+      (actor_user_id, target_user_id, change_type, object_type, object_key, reason, authz_version, created_at)
+      VALUES (?, ?, ?, 'USER_AUTHORIZATION', ?, ?, 7, ?)`);
+    insert.run(ACTOR, TARGET, 'USER_ROLES_REPLACED', 'phase2-january', 'January manual update', '2026-01-15 08:00:00');
+    insert.run(null, TARGET, 'MIGRATION_APPLIED', 'phase2-february', null, '2026-02-15 08:00:00');
+    insert.run(ACTOR, TARGET, 'USER_SCOPES_REPLACED', 'phase2-march', 'March manual update', '2026-03-15 08:00:00');
+
+    const first = service.historyPage({ search: 'phase2', actor: 'manual', page: 1, pageSize: 1 });
+    assert.equal(first.pagination.total, 2);
+    assert.equal(first.pagination.totalPages, 2);
+    assert.equal(first.pagination.hasNext, true);
+    const second = service.historyPage({ search: 'phase2', actor: 'manual', page: 2, pageSize: 1 });
+    assert.notEqual(second.items[0].id, first.items[0].id);
+    const january = service.historyPage({ from: '2026-01-01', to: '2026-01-31', pageSize: 20 });
+    assert.deepEqual(january.items.map((item) => item.objectKey), ['phase2-january']);
+    const system = service.historyPage({ search: 'phase2', actor: 'system', changeType: 'MIGRATION_APPLIED' });
+    assert.equal(system.pagination.total, 1);
+    assert.equal(system.summary.system, 1);
+
+    const exported = service.exportWorkbook({ search: 'phase2' }, context());
+    assert.ok(Buffer.isBuffer(exported.buffer));
+    assert.ok(exported.rowCount >= 3);
+    const workbook = XLSX.read(exported.buffer, { type: 'buffer' });
+    assert.deepEqual(workbook.SheetNames, [
+      'Nguoi_dung', 'Vai_tro_nguoi_dung', 'Pham_vi', 'Vai_tro', 'Quyen_vai_tro', 'Lich_su',
+    ]);
+    const exportedHistory = XLSX.utils.sheet_to_json(workbook.Sheets.Lich_su);
+    assert.equal(exportedHistory.length, 3);
+    assert.ok(db.prepare("SELECT 1 FROM audit_events WHERE event_name = 'authz.exported'").get());
+  } finally { close(db); }
+});
+
 test('authorization management API denies unauthorized reads and self-escalation', async () => {
   const { db, service } = fixture();
   try {
@@ -461,11 +585,16 @@ test('authorization setup navigation and audit history expose a scannable respon
     'authz-history-actor-filter',
     'authz-history-change-filter',
     'authz-history-result-count',
+    'authz-export-authorization',
   ]) assert.match(html, new RegExp(`id="${id}"`));
 
   assert.match(html, /class="data-table authz-history-table"[\s\S]*?<th>Thời gian<\/th>[\s\S]*?<th>Người thực hiện<\/th>[\s\S]*?<th[^>]*>Chi tiết<\/th>/);
   assert.match(app, /let authzHistoryRows = \[\];/);
   assert.match(app, /function renderAuthzHistory\(\)/);
+  assert.match(app, /\/admin\/authorization\/history\?\$\{authzHistoryQuery\(\)\.toString\(\)\}/);
+  assert.match(app, /\/admin\/authorization\/export\.xlsx/);
+  assert.match(app, /\/roles\/\$\{encodeURIComponent\(authzSelectedRole\)\}\/configuration/);
+  assert.match(app, /\/users\/\$\{encodeURIComponent\(authzSelectedUser\)\}\/authorization/);
   assert.match(app, /function authzHistoryCell\(label, options = \{\}\)/);
   assert.match(css, /\.authz-tab-step\s*\{/);
   assert.match(css, /\.authz-history-overview\s*\{/);

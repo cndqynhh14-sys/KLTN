@@ -8593,6 +8593,12 @@ import { state } from './js/state.js';
   let authzUserRequestSequence = 0;
   let authzHistoryRows = [];
   let authzHistoryPage = 0;
+  let authzHistoryRequestSequence = 0;
+  let authzHistorySearchTimer = null;
+  let authzHistoryMeta = {
+    pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1, hasPrevious: false, hasNext: false },
+    summary: { total: 0, system: 0, manual: 0, missingReason: 0 },
+  };
   const AUTHZ_HISTORY_PAGE_SIZE = 20;
   let authzUserEditorOpen = false;
   let authzRoleEditorOpen = false;
@@ -9156,7 +9162,7 @@ import { state } from './js/state.js';
     authzSelectedUser = email;
     authzUserDetail = response.data;
     authzUserDetails.set(email, response.data);
-    authzScopeDrafts = authzUserDetail.scopes.filter((scope) => scope.source === 'MANUAL').map((scope) => ({ ...scope }));
+    authzScopeDrafts = authzUserDetail.scopes.filter((scope) => scope.source === 'MANUAL' && scope.active).map((scope) => ({ ...scope }));
     $('authz-user-role-reason').value = '';
     $('authz-user-role-confirm').value = '';
     renderAuthzUserDetail();
@@ -9429,45 +9435,21 @@ import { state } from './js/state.js';
     const tbody = $('authz-history-tbody');
     if (!tbody) return;
     tbody.textContent = '';
-    const search = $('authz-history-search')?.value.trim().toLocaleLowerCase('vi-VN') || '';
-    const actorFilter = $('authz-history-actor-filter')?.value || 'all';
-    const changeFilter = $('authz-history-change-filter')?.value || 'all';
-    const dateFrom = $('authz-history-date-from')?.value || '';
-    const dateTo = $('authz-history-date-to')?.value || '';
-    const filteredRows = authzHistoryRows.filter((item) => {
-      const system = authzHistoryIsSystem(item);
-      const createdDate = String(item.createdAt || '').slice(0, 10);
-      if (actorFilter === 'system' && !system) return false;
-      if (actorFilter === 'manual' && system) return false;
-      if (changeFilter !== 'all' && item.changeType !== changeFilter) return false;
-      if (dateFrom && (!createdDate || createdDate < dateFrom)) return false;
-      if (dateTo && (!createdDate || createdDate > dateTo)) return false;
-      if (!search) return true;
-      return [
-        item.changeType,
-        authzHistoryChangeLabel(item.changeType),
-        item.objectType,
-        item.objectKey,
-        item.actorUserId,
-        item.reason,
-        item.correlationId,
-      ].some((value) => String(value || '').toLocaleLowerCase('vi-VN').includes(search));
-    });
-    const pageCount = Math.max(1, Math.ceil(filteredRows.length / AUTHZ_HISTORY_PAGE_SIZE));
-    authzHistoryPage = Math.min(authzHistoryPage, pageCount - 1);
-    const pageStart = authzHistoryPage * AUTHZ_HISTORY_PAGE_SIZE;
-    const rows = filteredRows.slice(pageStart, pageStart + AUTHZ_HISTORY_PAGE_SIZE);
+    const rows = authzHistoryRows;
+    const pagination = authzHistoryMeta.pagination;
+    const summary = authzHistoryMeta.summary;
+    const pageStart = (pagination.page - 1) * pagination.pageSize;
 
-    if ($('authz-history-total')) $('authz-history-total').textContent = String(authzHistoryRows.length);
-    if ($('authz-history-system')) $('authz-history-system').textContent = String(authzHistoryRows.filter(authzHistoryIsSystem).length);
-    if ($('authz-history-manual')) $('authz-history-manual').textContent = String(authzHistoryRows.filter((item) => !authzHistoryIsSystem(item)).length);
-    if ($('authz-history-missing-reason')) $('authz-history-missing-reason').textContent = String(authzHistoryRows.filter((item) => !String(item.reason || '').trim()).length);
-    if ($('authz-history-result-count')) $('authz-history-result-count').textContent = filteredRows.length
-      ? `Hiển thị ${pageStart + 1}–${pageStart + rows.length} / ${filteredRows.length} kết quả (${authzHistoryRows.length} thay đổi đã tải)`
-      : `0 kết quả / ${authzHistoryRows.length} thay đổi đã tải`;
-    if ($('authz-history-page')) $('authz-history-page').textContent = `Trang ${authzHistoryPage + 1} / ${pageCount}`;
-    if ($('authz-history-prev')) $('authz-history-prev').disabled = authzHistoryPage === 0;
-    if ($('authz-history-next')) $('authz-history-next').disabled = authzHistoryPage >= pageCount - 1;
+    if ($('authz-history-total')) $('authz-history-total').textContent = String(summary.total);
+    if ($('authz-history-system')) $('authz-history-system').textContent = String(summary.system);
+    if ($('authz-history-manual')) $('authz-history-manual').textContent = String(summary.manual);
+    if ($('authz-history-missing-reason')) $('authz-history-missing-reason').textContent = String(summary.missingReason);
+    if ($('authz-history-result-count')) $('authz-history-result-count').textContent = pagination.total
+      ? `Hiển thị ${pageStart + 1}–${pageStart + rows.length} / ${pagination.total} kết quả`
+      : '0 kết quả';
+    if ($('authz-history-page')) $('authz-history-page').textContent = `Trang ${pagination.page} / ${pagination.totalPages}`;
+    if ($('authz-history-prev')) $('authz-history-prev').disabled = !pagination.hasPrevious;
+    if ($('authz-history-next')) $('authz-history-next').disabled = !pagination.hasNext;
 
     rows.forEach((item) => {
       const tr = el('tr');
@@ -9509,16 +9491,41 @@ import { state } from './js/state.js';
     }
   }
 
-  async function loadAuthzHistory() {
-    const response = await api('/admin/authorization/history?limit=100');
+  function authzHistoryQuery() {
+    const query = new URLSearchParams({
+      page: String(authzHistoryPage + 1),
+      pageSize: String(AUTHZ_HISTORY_PAGE_SIZE),
+    });
+    const values = {
+      search: $('authz-history-search')?.value.trim() || '',
+      actor: $('authz-history-actor-filter')?.value || 'all',
+      changeType: $('authz-history-change-filter')?.value || 'all',
+      from: $('authz-history-date-from')?.value || '',
+      to: $('authz-history-date-to')?.value || '',
+    };
+    Object.entries(values).forEach(([key, value]) => {
+      if (value && value !== 'all') query.set(key, value);
+    });
+    return query;
+  }
+
+  async function loadAuthzHistory(resetPage = true) {
+    if (resetPage === true || resetPage?.type) authzHistoryPage = 0;
+    const requestSequence = ++authzHistoryRequestSequence;
+    const response = await api(`/admin/authorization/history?${authzHistoryQuery().toString()}`);
+    if (requestSequence !== authzHistoryRequestSequence) return;
     if (!response.ok) return showAuthzState(response.status === 403 ? 'denied' : 'error', authzErrorMessage(response));
     authzHistoryRows = response.data.items || [];
-    authzHistoryPage = 0;
+    authzHistoryMeta = {
+      pagination: response.data.pagination || authzHistoryMeta.pagination,
+      summary: response.data.summary || authzHistoryMeta.summary,
+    };
+    authzHistoryPage = Math.max(0, Number(authzHistoryMeta.pagination.page || 1) - 1);
     const changeFilter = $('authz-history-change-filter');
     const selectedChange = changeFilter?.value || 'all';
     fillSelect(changeFilter, [
       { value: 'all', label: 'Tất cả thay đổi' },
-      ...[...new Set(authzHistoryRows.map((item) => item.changeType).filter(Boolean))]
+      ...[...new Set((response.data.filters?.changeTypes || []).filter(Boolean))]
         .sort((left, right) => authzHistoryChangeLabel(left).localeCompare(authzHistoryChangeLabel(right), 'vi'))
         .map((changeType) => ({ value: changeType, label: authzHistoryChangeLabel(changeType) })),
     ], selectedChange);
@@ -9526,15 +9533,40 @@ import { state } from './js/state.js';
     showAuthzState('ready', 'Sẵn sàng');
   }
 
+  async function exportAuthorizationWorkbook() {
+    const button = $('authz-export-authorization');
+    const finish = setButtonLoading(button, 'Đang xuất Excel…');
+    try {
+      const query = authzHistoryQuery();
+      query.delete('page');
+      query.delete('pageSize');
+      const response = await withActionRequestContext({ actionId: 'authorization.export', mutation: false }, () => fetch(
+        `/qlcl/api/admin/authorization/export.xlsx?${query.toString()}`,
+        { credentials: 'same-origin', headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ...actionRequestHeaders() } },
+      ));
+      if (!response.ok) throw new Error('authorization_export_failed');
+      const blob = await response.blob();
+      downloadBlob(blob, fileNameFromDisposition(response.headers.get('Content-Disposition')) || 'authorization.xlsx');
+      showToast('Đã xuất cấu hình phân quyền.', 'ok');
+    } catch {
+      showToast('Không xuất được cấu hình phân quyền.', 'err');
+    } finally {
+      finish();
+    }
+  }
+
   document.querySelectorAll('[data-authz-tab]').forEach((button) => button.addEventListener('click', () => selectAuthzTab(button.dataset.authzTab)));
   $('authz-user-search').addEventListener('input', renderFilteredAuthzUsers);
   ['authz-user-active-filter', 'authz-user-role-filter', 'authz-user-health-filter']
     .forEach((id) => $(id).addEventListener('change', renderFilteredAuthzUsers));
-  $('authz-history-search')?.addEventListener('input', () => { authzHistoryPage = 0; renderAuthzHistory(); });
+  $('authz-history-search')?.addEventListener('input', () => {
+    window.clearTimeout(authzHistorySearchTimer);
+    authzHistorySearchTimer = window.setTimeout(() => loadAuthzHistory(true), 250);
+  });
   ['authz-history-actor-filter', 'authz-history-change-filter', 'authz-history-date-from', 'authz-history-date-to']
-    .forEach((id) => $(id)?.addEventListener('change', () => { authzHistoryPage = 0; renderAuthzHistory(); }));
-  $('authz-history-prev')?.addEventListener('click', () => { authzHistoryPage = Math.max(0, authzHistoryPage - 1); renderAuthzHistory(); });
-  $('authz-history-next')?.addEventListener('click', () => { authzHistoryPage += 1; renderAuthzHistory(); });
+    .forEach((id) => $(id)?.addEventListener('change', () => loadAuthzHistory(true)));
+  $('authz-history-prev')?.addEventListener('click', () => { authzHistoryPage = Math.max(0, authzHistoryPage - 1); loadAuthzHistory(false); });
+  $('authz-history-next')?.addEventListener('click', () => { authzHistoryPage += 1; loadAuthzHistory(false); });
   $('authz-role-search')?.addEventListener('input', renderAuthzRoleCatalog);
   $('authz-role-status-filter')?.addEventListener('change', renderAuthzRoleCatalog);
   $('authz-approval-search')?.addEventListener('input', renderApprovalAssignments);
@@ -9588,12 +9620,14 @@ import { state } from './js/state.js';
     const body = {
       displayLabel: $('authz-role-label').value.trim(),
       active: $('authz-role-status').value === 'active',
-      reason: $('authz-role-reason').value.trim(),
-      confirmation: $('authz-role-confirm').value,
+      reason: $('authz-role-reason').value.trim() || $('authz-permission-reason').value.trim(),
+      confirmation: $('authz-role-confirm').value || $('authz-permission-confirm').value,
     };
     const response = authzRoleCreateMode
       ? await api('/admin/authorization/roles', { method: 'POST', body: { ...body, roleCode: code, cloneFrom: authzRoleCreateMode.cloneFrom } })
-      : await api(`/admin/authorization/roles/${encodeURIComponent(authzSelectedRole)}`, { method: 'PATCH', body });
+      : await api(`/admin/authorization/roles/${encodeURIComponent(authzSelectedRole)}/configuration`, {
+        method: 'PUT', body: { ...body, permissions: permissionAssignmentsFromForm() },
+      });
     if (!response.ok) {
       applyExpectedConfirmation(response, 'authz-role-confirm');
       return showAuthzState('error', authzErrorMessage(response));
@@ -9616,8 +9650,14 @@ import { state } from './js/state.js';
   $('authz-permission-role').addEventListener('change', (event) => loadAuthzRole(event.target.value));
   bindRegisteredAction($('authz-save-permissions'), 'authorization.permissions_publish', async () => {
     if (!authzSelectedRole) return;
-    const response = await api(`/admin/authorization/roles/${encodeURIComponent(authzSelectedRole)}/permissions`, {
-      method: 'PUT', body: { permissions: permissionAssignmentsFromForm(), reason: $('authz-permission-reason').value.trim(), confirmation: $('authz-permission-confirm').value },
+    const response = await api(`/admin/authorization/roles/${encodeURIComponent(authzSelectedRole)}/configuration`, {
+      method: 'PUT', body: {
+        displayLabel: $('authz-role-label').value.trim(),
+        active: $('authz-role-status').value === 'active',
+        permissions: permissionAssignmentsFromForm(),
+        reason: $('authz-permission-reason').value.trim() || $('authz-role-reason').value.trim(),
+        confirmation: $('authz-permission-confirm').value || $('authz-role-confirm').value,
+      },
     });
     if (!response.ok) { applyExpectedConfirmation(response, 'authz-permission-confirm'); return showAuthzState('error', authzErrorMessage(response)); }
     setAuthzUnsaved(false); authzCatalog = null; await loadAuthorizationAdmin(true); await loadAuthzRole(authzSelectedRole); showToast('Đã publish ma trận quyền.', 'ok');
@@ -9629,8 +9669,14 @@ import { state } from './js/state.js';
       validFrom: toApiInstant(document.querySelector(`[data-authz-role-from="${box.dataset.authzUserRole}"]`)?.value),
       validUntil: toApiInstant(document.querySelector(`[data-authz-role-until="${box.dataset.authzUserRole}"]`)?.value),
     }));
-    const response = await api(`/admin/authorization/users/${encodeURIComponent(authzSelectedUser)}/roles`, {
-      method: 'PUT', body: { roles, reason: $('authz-user-role-reason').value.trim(), confirmation: $('authz-user-role-confirm').value },
+    const response = await api(`/admin/authorization/users/${encodeURIComponent(authzSelectedUser)}/authorization`, {
+      method: 'PUT', body: {
+        roles, scopes: authzScopeDrafts,
+        reason: $('authz-user-role-reason').value.trim(),
+        roleConfirmation: $('authz-user-role-confirm').value,
+        scopeConfirmation: $('authz-scope-confirm').value,
+        expectedAuthzVersion: authzUserDetail?.user?.authzVersion,
+      },
     });
     if (!response.ok) { applyExpectedConfirmation(response, 'authz-user-role-confirm'); return showAuthzState('error', authzErrorMessage(response)); }
     setAuthzUnsaved(false); await loadAuthzUser(authzSelectedUser); showToast('Đã lưu phân vai.', 'ok');
@@ -9652,8 +9698,19 @@ import { state } from './js/state.js';
   }, { announceSuccess: false });
   bindRegisteredAction($('authz-save-scopes'), 'authorization.scopes_save', async () => {
     if (!authzSelectedUser) return;
-    const response = await api(`/admin/authorization/users/${encodeURIComponent(authzSelectedUser)}/scopes`, {
-      method: 'PUT', body: { scopes: authzScopeDrafts, reason: $('authz-scope-reason').value.trim(), confirmation: $('authz-scope-confirm').value },
+    const roles = Array.from(document.querySelectorAll('[data-authz-user-role]')).filter((box) => !box.disabled && box.checked).map((box) => ({
+      roleCode: box.dataset.authzUserRole,
+      validFrom: toApiInstant(document.querySelector(`[data-authz-role-from="${box.dataset.authzUserRole}"]`)?.value),
+      validUntil: toApiInstant(document.querySelector(`[data-authz-role-until="${box.dataset.authzUserRole}"]`)?.value),
+    }));
+    const response = await api(`/admin/authorization/users/${encodeURIComponent(authzSelectedUser)}/authorization`, {
+      method: 'PUT', body: {
+        roles, scopes: authzScopeDrafts,
+        reason: $('authz-scope-reason').value.trim(),
+        roleConfirmation: $('authz-user-role-confirm').value,
+        scopeConfirmation: $('authz-scope-confirm').value,
+        expectedAuthzVersion: authzUserDetail?.user?.authzVersion,
+      },
     });
     if (!response.ok) { applyExpectedConfirmation(response, 'authz-scope-confirm'); return showAuthzState('error', authzErrorMessage(response)); }
     setAuthzUnsaved(false); await loadAuthzUser(authzSelectedUser); showToast('Đã lưu phạm vi dữ liệu.', 'ok');
@@ -9678,6 +9735,7 @@ import { state } from './js/state.js';
     showToast('Đã publish phân công phê duyệt.', 'ok');
   }, { confirm: false, announceSuccess: false });
   bindRegisteredAction($('authz-refresh-history'), 'authorization.history_refresh', loadAuthzHistory, { announceSuccess: false });
+  bindRegisteredAction($('authz-export-authorization'), 'authorization.export', exportAuthorizationWorkbook, { announceSuccess: false });
 
   const SYSTEM_LOG_FILTERS = Object.freeze({
     from: 'system-log-from',
@@ -11954,9 +12012,9 @@ import { state } from './js/state.js';
       const tdAct = el('td', { className: 'table-action-cell text-right' });
       const rowMenu = RowActionGroup([
         actionDescriptor('authorization.tab_open', () => openAuthzUserEditor(u.email, tr), null, { label: 'Điều chỉnh', announceSuccess: false }),
-      ], u.email !== state.email && u.is_active ? [
-        actionDescriptor('authorization.user_deactivate', () => deactivateUser(u.email), null, { confirm: false, objectIdentity: u.email }),
-      ] : []);
+      ], u.is_active
+        ? (u.email !== state.email ? [actionDescriptor('authorization.user_deactivate', () => deactivateUser(u.email), null, { confirm: false, objectIdentity: u.email })] : [])
+        : [actionDescriptor('authorization.user_reactivate', () => reactivateUser(u.email), null, { confirm: false, objectIdentity: u.email })]);
       tdAct.appendChild(rowMenu);
       tr.appendChild(tdAct);
       tr.addEventListener('click', (event) => {
@@ -12628,6 +12686,27 @@ import { state } from './js/state.js';
       loadAdmin();
     } else {
       showToast('Không khóa được người dùng. Hãy thử lại.', 'err');
+    }
+  }
+
+  async function reactivateUser(email) {
+    const reason = await confirmAction({
+      title: 'Mở lại tài khoản?',
+      message: `${email} sẽ có thể đăng nhập lại với nguyên vai trò và phạm vi hiện có.`,
+      cancelLabel: 'Hủy',
+      confirmLabel: 'Mở lại tài khoản',
+      reasonRequired: true,
+      reasonPlaceholder: `Lý do mở lại ${email}`,
+    });
+    if (!reason) return;
+    const response = await api(`/admin/users/${encodeURIComponent(email)}/reactivate`, {
+      method: 'PATCH', body: { reason },
+    });
+    if (response.ok) {
+      showToast(`Đã mở lại tài khoản ${email}; vai trò và phạm vi được giữ nguyên.`, 'ok');
+      loadAdmin();
+    } else {
+      showToast('Không mở lại được tài khoản. Hãy thử lại.', 'err');
     }
   }
 

@@ -43,10 +43,12 @@ function classifyMutation({ method, route, statusCode = 200 }) {
   }
   else if (normalized.includes('/api/admin/authorization/approval-assignments')) eventName = 'approval.assignment.changed';
   else if (normalized.includes('/api/admin/authorization/users/')) eventName = 'user.authorization.changed';
-  else if (normalized.includes('/api/admin/authorization/roles/') && normalized.endsWith('/permissions')) eventName = 'role.permissions.changed';
+  else if (normalized.includes('/api/admin/authorization/roles/')
+      && (normalized.endsWith('/permissions') || normalized.endsWith('/configuration'))) eventName = 'role.permissions.changed';
   else if (normalized.includes('/api/admin/authorization/roles')) eventName = 'role.catalog.changed';
-  else if (normalized.includes('/api/admin/users')) eventName = normalizedMethod === 'DELETE'
-    ? 'user.account.deactivated' : 'user.account.upserted';
+  else if (normalized.includes('/api/admin/users')) eventName = normalized.endsWith('/reactivate')
+    ? 'user.account.reactivated'
+    : (normalizedMethod === 'DELETE' ? 'user.account.deactivated' : 'user.account.upserted');
   else if (normalized.endsWith('/api/admin/export-db')) eventName = 'config.backup.exported';
   else if (normalized.endsWith('/api/admin/restore-db')) eventName = 'config.restore.requested';
   else if (normalized.includes('/api/suppliers') && normalized.includes('import-excel')) eventName = statusCode < 400 ? 'import.completed' : 'import.failed';

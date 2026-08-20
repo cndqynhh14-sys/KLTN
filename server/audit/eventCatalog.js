@@ -1,6 +1,6 @@
 'use strict';
 
-const AUDIT_CATALOG_VERSION = '1.6.0';
+const AUDIT_CATALOG_VERSION = '1.7.0';
 const AUDIT_CATEGORIES = Object.freeze([
   'auth', 'authz', 'user', 'role', 'supplier', 'dossier', 'evaluation',
   'approval', 'question', 'report', 'scoring', 'import', 'export',
@@ -35,6 +35,7 @@ const definitions = [
   definition('authz.compatibility.synced', 'authz', 'INFO', ['role_code']),
   definition('authz.permission.denied', 'authz', 'HIGH', ['permission_code', 'scope_type']),
   definition('authz.scope.assigned', 'authz', 'HIGH', ['scope_type', 'scope_value', 'effect']),
+  definition('authz.exported', 'authz', 'HIGH', ['export_format', 'row_count', 'filter_names']),
   definition('role.assignment.changed', 'role', 'HIGH', ['role_code', 'change_type']),
   definition('role.catalog.changed', 'role', 'HIGH', ['role_code', 'change_type', 'reason', 'authz_version'], ['display_label', 'active', 'role_kind']),
   definition('role.permissions.changed', 'role', 'HIGH', ['role_code', 'change_type', 'reason', 'authz_version'], ['permissions', 'authz_version']),
@@ -44,6 +45,8 @@ const definitions = [
     ['target_user_id', 'role_code', 'reason', 'authz_version'],
     ['active', 'display_name', 'role_code']),
   definition('user.account.deactivated', 'user', 'HIGH',
+    ['target_user_id', 'reason', 'authz_version'], ['active']),
+  definition('user.account.reactivated', 'user', 'HIGH',
     ['target_user_id', 'reason', 'authz_version'], ['active']),
 
   definition('supplier.created', 'supplier', 'INFO', ['supplier_code', 'source_type'], ['supplier_name', 'region']),

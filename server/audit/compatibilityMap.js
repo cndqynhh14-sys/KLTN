@@ -55,6 +55,19 @@ function mapLegacyAccessAction(action, details = {}) {
     before: details.before,
     after: details.after,
   };
+  if (value === 'USER_REACTIVATE') return {
+    eventName: 'user.account.reactivated',
+    ...entity('USER', details.target),
+    action: 'REACTIVATE',
+    outcome: 'SUCCESS',
+    metadata: {
+      target_user_id: details.target,
+      reason: details.reason,
+      authz_version: details.authz_version,
+    },
+    before: details.before,
+    after: details.after,
+  };
   if (value === 'DB_EXPORT_REQUEST') return { eventName: 'config.backup.exported', ...entity('DATABASE_BACKUP'), action: 'EXPORT', outcome: 'SUCCESS', metadata: { table_counts: details.counts } };
   if (value === 'DB_RESTORE_REQUEST') return { eventName: 'config.restore.requested', ...entity('DATABASE_RESTORE'), action: 'RESTORE', outcome: 'SUCCESS', metadata: { table_counts: details.counts, backup_reference: details.backup } };
   if (value === 'SUPPLIER_UPSERT') return { eventName: 'supplier.created', ...entity('SUPPLIER', details.supplier_code), action: 'UPSERT', outcome: 'SUCCESS', metadata: { supplier_code: details.supplier_code, source_type: details.source_type } };

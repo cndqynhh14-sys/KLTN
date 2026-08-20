@@ -6,6 +6,7 @@ const ACTION_FIELDS = Object.freeze({
   LOGIN_SCREEN_DEGRADED: ['delivery_channel'],
   USER_UPSERT: ['target', 'role', 'role_code', 'is_admin', 'reason', 'authz_version', 'before', 'after'],
   USER_DEACTIVATE: ['target', 'reason', 'authz_version', 'before', 'after'],
+  USER_REACTIVATE: ['target', 'reason', 'authz_version', 'before', 'after'],
   DB_EXPORT_REQUEST: ['counts'],
   DB_RESTORE_REQUEST: ['counts', 'backup'],
   SUPPLIER_UPSERT: ['supplier_code', 'source_type'],

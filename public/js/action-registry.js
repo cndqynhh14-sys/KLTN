@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function actionRegistryFactory() {
   'use strict';
 
-  const ACTION_VERSION = 14;
+  const ACTION_VERSION = 15;
   const variants = new Set(['primary', 'secondary', 'ghost', 'danger']);
   const placements = new Set(['page', 'form', 'row', 'empty', 'dialog', 'control']);
 
@@ -161,10 +161,12 @@
     define('authorization.approval_new', 'Tạo phân công phê duyệt', { icon: 'add', placement: 'page', permission: 'USER.MANAGE', entity: 'AUTHORIZATION' }),
     define('authorization.approval_publish', 'Công bố phân công phê duyệt', { short_label: 'Công bố phân công', icon: 'check', variant: 'primary', placement: 'form', permission: 'USER.MANAGE', entity: 'AUTHORIZATION', confirm: { required: true, include_object: true, consequence: 'Luồng phê duyệt sẽ dùng phân công mới ngay.' }, reason: { required: true }, mutation: true, success: 'Đã công bố phân công phê duyệt.', event: 'approval.assignment.changed' }),
     define('authorization.history_refresh', 'Làm mới lịch sử phân quyền', { icon: 'refresh', permission: 'USER.MANAGE', entity: 'AUTHORIZATION' }),
+    define('authorization.export', 'Xuất cấu hình phân quyền', { short_label: 'Xuất Excel', icon: 'download', placement: 'page', permission: 'USER.MANAGE', entity: 'AUTHORIZATION', event: 'authz.exported' }),
     define('authorization.role_select', 'Chọn vai trò để chỉnh sửa', { icon: 'arrow', permission: 'USER.MANAGE', entity: 'AUTHORIZATION' }),
     define('authorization.scope_remove', 'Bỏ phạm vi khỏi bản nháp', { icon: 'close', variant: 'danger', permission: 'USER.MANAGE', entity: 'AUTHORIZATION', confirm: destructive('Phạm vi sẽ bị loại khỏi bản nháp chưa công bố.') }),
     define('authorization.approval_select', 'Chọn phân công phê duyệt', { icon: 'arrow', permission: 'USER.MANAGE', entity: 'AUTHORIZATION' }),
     define('authorization.user_deactivate', 'Khóa tài khoản người dùng', { icon: 'lock', variant: 'danger', placement: 'row', permission: 'USER.MANAGE', entity: 'AUTHORIZATION', confirm: destructive('Người dùng sẽ mất quyền truy cập và phiên hiện tại bị thu hồi.'), reason: { required: true }, mutation: true, success: 'Đã khóa tài khoản.', event: 'user.account.deactivated' }),
+    define('authorization.user_reactivate', 'Mở lại tài khoản người dùng', { icon: 'check', variant: 'primary', placement: 'row', permission: 'USER.MANAGE', entity: 'AUTHORIZATION', reason: { required: true }, mutation: true, success: 'Đã mở lại tài khoản.', event: 'user.account.reactivated' }),
 
     define('personnel_import.download_template', 'Tải file mẫu nhập nhân sự', { short_label: 'Tải file mẫu', icon: 'download', placement: 'page', permission: 'USER.MANAGE', entity: 'PERSONNEL_IMPORT' }),
     define('personnel_import.open_example', 'Xem file ví dụ nhập nhân sự', { short_label: 'Xem file ví dụ', icon: 'eye', placement: 'page', permission: 'USER.MANAGE', entity: 'PERSONNEL_IMPORT' }),
@@ -266,7 +268,7 @@
     'authz-save-permissions': 'authorization.permissions_publish', 'authz-add-scope': 'authorization.scope_add',
     'authz-save-scopes': 'authorization.scopes_save', 'authz-preview-approval': 'authorization.approval_preview',
     'authz-new-approval': 'authorization.approval_new', 'authz-publish-approval': 'authorization.approval_publish',
-    'authz-refresh-history': 'authorization.history_refresh',
+    'authz-refresh-history': 'authorization.history_refresh', 'authz-export-authorization': 'authorization.export',
     'system-log-reset': 'audit.filter_reset', 'system-log-export-csv': 'audit.export_csv',
     'system-log-export-ndjson': 'audit.export_ndjson', 'system-log-retention-dry-run': 'audit.retention_report',
     'system-log-more': 'audit.load_more', 'system-log-drawer-close': 'dialog.close',

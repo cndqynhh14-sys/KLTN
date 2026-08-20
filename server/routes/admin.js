@@ -202,6 +202,33 @@ router.delete('/users/:email', (req, res) => {
   res.json({ ok: true, authz_version: Number(stored.authz_version) });
 });
 
+// PATCH /admin/users/:email/reactivate — restore login access without changing roles/scopes.
+router.patch('/users/:email/reactivate', (req, res) => {
+  const email = String(req.params.email || '').trim().toLowerCase();
+  const reason = normalizeChangeReason(req.body?.reason);
+  if (!reason) return res.status(400).json({ error: 'change_reason_required' });
+  const beforeRow = getUserAuditRow.get(email);
+  if (!beforeRow) return res.status(404).json({ error: 'not_found' });
+  if (beforeRow.is_active) return res.status(409).json({ error: 'account_already_active' });
+  const before = userAuditSnapshot(beforeRow);
+  const info = stmts.reactivateUser.run(email);
+  if (info.changes === 0) return res.status(409).json({ error: 'account_state_conflict' });
+  const stored = getUserAuditRow.get(email);
+  logAccess({
+    email: req.user.email,
+    action: 'USER_REACTIVATE',
+    details: {
+      target: email,
+      reason,
+      authz_version: Number(stored.authz_version),
+      before,
+      after: userAuditSnapshot(stored),
+    },
+    ip: req.ip,
+  });
+  res.json({ ok: true, authz_version: Number(stored.authz_version) });
+});
+
 router.get('/export-db', requirePermission(PERMISSIONS.SYSTEM_ADMIN), requireRestoreToken, async (req, res) => {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qlcl-db-export-'));
