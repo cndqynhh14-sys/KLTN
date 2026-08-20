@@ -22,20 +22,17 @@ test('RUN-04 computes seven calendar days without timezone drift', () => {
   );
 });
 
-test('RUN-04 selects the recorded evaluation date before planned date', () => {
+test('RUN-04 uses only recorded evaluation dates for correction due date', () => {
   assert.equal(defaultCorrectionDueDate({
     round: { assessment_date: '2026-07-10' },
     ticket: { actual_evaluation_date: '2026-07-09', planned_date: '2026-07-08' },
-    fallbackDate: '2026-07-07',
   }), '2026-07-17');
   assert.equal(defaultCorrectionDueDate({
     ticket: { actual_evaluation_date: '2026-07-09', planned_date: '2026-07-08' },
-    fallbackDate: '2026-07-07',
   }), '2026-07-16');
   assert.equal(defaultCorrectionDueDate({
     ticket: { planned_date: '2026-07-08' },
-    fallbackDate: '2026-07-07',
-  }), '2026-07-15');
+  }), null);
 });
 
 test('RUN-04 scoring UI shows the default while keeping manual draft values', () => {

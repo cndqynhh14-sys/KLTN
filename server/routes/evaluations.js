@@ -801,7 +801,6 @@ function defaultCorrectionDueDate(ticket, round) {
   return calculateDefaultCorrectionDueDate({
     ticket,
     round,
-    fallbackDate: calendarDateInTimeZone(new Date(), process.env.APP_TIMEZONE || 'Asia/Ho_Chi_Minh'),
   });
 }
 

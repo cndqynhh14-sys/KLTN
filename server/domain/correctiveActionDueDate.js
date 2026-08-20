@@ -21,12 +21,10 @@ function calendarDateInTimeZone(now = new Date(), timeZone = 'Asia/Ho_Chi_Minh')
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function defaultCorrectionDueDate({ ticket = null, round = null, fallbackDate = null } = {}) {
+function defaultCorrectionDueDate({ ticket = null, round = null } = {}) {
   const evaluationDate = [
     round?.assessment_date,
     ticket?.actual_evaluation_date,
-    ticket?.planned_date,
-    fallbackDate,
   ].map((value) => String(value || '').slice(0, 10)).find(isValidISODate);
   return evaluationDate ? addCalendarDaysISO(evaluationDate, 7) : null;
 }

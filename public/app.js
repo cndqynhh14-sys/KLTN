@@ -3646,6 +3646,121 @@ import { state } from './js/state.js';
     $('ticket-history-modal').classList.remove('hidden');
   }
 
+  function assessmentAnswerForQuestion(payload, question) {
+    const canonicalAnswers = payload.canonical_answers || {};
+    const legacyAnswers = payload.answers || {};
+    return canonicalAnswers[String(question.id)]
+      || legacyAnswers[String(question.db_id || '')]
+      || legacyAnswers[String(question.id)]
+      || {};
+  }
+
+  function assessmentEvidenceLinks(attachments) {
+    const wrap = el('div');
+    const rows = Array.isArray(attachments) ? attachments : [];
+    if (!rows.length) {
+      wrap.textContent = EMPTY_DETAIL_TEXT;
+      return wrap;
+    }
+    rows.forEach((attachment, index) => {
+      if (index) wrap.appendChild(document.createElement('br'));
+      if (attachment.download_url) {
+        wrap.appendChild(el('a', {
+          text: attachment.file_name || `Bằng chứng ${index + 1}`,
+          attrs: { href: attachment.download_url, target: '_blank', rel: 'noopener' },
+        }));
+      } else {
+        wrap.appendChild(el('span', { text: attachment.file_name || `Bằng chứng ${index + 1}` }));
+      }
+    });
+    return wrap;
+  }
+
+  async function openAssessmentRoundDetail(code, roundNo) {
+    const ticket = demoEvaluations.find((row) => row.code === code);
+    const modal = $('assessment-detail-modal');
+    const body = $('assessment-detail-body');
+    if (!ticket || !modal || !body || ![1, 2].includes(Number(roundNo))) return;
+    const assessment = (ticket.assessments || []).find((row) => Number(row.round_no) === Number(roundNo)) || {};
+    const title = $('assessment-detail-title');
+    if (title) title.textContent = `Chi tiết ${assessment.assessment_code || `${code}-R${roundNo}`}`;
+    body.textContent = '';
+    body.appendChild(el('div', { className: 'admin-state', attrs: { 'data-state': 'loading' }, text: 'Đang tải chi tiết lượt đánh giá...' }));
+    modal.classList.remove('hidden');
+
+    const response = await api('/evaluations/' + encodeURIComponent(code) + '/rounds/' + Number(roundNo));
+    body.textContent = '';
+    if (!response.ok) {
+      body.appendChild(el('div', {
+        className: 'admin-state admin-state--error',
+        attrs: { 'data-state': 'error' },
+        text: 'Không tải được chi tiết lượt đánh giá. Vui lòng kiểm tra lại quyền truy cập.',
+      }));
+      return;
+    }
+
+    const payload = response.data || {};
+    const round = payload.round || {};
+    const questions = (payload.questions || []).map(mapQuestionFromApi)
+      .sort((a, b) => (a.order_index || 0) - (b.order_index || 0) || String(a.question_code).localeCompare(String(b.question_code)));
+    const evaluator = userDisplay(assessment, 'evaluator_id') || round.locked_by || EMPTY_DETAIL_TEXT;
+    body.appendChild(detailSection('Thông tin lượt đánh giá', [
+      ['Mã assessment', assessment.assessment_code || `${code}-R${roundNo}`],
+      ['Lần đánh giá', assessment.label || `Đánh giá lần ${String(roundNo).padStart(3, '0')}`],
+      ['Ngày đánh giá', isoToVNDate(assessment.assessment_date || round.completed_at || round.started_at || '')],
+      ['Người đánh giá', evaluator],
+      ['Điểm tổng', round.total_score == null ? EMPTY_DETAIL_TEXT : `${Number(round.total_score).toFixed(1)}%`],
+      ['Phân loại', round.classification || EMPTY_DETAIL_TEXT],
+      ['Kết quả', round.final_result || assessment.final_conclusion || EMPTY_DETAIL_TEXT],
+      ['Trạng thái', round.status || assessment.status || EMPTY_DETAIL_TEXT],
+    ]));
+
+    const section = el('section', { className: 'detail-section' });
+    section.appendChild(el('h4', { className: 'detail-section-title', text: 'Chi tiết từng tiêu chí' }));
+    const wrap = el('div', { className: 'table-wrap' });
+    const table = el('table', { className: 'data-table assessment-answer-table' });
+    const head = el('thead');
+    const headRow = el('tr');
+    ['Mã tiêu chí', 'Nội dung', 'Loại', 'Mức đánh giá', 'Điểm quy đổi', 'Ghi chú', 'Bằng chứng'].forEach((label) => headRow.appendChild(el('th', { text: label })));
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const tbody = el('tbody');
+    questions.forEach((question) => {
+      const answer = assessmentAnswerForQuestion(payload, question);
+      const tr = el('tr');
+      const type = question.clause === 'exclusion' ? 'Loại' : question.critical ? 'Chính yếu' : 'Thông thường';
+      tr.appendChild(labeledTd('Mã tiêu chí', { className: 'mono', text: question.question_code || EMPTY_DETAIL_TEXT }));
+      tr.appendChild(labeledTd('Nội dung', { text: question.question || EMPTY_DETAIL_TEXT }));
+      tr.appendChild(labeledTd('Loại', { text: type }));
+      tr.appendChild(labeledTd('Mức đánh giá', { className: 'mono', text: answer.score || EMPTY_DETAIL_TEXT }));
+      tr.appendChild(labeledTd('Điểm quy đổi', {
+        className: 'mono',
+        text: answer.calculated_score == null ? EMPTY_DETAIL_TEXT : String(answer.calculated_score),
+      }));
+      tr.appendChild(labeledTd('Ghi chú', { text: answer.note || answer.comment || EMPTY_DETAIL_TEXT }));
+      const evidenceTd = labeledTd('Bằng chứng');
+      evidenceTd.appendChild(assessmentEvidenceLinks(answer.attachments));
+      tr.appendChild(evidenceTd);
+      tbody.appendChild(tr);
+    });
+    if (!questions.length) {
+      const tr = el('tr');
+      tr.appendChild(el('td', { className: 'muted', attrs: { colspan: '7' }, text: 'Lượt đánh giá chưa có dữ liệu tiêu chí.' }));
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    section.appendChild(wrap);
+    body.appendChild(section);
+
+    const attendees = Array.isArray(round.attendees) ? round.attendees : [];
+    body.appendChild(detailSection('Thành phần tham dự', [
+      ['Người tham dự', attendees.map((row) => row.name).filter(Boolean).join(', ') || EMPTY_DETAIL_TEXT],
+      ['Họp khai mạc', attendees.filter((row) => row.opening).map((row) => row.name).filter(Boolean).join(', ') || EMPTY_DETAIL_TEXT],
+      ['Họp bế mạc', attendees.filter((row) => row.closing).map((row) => row.name).filter(Boolean).join(', ') || EMPTY_DETAIL_TEXT],
+    ]));
+  }
+
   function isReturnHistory(row) {
     const action = String(row.action || '');
     const fromStatus = String(row.from_status || '');
@@ -3684,8 +3799,8 @@ import { state } from './js/state.js';
           actionTd.appendChild(el('span', { className: 'tag sev-blue', text: 'Chỉ đọc' }));
         } else {
           actionTd.appendChild(RowActionGroup([
-            actionDescriptor('evaluation.score', () => openAssessmentRound(row.code, item.round_no), row, {
-              label: 'Mở lần đánh giá', objectIdentity: row.code,
+            actionDescriptor('evaluation.view', () => openAssessmentRoundDetail(row.code, item.round_no), row, {
+              label: 'Xem chi tiết lượt đánh giá', objectIdentity: item.assessment_code || row.code,
             }),
           ]));
         }
@@ -4311,13 +4426,16 @@ import { state } from './js/state.js';
   }
 
   function evaluationDateForNonconformities(ticket) {
-    return ticket?.actual_evaluation_date_iso || ticket?.planned_iso || localTodayISODate();
+    return ticket?.actual_evaluation_date_iso || '';
   }
 
   function defaultCorrectionDueDateForTicket(ticket) {
     const roundNo = Number(ticket?.current_round_no || ticket?.completed_round || 1);
     if (!ticket || roundNo !== 1) return '';
-    return addCalendarDaysISODate(evaluationDateForNonconformities(ticket), 7);
+    const evaluationDate = evaluationDateForNonconformities(ticket);
+    if (!evaluationDate) return '';
+
+    return addCalendarDaysISODate(evaluationDate, 7);
   }
 
   function currentRoundNonconformityRows(ticket, calculatedRows) {
@@ -5879,6 +5997,7 @@ import { state } from './js/state.js';
   if ($('eval-prev-page')) $('eval-prev-page').addEventListener('click', () => { state.evalPage -= 1; renderEvaluations(); });
   if ($('eval-next-page')) $('eval-next-page').addEventListener('click', () => { state.evalPage += 1; renderEvaluations(); });
   if ($('btn-close-ticket-detail')) $('btn-close-ticket-detail').addEventListener('click', () => $('ticket-detail-modal').classList.add('hidden'));
+  if ($('btn-close-assessment-detail')) $('btn-close-assessment-detail').addEventListener('click', () => $('assessment-detail-modal').classList.add('hidden'));
   if ($('btn-close-ticket-history')) $('btn-close-ticket-history').addEventListener('click', () => $('ticket-history-modal').classList.add('hidden'));
   if ($('btn-close-supplier-detail')) $('btn-close-supplier-detail').addEventListener('click', () => $('supplier-detail-modal').classList.add('hidden'));
   if ($('btn-close-supplier-history')) $('btn-close-supplier-history').addEventListener('click', () => $('supplier-history-modal').classList.add('hidden'));

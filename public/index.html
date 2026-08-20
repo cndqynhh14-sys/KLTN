@@ -2828,6 +2828,7 @@
   #supplier-modal,
   #supplier-import-modal,
   #ticket-detail-modal,
+  #assessment-detail-modal,
   #ticket-history-modal {
       align-items: flex-end !important;
       justify-content: center !important;
@@ -2837,6 +2838,7 @@
   #supplier-modal > form,
   #supplier-import-modal > form,
   #ticket-detail-modal > div,
+  #assessment-detail-modal > div,
   #ticket-history-modal > div {
       width: 100% !important;
       max-width: none !important;
@@ -2850,6 +2852,7 @@
   #supplier-modal > form::before,
   #supplier-import-modal > form::before,
   #ticket-detail-modal > div::before,
+  #assessment-detail-modal > div::before,
   #ticket-history-modal > div::before {
       content: '';
       display: block;
@@ -4838,6 +4841,16 @@
       <button type="button" id="btn-edit-ticket" class="btn-primary hidden">Chỉnh sửa phiếu</button>
       <button type="button" id="btn-delete-ticket" class="btn-ghost hidden">Xóa phiếu nháp</button>
     </div>
+  </div>
+</div>
+
+<div id="assessment-detail-modal" class="hidden fixed inset-0 bg-black/50 z-[220] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="assessment-detail-title">
+  <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-5xl" style="max-height:90vh; overflow:auto;">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="assessment-detail-title" class="text-lg font-semibold">Chi tiết lượt đánh giá</h3>
+      <button type="button" id="btn-close-assessment-detail" class="btn-ghost" data-action-id="dialog.close">Đóng</button>
+    </div>
+    <div id="assessment-detail-body" class="detail-layout"></div>
   </div>
 </div>
 

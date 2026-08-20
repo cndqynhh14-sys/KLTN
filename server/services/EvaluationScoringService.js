@@ -425,7 +425,7 @@ class EvaluationScoringService {
     if (!ticket) throw Object.assign(new Error('ticket_not_found'), { status: 404, payload: { error: 'ticket_not_found' } });
     this.assertVisible(ticket, user);
     if (![1, 2].includes(roundNo)) throw Object.assign(new Error('invalid_round'), { status: 400, payload: { error: 'invalid_round' } });
-    const round = this.ensureRound(ticket, roundNo, user);
+    const round = this.getRound(ticket.id, roundNo);
     if (!round) throw Object.assign(new Error('round_not_found'), { status: 404, payload: { error: 'round_not_found' } });
     return this.roundPayload(this.ticketRepository.getByCode(ticket.ticket_code), round);
   }
@@ -521,7 +521,24 @@ class EvaluationScoringService {
       this.maybeUpdateSupplierIntroduction(ticket, roundNo, normalizedSupplierIntroduction, user.email);
       const questions = this.questionsForTicket(ticket);
       const answers = this.answersForRound(round.id);
-      this.syncRoundNonconformities(ticket, round, questions, answers, user.email);
+      const scoringDate = new Date().toISOString().slice(0, 10);
+      const correctionDate = scoringDate;
+      const evaluationDate = roundNo === 2
+        ? correctionDate
+        : scoringDate;
+
+      const roundForCompletion = {
+        ...round,
+        assessment_date: evaluationDate,
+      };
+
+      this.syncRoundNonconformities(
+        ticket,
+        roundForCompletion,
+        questions,
+        answers,
+        user.email,
+      );
       if (roundNo !== 2) {
         const missingCorrectiveRequirements = this.missingRequiredNonconformityActions(ticket.id, round.id);
         if (missingCorrectiveRequirements.length) {
@@ -552,11 +569,6 @@ class EvaluationScoringService {
           payload: { error: 'lead_submission_not_eligible', ...leadEligibility },
         });
       }
-      const scoringDate = new Date().toISOString().slice(0, 10);
-      const correctionDate = scoringDate;
-      const evaluationDate = roundNo === 2
-        ? correctionDate
-        : scoringDate;
       const normalizedResult = buildEvaluationResultWithPolicy(scoringPolicy.definition, {
         score: score.finalScore,
         forcedFail: !score.passed,
@@ -592,8 +604,10 @@ class EvaluationScoringService {
       if (roundNo === 2) this.updateRound2TicketResult(ticket, roundNo, normalizedResult, score, correctionDate, user.email);
       else this.updateRound1TicketResult(ticket, roundNo, normalizedResult, score, evaluationDate, user.email);
 
+      // A failed round 2 still has to go through the approval workflow. Keep the
+      // ticket in round 2 after locking its score so submit_lead remains available.
       const nextStatus = roundNo === 2
-        ? (finalAction === 'SUBMIT_LEAD' ? this.statuses.ROUND_2_STATUS : this.statuses.COMPLETED_STATUS)
+        ? (leadEligibility.eligible ? this.statuses.ROUND_2_STATUS : this.statuses.COMPLETED_STATUS)
         : (finalAction === 'WAITING_CORRECTION' ? this.statuses.WAITING_CORRECTION_STATUS : this.statuses.PROCESSING_STATUS);
       const workflowAction = roundNo === 1 && finalAction === 'WAITING_CORRECTION'
         ? 'ROUND_1_END'

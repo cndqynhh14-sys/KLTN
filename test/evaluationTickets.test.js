@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 const { upsertCanonicalUser } = require('./helpers/canonicalUser');
+const { addCalendarDaysISO } = require('../server/domain/correctiveActionDueDate');
 
 function freshModules(dbPath) {
   process.env.DB_PATH = dbPath;
@@ -614,7 +615,7 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     assert.equal(createJson.nonconformities[0].severity, 'B');
     assert.equal(createJson.nonconformities[0].nonconformity, 'Label evidence is incomplete');
     assert.equal(createJson.nonconformities[0].nonconformity_content, 'Label evidence is incomplete');
-    assert.equal(createJson.nonconformities[0].due_date, '2026-07-08');
+    assert.equal(createJson.nonconformities[0].due_date, null);
     assert.equal(createJson.nonconformities[0].status, 'OPEN');
     const canonicalCreated = db.prepare(`SELECT evaluation_answer_id, nonconformity_content
       FROM evaluation_nonconformities WHERE id=?`).get(createJson.nonconformities[0].id);
@@ -765,7 +766,7 @@ test('round completion requires remediation and due date for nonconformities', a
     const draftJson = await draftRes.json();
     assert.equal(draftRes.status, 200, JSON.stringify(draftJson));
     assert.equal(draftJson.nonconformities.length, 1);
-    assert.equal(draftJson.nonconformities[0].due_date, '2026-07-08');
+    assert.equal(draftJson.nonconformities[0].due_date, null);
     const round = db.prepare('SELECT id FROM evaluation_rounds WHERE ticket_id = ? AND round_no = 1').get(ticketInfo.lastInsertRowid);
     questions.filter((question) => question.requires_attachment).forEach((question) => {
       const answer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round.id, question.id);
@@ -820,7 +821,6 @@ test('round completion requires remediation and due date for nonconformities', a
       headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
       body: JSON.stringify({
         remediation: 'Gửi hình ảnh khắc phục',
-        due_date: '2026-08-01',
         status: 'IN_PROGRESS',
       }),
     });
@@ -834,9 +834,13 @@ test('round completion requires remediation and due date for nonconformities', a
       body: JSON.stringify({ answers, attendees: REQUIRED_ATTENDEES, supplier_introduction: REQUIRED_SUPPLIER_INTRODUCTION, final_action: 'WAITING_CORRECTION' }),
     });
     const completeJson = await completeRes.json();
+
+    const expectedAssessmentDate = new Date().toISOString().slice(0, 10);
+    const expectedDueDate = addCalendarDaysISO(expectedAssessmentDate, 7);
+
     assert.equal(completeRes.status, 200, JSON.stringify(completeJson));
     assert.equal(completeJson.ticket.workflow_status, 'Ch\u1edd kh\u1eafc ph\u1ee5c');
-    assert.equal(completeJson.ticket.reassessment_due_date, '2026-08-01');
+    assert.equal(completeJson.ticket.reassessment_due_date, expectedDueDate);
     assert.equal(completeJson.round.locked, true);
     assert.equal(completeJson.ticket.allowed_actions.includes('score'), false);
     const persistedRoundRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC-REQ/rounds/1`, {
@@ -846,7 +850,7 @@ test('round completion requires remediation and due date for nonconformities', a
     assert.equal(persistedRoundRes.status, 200, JSON.stringify(persistedRoundJson));
     assert.equal(persistedRoundJson.round.locked, true);
     assert.equal(persistedRoundJson.ticket.allowed_actions.includes('score'), false);
-    const expectedAssessmentDate = new Date().toISOString().slice(0, 10);
+
     const storedAssessmentDates = db.prepare(`
       SELECT t.actual_evaluation_date, r.assessment_date
       FROM evaluation_tickets t
@@ -856,7 +860,7 @@ test('round completion requires remediation and due date for nonconformities', a
     assert.equal(storedAssessmentDates.actual_evaluation_date, expectedAssessmentDate);
     assert.equal(storedAssessmentDates.assessment_date, expectedAssessmentDate);
     assert.equal(completeJson.nonconformities[0].remediation, 'Gửi hình ảnh khắc phục');
-    assert.equal(completeJson.nonconformities[0].due_date, '2026-08-01');
+    assert.equal(completeJson.nonconformities[0].due_date, expectedDueDate);
     const laterUpdateRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC-REQ/nonconformities/${ncId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
@@ -1226,25 +1230,25 @@ test('round 2 can be locked then optionally submitted to lead approval', async (
     assert.equal(blockedCriticalBCompleteJson.failed_critical_count, 0);
 
     const answers = {
-      [q1]: { score: 'A', note: '' },
-      [q2]: { score: 'D', note: 'Round 2 critical clause remains failed at D' },
-      [q3]: { score: 'A', note: '' },
+      [q1]: { score: 'D', note: 'Round 2 requirement remains failed at D' },
+      [q2]: { score: 'B', note: 'Round 2 critical requirement remains open at B' },
+      [q3]: { score: 'C', note: 'Round 2 requirement remains open at C' },
       [q4]: { score: 'A', note: '' },
     };
 
     const completeForLeadRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-R2-LEAD/rounds/2/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
-      body: JSON.stringify({ answers, attendees: REQUIRED_ATTENDEES, supplier_introduction: REQUIRED_SUPPLIER_INTRODUCTION, final_action: 'SUBMIT_LEAD' }),
+      body: JSON.stringify({ answers, attendees: REQUIRED_ATTENDEES, supplier_introduction: REQUIRED_SUPPLIER_INTRODUCTION, final_action: 'COMPLETE' }),
     });
     const completeForLeadJson = await completeForLeadRes.json();
     assert.equal(completeForLeadRes.status, 200, JSON.stringify(completeForLeadJson));
     assert.equal(completeForLeadJson.round.locked, true);
     assert.equal(completeForLeadJson.ticket.workflow_status, '\u0110ang \u0111\u00e1nh gi\u00e1 l\u1ea7n 2');
-    assert.equal(completeForLeadJson.result.finalScore, 75);
+    assert.ok(completeForLeadJson.result.finalScore < 60);
     assert.equal(completeForLeadJson.result.lead_submission_eligible, true);
     assert.equal(completeForLeadJson.ticket.allowed_actions.includes('submit_lead'), true);
-    assert.equal(completeForLeadJson.nonconformities.length, 1);
+    assert.equal(completeForLeadJson.nonconformities.length, 3);
     assert.equal(completeForLeadJson.nonconformities[0].remediation, null);
     assert.equal(completeForLeadJson.nonconformities[0].due_date, null);
 
@@ -1796,15 +1800,22 @@ test('approval bootstrap only returns records pending the current approver role'
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type)
       VALUES ('NCC-APR', 'Approval Supplier', 'ACTIVE', 'MANUAL')
     `).run();
-    const template = db.prepare("SELECT id FROM question_templates WHERE template_code = 'BM04'").get();
+    const templateInfo = db.prepare(`
+      INSERT INTO question_templates (template_code, template_name, active)
+      VALUES ('APR-VIEW', 'Approval read-only detail', 1)
+    `).run();
+    const approvalQuestions = insertCanonicalQuestionSet(db, templateInfo.lastInsertRowid, [
+      { code: 'APR-01', text: 'Approval reviewer must see this scored criterion', category: 'Quality', order: 1 },
+    ]);
+    const template = { id: templateInfo.lastInsertRowid, versionId: approvalQuestions.versionId };
     const insertTicket = db.prepare(`
       INSERT INTO evaluation_tickets (
-        ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id,
+        ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type, template_id, question_template_version_id,
         facility_type, supplier_scale, planned_date, current_status, current_round_no,
         assigned_specialist_id, created_by
       )
       VALUES (
-        @ticket_code, @supplier_id, @supplier_code, @supplier_name, 'Dinh ky', @template_id,
+        @ticket_code, @supplier_id, @supplier_code, @supplier_name, 'Dinh ky', @template_id, @question_template_version_id,
         'CHUNG', 'LARGE', '2026-08-01', @current_status, 1,
         'specialist@masangroup.com', 'specialist@masangroup.com'
       )
@@ -1822,12 +1833,29 @@ test('approval bootstrap only returns records pending the current approver role'
         supplier_code: `NCC-${approvalLevel}`,
         supplier_name: supplierName,
         template_id: template.id,
+        question_template_version_id: template.versionId,
         current_status: currentStatus,
       });
       db.prepare(`
         INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, status, comment)
         VALUES (?, ?, ?, ?, ?)
       `).run(info.lastInsertRowid, approvalLevel, assignedRole, taskStatus, `${approvalLevel} task`);
+      const roundInfo = db.prepare(`
+        INSERT INTO evaluation_rounds (
+          ticket_id, round_no, status, completed_at, locked_at, locked_by,
+          total_score, final_result, classification
+        ) VALUES (?, 1, 'Hoàn thành', datetime('now'), datetime('now'), 'specialist@masangroup.com',
+          75, 'Đạt có điều kiện', 'C')
+      `).run(info.lastInsertRowid);
+      const answerInfo = db.prepare(`
+        INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
+        VALUES (?, ?, 'B', 'Lãnh đạo cần xem được ghi chú này', 75, 'specialist@masangroup.com')
+      `).run(roundInfo.lastInsertRowid, approvalQuestions.ids[0]);
+      db.prepare(`
+        INSERT INTO evaluation_attachments (
+          answer_id, ticket_id, file_name, file_path, storage_key, mime_type, size_bytes, uploaded_by
+        ) VALUES (?, ?, 'approval-evidence.pdf', '/tmp/approval-evidence.pdf', ?, 'application/pdf', 128, 'specialist@masangroup.com')
+      `).run(answerInfo.lastInsertRowid, info.lastInsertRowid, `APPROVAL:${ticketCode}:EVIDENCE`);
     }
 
     const appInfo = await startApp(evaluationsRouter);
@@ -1855,24 +1883,42 @@ test('approval bootstrap only returns records pending the current approver role'
       return json.total;
     }
 
+    async function roundDetail(token, code) {
+      const res = await fetch(`${appInfo.baseUrl}/evaluations/${code}/rounds/1`, {
+        headers: { Cookie: `qlcl_token=${token}` },
+      });
+      const json = await res.json();
+      assert.equal(res.status, 200, JSON.stringify(json));
+      assert.equal(json.round.round_no, 1);
+      assert.equal(json.canonical_answers[String(approvalQuestions.ids[0])].score, 'B');
+      assert.equal(json.canonical_answers[String(approvalQuestions.ids[0])].note, 'Lãnh đạo cần xem được ghi chú này');
+      assert.equal(json.canonical_answers[String(approvalQuestions.ids[0])].attachments[0].download_url.includes('/attachments/'), true);
+      assert.equal(json.ticket.allowed_actions.includes('view'), true);
+      assert.equal(json.ticket.allowed_actions.includes('score'), false);
+      return json;
+    }
+
     const leadCodes = await bootstrapCodes(leadToken);
     assert.ok(leadCodes.includes('TICKET-APP-LEAD'));
     assert.equal(leadCodes.includes('TICKET-APP-TBP'), false);
     assert.equal(leadCodes.includes('TICKET-APP-GDK'), false);
     assert.equal(leadCodes.includes('TICKET-APP-CLOSED'), false);
     assert.equal(await workspaceTotal(leadToken), 0);
+    await roundDetail(leadToken, 'TICKET-APP-LEAD');
 
     const tbpCodes = await bootstrapCodes(tbpToken);
     assert.ok(tbpCodes.includes('TICKET-APP-TBP'));
     assert.equal(tbpCodes.includes('TICKET-APP-LEAD'), false);
     assert.equal(tbpCodes.includes('TICKET-APP-GDK'), false);
     assert.equal(await workspaceTotal(tbpToken), 0);
+    await roundDetail(tbpToken, 'TICKET-APP-TBP');
 
     const gdkCodes = await bootstrapCodes(gdkToken);
     assert.ok(gdkCodes.includes('TICKET-APP-GDK'));
     assert.equal(gdkCodes.includes('TICKET-APP-LEAD'), false);
     assert.equal(gdkCodes.includes('TICKET-APP-TBP'), false);
     assert.equal(await workspaceTotal(gdkToken), 0);
+    await roundDetail(gdkToken, 'TICKET-APP-GDK');
 
     const adminCodes = await bootstrapCodes(adminToken);
     assert.ok(adminCodes.includes('TICKET-APP-LEAD'));

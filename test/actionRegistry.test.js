@@ -163,6 +163,16 @@ test('evaluation ticket mapping preserves the backend action envelope used for r
   assert.match(app, /function ownsWorkflowRecord\(row\) \{\s*return row\?\.evaluation_workspace_visible\s*!==\s*false\s*&&\s*resourceCan\(row, 'view'\);\s*\}/);
 });
 
+test('assessment history exposes a read-only detail action instead of requiring scoring permission', () => {
+  assert.match(html, /id="assessment-detail-modal"/);
+  assert.match(html, /id="assessment-detail-body"/);
+  assert.match(app, /function openAssessmentRoundDetail\(code, roundNo\)/);
+  assert.match(app, /actionDescriptor\('evaluation\.view', \(\) => openAssessmentRoundDetail\(row\.code, item\.round_no\)/);
+  assert.doesNotMatch(app, /actionDescriptor\('evaluation\.score', \(\) => openAssessmentRound\(row\.code, item\.round_no\)/);
+  assert.match(app, /'Mức đánh giá', 'Điểm quy đổi', 'Ghi chú', 'Bằng chứng'/);
+  assert.match(app, /api\('\/evaluations\/' \+ encodeURIComponent\(code\) \+ '\/rounds\/' \+ Number\(roundNo\)\)/);
+});
+
 test('generated action documentation stays synchronized with the catalog', () => {
   assert.match(actionDoc, new RegExp(`version ${actions.ACTION_VERSION}\\)`));
   for (const item of actions.ACTION_REGISTRY) assert.match(actionDoc, new RegExp(`\\| ${item.action_id.replace('.', '\\.') } \\|`));

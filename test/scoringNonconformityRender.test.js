@@ -159,11 +159,31 @@ function question(id, score, note) {
   };
 }
 
-test('RUN-05 resolves the evaluation date from actual, planned, then business today', () => {
+test('RUN-05 resolves the evaluation date from actual evaluation date only', () => {
   const harness = createHarness();
   assert.equal(harness.evaluationDateForNonconformities(ticket()), '2026-08-03');
-  assert.equal(harness.evaluationDateForNonconformities(ticket({ actual_evaluation_date_iso: '' })), '2026-08-01');
-  assert.equal(harness.evaluationDateForNonconformities(ticket({ actual_evaluation_date_iso: '', planned_iso: '' })), '2026-08-03');
+  assert.equal(harness.evaluationDateForNonconformities(ticket({ actual_evaluation_date_iso: '' }),),'');
+  assert.equal(harness.evaluationDateForNonconformities(ticket({ actual_evaluation_date_iso: '', planned_iso: '' }),), '');
+});
+
+test('RUN-05 defaults correction due date to 7 days after actual evaluation date', () => {
+  const harness = createHarness();
+
+  assert.equal(
+    harness.defaultCorrectionDueDateForTicket(ticket()),
+    '2026-08-10',
+  );
+});
+
+test('RUN-05 does not default correction due date before evaluation is completed', () => {
+  const harness = createHarness();
+
+  assert.equal(
+    harness.defaultCorrectionDueDateForTicket(
+      ticket({ actual_evaluation_date_iso: '' }),
+    ),
+    '',
+  );
 });
 
 test('RUN-05 renders one temporary D finding with editable corrective fields and +7 day default', () => {
