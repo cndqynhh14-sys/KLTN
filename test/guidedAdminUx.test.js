@@ -18,7 +18,6 @@ test('QLCL-UX option 3 marks every requested admin workspace as one guided flow'
     ['authz-pane-users', 'users'],
     ['authz-pane-roles', 'roles'],
     ['admin-personnel-import', 'personnel-import'],
-    ['authz-pane-scopes', 'data-scopes'],
     ['authz-pane-approvals', 'approval-assignments'],
     ['question-management-workspace-root', 'question-templates'],
     ['report-template-workspace', 'report-templates'],
@@ -31,8 +30,7 @@ test('QLCL-UX option 3 marks every requested admin workspace as one guided flow'
     );
   }
 
-  assert.equal((html.match(/data-guided-stages/g) || []).length, 8);
-  assert.match(html, /data-guided-workspace="data-scopes"[\s\S]*?<span>1<\/span>[\s\S]*?<strong>Chọn nhân sự<\/strong>[\s\S]*?<span>2<\/span>[\s\S]*?<strong>Chọn phạm vi<\/strong>[\s\S]*?<span>3<\/span>[\s\S]*?<strong>Kiểm tra &amp; lưu<\/strong>/);
+  assert.equal((html.match(/data-guided-stages/g) || []).length, 7);
   assert.match(html, /class="panel guided-authorization-panel" data-testid="authorization-admin"/);
 });
 
@@ -67,8 +65,7 @@ test('QLCL-UX option 3 uses a shared responsive visual pattern without duplicati
   assert.match(css, /\.guided-workspace \.authz-tab-step,[\s\S]*?\.guided-workspace \.authz-tab-copy small\s*\{[^}]*display:\s*none/);
   assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*?\.guided-stage-list/);
   assert.match(app, /function syncGuidedWorkspace\(/);
-  assert.match(app, /syncGuidedWorkspace\('data-scopes'/);
-  assert.match(app, /state\.tab === 'admin-data-scopes'[\s\S]{0,100}'Điều chỉnh phạm vi dữ liệu'/);
+  assert.doesNotMatch(app, /syncGuidedWorkspace\('data-scopes'/);
   assert.match(app, /btn-add-user'[\s\S]{0,80}nextTab !== 'users'/);
   assert.match(app, /data-authz-active[\s\S]{0,80}nextTab/);
   assert.doesNotMatch(app, /guidedWorkspace[\s\S]{0,120}(?:roleCode|roleName|permission)/i);

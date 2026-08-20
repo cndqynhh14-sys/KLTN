@@ -203,8 +203,8 @@ test('local webapp renders, authenticates with guarded screen OTP, and opens eva
   assert.equal(await page.locator('#nav-admin').isVisible(), true);
   await page.click('[data-authz-tab="roles"]');
   await page.waitForFunction(() => document.querySelector('#authz-role-list')?.textContent.includes('SYS_ADMIN'));
+  await page.click('#authz-role-list .authz-role-open');
   assert.equal(await page.locator('#authz-role-form').isVisible(), true);
-  await page.click('[data-authz-tab="permissions"]');
   await page.waitForFunction(() => document.querySelector('#authz-permission-matrix')?.textContent.includes('SYSTEM.ADMIN'));
   await page.click('[data-authz-tab="users"]');
 

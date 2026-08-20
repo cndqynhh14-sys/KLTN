@@ -356,7 +356,8 @@ test('PROMPT-10 report workspace reduces density and keeps actionable validation
 
   assert.match(html, /id="report-template-catalog"[\s\S]*class="report-template-catalog-list"/);
   assert.doesNotMatch(html, /class="data-table report-template-catalog-table"/);
-  assert.match(html, /id="report-template-readonly"[\s\S]*id="report-template-create-draft"[\s\S]*<\/div>/);
+  assert.match(html, /class="business-config-toolbar"[\s\S]*id="report-template-create-draft"/);
+  assert.match(html, /id="report-template-readonly"[^>]*>[\s\S]*id="report-template-readonly-message"/);
 
   const controls = {
     structure: 'report-template-builder-panel',

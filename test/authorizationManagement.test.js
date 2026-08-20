@@ -353,7 +353,7 @@ test('authorization admin UI exposes IA, master-detail, safety and responsive st
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'src', 'tailwind.css'), 'utf8');
-  for (const label of ['Người dùng', 'Vai trò', 'Ma trận quyền', 'Phạm vi dữ liệu', 'Phân công phê duyệt', 'Lịch sử thay đổi']) {
+  for (const label of ['Nhân sự', 'Vai trò', 'Người phê duyệt', 'Lịch sử thay đổi']) {
     assert.match(html, new RegExp(label));
   }
   assert.match(html, /data-testid="authorization-admin"/);
@@ -406,7 +406,7 @@ test('authorization UI preserves dual permission effects and guards mutations wi
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
 
-  assert.match(html, /id="authz-permission-effect-filter"[\s\S]*?<option value="ALLOW_DENY">ALLOW \+ DENY<\/option>/);
+  assert.match(html, /id="authz-permission-effect-filter"[\s\S]*?<option value="ALLOW_DENY">Cho phép \+ Từ chối<\/option>/);
   assert.match(html, /id="new-user-reason"[^>]*minlength="8"[^>]*maxlength="500"/);
   assert.match(html, /id="confirm-reason-field"[\s\S]*?id="confirm-reason"[^>]*minlength="8"[^>]*maxlength="500"[\s\S]*?id="confirm-reason-error"/);
 
@@ -442,16 +442,15 @@ test('authorization setup navigation and audit history expose a scannable respon
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'src', 'tailwind.css'), 'utf8');
 
-  for (const [tab, pane, step] of [
-    ['users', 'authz-pane-users', '01'],
-    ['roles', 'authz-pane-roles', '02'],
-    ['permissions', 'authz-pane-permissions', '03'],
-    ['scopes', 'authz-pane-scopes', '04'],
-    ['approvals', 'authz-pane-approvals', '05'],
-    ['history', 'authz-pane-history', '06'],
+  for (const [tab, pane] of [
+    ['users', 'authz-pane-users'],
+    ['roles', 'authz-pane-roles'],
+    ['approvals', 'authz-pane-approvals'],
+    ['history', 'authz-pane-history'],
   ]) {
-    assert.match(html, new RegExp(`<button(?=[^>]*data-authz-tab="${tab}")(?=[^>]*aria-controls="${pane}")[^>]*>[\\s\\S]{0,120}authz-tab-step[^>]*>${step}<`));
+    assert.match(html, new RegExp(`<button(?=[^>]*data-authz-tab="${tab}")(?=[^>]*aria-controls="${pane}")[^>]*>`));
   }
+  assert.doesNotMatch(html, /data-authz-tab="(?:permissions|scopes)"/);
 
   for (const id of [
     'authz-history-total',
@@ -464,7 +463,7 @@ test('authorization setup navigation and audit history expose a scannable respon
     'authz-history-result-count',
   ]) assert.match(html, new RegExp(`id="${id}"`));
 
-  assert.match(html, /class="data-table authz-history-table"[\s\S]*?<th>Thời điểm &amp; người thực hiện<\/th>[\s\S]*?<th>Truy vết<\/th>/);
+  assert.match(html, /class="data-table authz-history-table"[\s\S]*?<th>Thời gian<\/th>[\s\S]*?<th>Người thực hiện<\/th>[\s\S]*?<th[^>]*>Chi tiết<\/th>/);
   assert.match(app, /let authzHistoryRows = \[\];/);
   assert.match(app, /function renderAuthzHistory\(\)/);
   assert.match(app, /function authzHistoryCell\(label, options = \{\}\)/);

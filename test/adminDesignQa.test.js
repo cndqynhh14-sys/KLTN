@@ -57,7 +57,6 @@ test('PROMPT-13 UAT covers the complete administration route matrix at both targ
     '/admin/users',
     '/admin/roles',
     '/admin/personnel-import',
-    '/admin/data-scopes',
     '/admin/approval-assignments',
     '/admin/question-templates',
     '/admin/report-templates',

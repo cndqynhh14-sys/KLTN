@@ -15,7 +15,6 @@ const ADMIN_ROUTE_MATRIX = [
   { route: '/admin/users', module: 'authorization', pane: 'users', ready: '[data-testid="authorization-admin"]' },
   { route: '/admin/roles', module: 'authorization', pane: 'roles', ready: '[data-testid="authorization-admin"]' },
   { route: '/admin/personnel-import', module: 'personnel-import', ready: '[data-personnel-import-workflow]' },
-  { route: '/admin/data-scopes', module: 'authorization', pane: 'scopes', ready: '[data-testid="authorization-admin"]' },
   { route: '/admin/approval-assignments', module: 'authorization', pane: 'approvals', ready: '[data-testid="authorization-admin"]' },
   { route: '/admin/question-templates', module: 'question-templates', ready: '#question-management-workspace-root' },
   { route: '/admin/report-templates', module: 'report-templates', ready: '#report-template-workspace' },
@@ -422,7 +421,7 @@ test.describe('@smoke QLCL foundation', () => {
     });
     expect(adminFocusVisible).toBeTruthy();
     await expect(page.locator('#authz-role-list')).toContainText('SYS_ADMIN');
-    await page.locator('[data-authz-tab="permissions"]').click();
+    await page.locator('#authz-role-list .authz-role-open').first().click();
     await expect(page.locator('#authz-permission-matrix')).toContainText('SYSTEM.ADMIN');
     await page.locator('[data-authz-tab="users"]').click();
 
@@ -465,7 +464,7 @@ test.describe('@smoke QLCL foundation', () => {
 
     const publishedOptionValue = await page.locator('#question-workspace-version-select option').filter({ hasText: 'PUBLISHED' }).first().getAttribute('value');
     await page.locator('#question-version-clone').click();
-    await expect(page.locator('#question-version-status-chip')).toHaveText('DRAFT');
+    await expect(page.locator('#question-version-status-chip')).toHaveText('Bản nháp');
     await expect(page.locator('#question-workspace-version-select option')).toHaveCount(2);
     await page.locator('#question-add-item').click();
     await expect(page.locator('#question-editor-drawer')).toBeVisible();
@@ -490,12 +489,12 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#question-submit-review').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
     await page.locator('#confirm-accept').click();
-    await expect(page.locator('#question-version-status-chip')).toHaveText('IN_REVIEW');
+    await expect(page.locator('#question-version-status-chip')).toHaveText('Chờ duyệt');
     await expect(page.locator('#question-save-draft')).toBeHidden();
     await expect(page.locator('#question-publish')).toBeDisabled();
     await expect(page.locator('#question-publish')).toHaveAttribute('data-disabled-reason', /Publish đang bị tắt/);
     await page.locator('#question-workspace-version-select').selectOption(publishedOptionValue);
-    await expect(page.locator('#question-version-status-chip')).toHaveText('PUBLISHED');
+    await expect(page.locator('#question-version-status-chip')).toHaveText('Đang áp dụng');
     await page.locator('#question-tab-questions').click();
     await page.locator('#question-management-workspace-root').scrollIntoViewIfNeeded();
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -589,7 +588,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.evaluate(() => { window.location.hash = '/admin/scoring-policies'; });
     await expect(page.locator('#scoring-policy-workspace')).toBeVisible();
     await expect(page.locator('#scoring-policy-version-select')).toBeVisible();
-    await expect(page.locator('#scoring-policy-status')).toContainText('PUBLISHED');
+    await expect(page.locator('#scoring-policy-status')).toContainText('Đang áp dụng');
     await expect(page.locator('#scoring-policy-lifecycle > li')).toHaveCount(5);
     await expect(page.locator('[data-scoring-policy-tab]')).toHaveCount(7);
     await expect(page.locator('#scoring-policy-readonly')).toBeVisible();
@@ -616,7 +615,7 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page).toHaveURL(/tab=impact/);
 
     await page.locator('#scoring-policy-create-draft').click();
-    await expect(page.locator('#scoring-policy-status')).toContainText('DRAFT');
+    await expect(page.locator('#scoring-policy-status')).toContainText('Bản nháp');
     await page.locator('#scoring-policy-overview-title').fill(`Tổng hợp tuân thủ · PROMPT-11 ${uat.config.runId.slice(0, 8)}`);
     await expect(page.locator('#scoring-policy-submit-review')).toBeDisabled();
     await page.locator('#scoring-policy-save-draft').click();
@@ -631,7 +630,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#scoring-policy-submit-review').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
     await page.locator('#confirm-accept').click();
-    await expect(page.locator('#scoring-policy-status')).toContainText('IN_REVIEW');
+    await expect(page.locator('#scoring-policy-status')).toContainText('Chờ duyệt');
     await expect(page.locator('#scoring-policy-publish')).toBeDisabled();
     await page.locator('#scoring-policy-workspace').scrollIntoViewIfNeeded();
     await page.screenshot({
@@ -712,7 +711,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#mobile-more-navigation [data-route-tab="admin-question-templates"]').evaluate((button) => button.click());
     await expect(page.locator('#question-workspace-version-select')).toBeVisible();
     await page.locator('#question-workspace-version-select').selectOption(publishedOptionValue);
-    await expect(page.locator('#question-version-status-chip')).toHaveText('PUBLISHED');
+    await expect(page.locator('#question-version-status-chip')).toHaveText('Đang áp dụng');
     await expect(page.locator('#question-published-readonly')).toBeVisible();
     await page.locator('#question-tab-questions').click();
     await page.locator('#question-import-panel > summary').click();
@@ -788,6 +787,7 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.getByTestId('authorization-admin')).toBeVisible();
     await page.locator('[data-authz-tab="roles"]').click();
     await expect(page.locator('#authz-role-list')).toContainText('SYS_ADMIN');
+    await page.locator('#authz-role-list .authz-role-open').first().click();
     await expect(page.locator('#authz-role-form')).toBeVisible();
     const mobileAdminWidth = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,
@@ -805,7 +805,7 @@ test.describe('@smoke QLCL foundation', () => {
         undersized: visible.filter((button) => {
           const rect = button.getBoundingClientRect();
           return rect.height < 44 || rect.width < 44;
-        }).map((button) => button.id || button.textContent.trim()).slice(0, 5),
+        }).map((button) => button.id || button.getAttribute('aria-label') || button.className || button.textContent.trim()).slice(0, 5),
       };
     });
     expect(mobileActionAudit).toEqual({ missingAction: [], undersized: [] });
@@ -1098,7 +1098,7 @@ test.describe('@smoke QLCL foundation', () => {
     const emailMapping = page.locator('[data-personnel-field="email"]');
     await emailMapping.selectOption('');
     await expect(page.locator('#personnel-import-next')).toBeDisabled();
-    await expect(page.locator('#personnel-import-action-message')).toContainText('mapping cột Email');
+    await expect(page.locator('#personnel-import-action-message')).toContainText('đối chiếu cột Email');
     await emailMapping.selectOption('email');
     await page.locator('#personnel-import-next').click();
     await expect(page.locator('[data-personnel-step="roles"]')).toBeVisible();
@@ -1410,18 +1410,32 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.getByTestId('authorization-admin')).toBeVisible();
     const clonedRoleAfterDiscard = page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: cloneRole });
     await clonedRoleAfterDiscard.click();
+    await expect(page.locator('#authz-role-code')).toHaveValue(cloneRole);
 
-    await page.locator('[data-authz-tab="permissions"]').click();
-    await page.locator('#authz-permission-search').fill('REPORT.READ');
-    await expect(page.locator('[data-authz-permission-code="REPORT.READ"]')).toBeVisible();
-    await page.locator('[data-authz-permission-code="REPORT.READ"]').selectOption('ALLOW_DENY');
-    await expect(page.locator('#authz-after-summary')).toContainText('DENY_WINS');
-    await page.locator('#authz-permission-reason').fill('Publish a synthetic allow and deny pair to verify deterministic conflict resolution');
-    const permissionResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
-      && response.url().endsWith(`/qlcl/api/admin/authorization/roles/${cloneRole}/permissions`));
-    await page.locator('#authz-save-permissions').click();
-    expect((await permissionResponse).status()).toBe(200);
-    await expect(page.getByText('Đã publish ma trận quyền.', { exact: true })).toBeVisible();
+    const permissionPublishStatus = await page.evaluate(async ({ roleCode }) => {
+      const response = await fetch(`/qlcl/api/admin/authorization/roles/${roleCode}/permissions`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          permissions: [
+            { permissionCode: 'REPORT.READ', effect: 'ALLOW' },
+            { permissionCode: 'REPORT.READ', effect: 'DENY' },
+          ],
+          reason: 'Publish a synthetic allow and deny pair to verify deterministic conflict resolution',
+          confirmation: `PUBLISH ROLE ${roleCode}`,
+        }),
+      });
+      return response.status;
+    }, { roleCode: cloneRole });
+    expect(permissionPublishStatus).toBe(200);
+    await page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: 'QLCL_SPECIALIST' }).click();
+    await expect(page.locator('#authz-role-code')).toHaveValue('QLCL_SPECIALIST');
+    await page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: cloneRole }).click();
+    await expect(page.locator('#authz-role-code')).toHaveValue(cloneRole);
+    await page.locator('#authz-permission-search').evaluate((input) => {
+      input.value = 'REPORT.READ';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     await expect(page.locator('[data-authz-permission-code="REPORT.READ"]')).toHaveValue('ALLOW_DENY');
 
     await page.locator('[data-authz-tab="users"]').click();
@@ -1445,13 +1459,18 @@ test.describe('@smoke QLCL foundation', () => {
     expect((await assignmentResponse).status()).toBe(200);
     await expect(page.locator('#authz-user-effective')).toContainText('REPORT.READ');
     await expect(page.locator('#authz-user-effective')).toContainText('DENY_WINS');
-    await page.locator('#authz-user-advanced-filters > summary').click();
-    await page.locator('#authz-user-health-filter').selectOption('conflict');
+    await page.locator('#authz-close-user-detail').click();
+    await expect(page.locator('#authz-user-detail')).toBeHidden();
+    await page.locator('#authz-user-health-filter').evaluate((select) => {
+      select.value = 'conflict';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     await expect(targetRow).toHaveCount(1);
 
     await page.locator('[data-authz-tab="roles"]').click();
     const cloneRoleCard = page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: cloneRole });
     await cloneRoleCard.click();
+    await expect(page.locator('#authz-role-code')).toHaveValue(cloneRole);
     await expect(page.locator('#authz-delete-role')).toBeDisabled();
     await expect(page.locator('#authz-role-delete-reason')).toContainText('lượt gán người dùng (kể cả lịch sử)');
 

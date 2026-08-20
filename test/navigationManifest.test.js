@@ -66,7 +66,7 @@ test('route resolver preserves bookmarks and fails closed before a loader is sel
     '/admin/users': 'admin-users',
     '/admin/roles': 'admin-roles',
     '/admin/personnel-import': 'admin-personnel-import',
-    '/admin/data-scopes': 'admin-data-scopes',
+    '/admin/data-scopes': 'admin-users',
     '/admin/approval-assignments': 'admin-approval-assignments',
     '/admin/scoring-policies': 'admin-scoring-policies',
     '/admin/system-logs': 'admin-system-logs',
@@ -91,7 +91,7 @@ test('administration IA groups routes in the required order with stable guards a
     'Vận hành hệ thống',
   ]);
   assert.deepEqual(groups.map(({ items }) => items.map((item) => item.id)), [
-    ['admin-users', 'admin-roles', 'admin-personnel-import', 'admin-data-scopes', 'admin-approval-assignments'],
+    ['admin-users', 'admin-roles', 'admin-personnel-import', 'admin-approval-assignments'],
     ['admin-question-templates', 'admin-report-templates', 'admin-scoring-policies'],
     ['admin-system-logs'],
   ]);
@@ -100,7 +100,6 @@ test('administration IA groups routes in the required order with stable guards a
     'admin-users': ['/admin/users', 'USER.MANAGE', 'authorization', 'users'],
     'admin-roles': ['/admin/roles', 'USER.MANAGE', 'authorization', 'roles'],
     'admin-personnel-import': ['/admin/personnel-import', 'USER.MANAGE', 'personnel-import', null],
-    'admin-data-scopes': ['/admin/data-scopes', 'USER.MANAGE', 'authorization', 'scopes'],
     'admin-approval-assignments': ['/admin/approval-assignments', 'USER.MANAGE', 'authorization', 'approvals'],
     'admin-question-templates': ['/admin/question-templates', 'QUESTION_TEMPLATE.MANAGE', 'question-templates', null],
     'admin-report-templates': ['/admin/report-templates', 'REPORT_TEMPLATE.MANAGE', 'report-templates', null],

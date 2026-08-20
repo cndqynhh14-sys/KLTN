@@ -19,10 +19,9 @@ Generated from `public/js/navigation-manifest.js`. Navigation manifest version: 
 | `admin` | `administration` | `/admin` | `view-admin` | Trung tâm quản trị | `SYSTEM.ADMIN`<br>`USER.MANAGE`<br>`AUDIT.READ`<br>`AUDIT.EXPORT`<br>`REPORT_TEMPLATE.MANAGE`<br>`REPORT_TEMPLATE.PUBLISH`<br>`REPORT_TEMPLATE.ADVANCED`<br>`QUESTION_TEMPLATE.MANAGE`<br>`SCORING_POLICY.MANAGE`<br>`SCORING_POLICY.PUBLISH` | ON | 40 | yes | — | no |
 | `admin-people-access` | `admin` | — | — | Nhân sự & phân quyền | — | ON | — | yes | — | no |
 | `admin-users` | `admin-people-access` | `/admin/users` | `view-admin` | Danh sách nhân sự | `USER.MANAGE` | ON | — | yes | — | no |
-| `admin-roles` | `admin-people-access` | `/admin/roles` | `view-admin` | Vai trò & tổ hợp quyền | `USER.MANAGE` | ON | — | yes | — | no |
-| `admin-personnel-import` | `admin-people-access` | `/admin/personnel-import` | `view-admin` | Nhập nhân sự & mapping | `USER.MANAGE` | ON | — | yes | — | no |
-| `admin-data-scopes` | `admin-people-access` | `/admin/data-scopes` | `view-admin` | Phạm vi dữ liệu | `USER.MANAGE` | ON | — | yes | — | no |
-| `admin-approval-assignments` | `admin-people-access` | `/admin/approval-assignments` | `view-admin` | Phân công phê duyệt | `USER.MANAGE` | ON | — | yes | — | no |
+| `admin-roles` | `admin-people-access` | `/admin/roles` | `view-admin` | Vai trò công việc | `USER.MANAGE` | ON | — | yes | — | no |
+| `admin-personnel-import` | `admin-people-access` | `/admin/personnel-import` | `view-admin` | Nhập danh sách nhân sự | `USER.MANAGE` | ON | — | yes | — | no |
+| `admin-approval-assignments` | `admin-people-access` | `/admin/approval-assignments` | `view-admin` | Người phê duyệt | `USER.MANAGE` | ON | — | yes | — | no |
 | `admin-business-config` | `admin` | — | — | Cấu hình nghiệp vụ | — | ON | — | yes | — | no |
 | `admin-question-templates` | `admin-business-config` | `/admin/question-templates` | `view-admin` | Bộ câu hỏi đánh giá | `QUESTION_TEMPLATE.MANAGE` | ON | — | yes | — | no |
 | `admin-report-templates` | `admin-business-config` | `/admin/report-templates` | `view-admin` | Mẫu báo cáo | `REPORT_TEMPLATE.MANAGE` | ON | — | yes | — | no |
