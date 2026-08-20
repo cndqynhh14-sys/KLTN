@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const multer = require('multer');
 const Database = require('better-sqlite3');
-const { db, stmts, logAccess, authorizationService } = require('../db');
+const { db, stmts, logAccess, authorizationService, auditEventService } = require('../db');
 const { DB_PATH } = require('../config/paths');
 const { requireAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/policy');
@@ -13,9 +13,12 @@ const { PERMISSIONS, ROLE_CODES, LEGACY_ROLE_TO_CODE } = require('../authorizati
 const { ROLES, ROLE_VALUES, normalizeRole } = require('../domain/roles');
 const { restoreDatabase } = require('../services/DatabaseRestoreService');
 const { sanitizeString } = require('../observability/redact');
+const { getContext } = require('../observability/context');
+const { WorkTransferError, WorkTransferService } = require('../services/WorkTransferService');
 const logger = require('../logger');
 
 const router = express.Router();
+const workTransferService = new WorkTransferService(db, authorizationService, auditEventService);
 const getUserAuditRow = db.prepare(`SELECT user_id, email, is_active, display_name, authz_version
   FROM users WHERE user_id = ? OR lower(email) = lower(?)`);
 const getPrimaryRoleCode = db.prepare(`SELECT r.role_code
@@ -62,6 +65,60 @@ function userAuditSnapshot(row) {
 function resolveUser(identifier) {
   const value = String(identifier || '').trim();
   return getUserAuditRow.get(value, value) || null;
+}
+
+function workTransferError(res, req, error) {
+  if (!(error instanceof WorkTransferError)) throw error;
+  const requestId = req.requestId || getContext().request_id;
+  res.locals.error_code = error.code;
+  return res.status(error.status || 400).json({
+    error: error.code,
+    ...(error.details || {}),
+    request_id: requestId,
+  });
+}
+
+function completeOffboarding(req, res, transferToUserId = null) {
+  const target = resolveUser(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'not_found' });
+  const before = userAuditSnapshot(target);
+  const requestContext = getContext();
+  const requestId = req.requestId || requestContext.request_id;
+  const correlationId = req.correlationId || requestContext.correlation_id || requestId;
+  let result;
+  try {
+    result = workTransferService.offboard({
+      fromUserId: target.user_id,
+      transferToUserId,
+      reason: req.body?.reason,
+      createdByUserId: req.user.userId || req.user.user_id || req.user.email,
+      idempotencyKey: req.get('idempotency-key') || requestId,
+      requestId,
+      correlationId,
+    });
+  } catch (error) {
+    return workTransferError(res, req, error);
+  }
+  const stored = resolveUser(target.user_id);
+  if (!result.replayed) {
+    logAccess({
+      email: req.user.email,
+      action: 'USER_DEACTIVATE',
+      details: {
+        target: target.email,
+        target_user_id: target.user_id,
+        reason: result.transfer.reason,
+        transfer_id: result.transfer.transfer_id,
+        transferred_count: result.transferred_count,
+        replayed: false,
+        authz_version: Number(stored.authz_version),
+        before,
+        after: userAuditSnapshot(stored),
+      },
+      ip: req.ip,
+    });
+  }
+  return res.json(result);
 }
 
 function requireRestoreToken(req, res, next) {
@@ -171,42 +228,26 @@ router.post('/users', (req, res) => {
   res.json({ ok: true, userId: stored.user_id, user_id: stored.user_id, email, role: identity.role, is_admin: identity.isAdmin, authz_version: Number(stored.authz_version) });
 });
 
-// DELETE /admin/users/:email — deactivate (soft delete). Users giữ lại trong access_log.
-router.delete('/users/:userId', (req, res) => {
-  const target = resolveUser(req.params.userId);
-  if (!target) return res.status(404).json({ error: 'not_found' });
-  const email = target.email;
-  if (email === req.user.email) {
-    return res.status(400).json({ error: 'cannot_deactivate_self' });
-  }
-  const reason = normalizeChangeReason(req.body?.reason);
-  if (!reason) return res.status(400).json({ error: 'change_reason_required' });
-  const beforeRow = target;
-  const before = userAuditSnapshot(beforeRow);
-  let info;
+// GET /admin/users/:userId/workload — current evaluation-only work and eligible recipients.
+router.get('/users/:userId/workload', (req, res) => {
   try {
-    info = stmts.deactivateUser.run(email);
+    res.json(workTransferService.workload(req.params.userId));
   } catch (error) {
-    if (String(error.message).includes('last_super_admin_required')) {
-      return res.status(409).json({ error: 'last_super_admin_required', code: 'AUTHZ_LAST_ADMIN_REQUIRED', request_id: req.requestId });
-    }
-    throw error;
+    return workTransferError(res, req, error);
   }
-  if (info.changes === 0) return res.status(404).json({ error: 'not_found' });
-  const stored = resolveUser(target.user_id);
-  logAccess({
-    email: req.user.email,
-    action: 'USER_DEACTIVATE',
-    details: {
-      target: email,
-      reason,
-      authz_version: Number(stored.authz_version),
-      before,
-      after: userAuditSnapshot(stored),
-    },
-    ip: req.ip,
-  });
-  res.json({ ok: true, authz_version: Number(stored.authz_version) });
+});
+
+// POST /admin/users/:userId/offboard — canonical atomic transfer + deactivate API.
+router.post('/users/:userId/offboard', (req, res) => completeOffboarding(
+  req,
+  res,
+  req.body?.transfer_to_user_id || req.body?.transferToUserId || null
+));
+
+// DELETE /admin/users/:userId — compatibility path. It remains safe: users with
+// active work receive work_transfer_required and must use the offboarding API.
+router.delete('/users/:userId', (req, res) => {
+  return completeOffboarding(req, res);
 });
 
 // PATCH /admin/users/:email/reactivate — restore login access without changing roles/scopes.

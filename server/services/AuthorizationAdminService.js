@@ -519,7 +519,20 @@ class AuthorizationAdminService {
         AND (ur.valid_until IS NULL OR ur.valid_until > ?)
       ORDER BY p.permission_code, rp.effect, r.role_code`).all(user.user_id, email, now, now)
       .filter((row) => isActivePermission(row.permission_code));
-    const authz = this.authorizationService.effectivePermissions(email);
+    // Admins must still be able to inspect the preserved RBAC snapshot after an
+    // account is deactivated. Do not use this snapshot for authorization:
+    // effectivePermissions() intentionally remains active-account-only.
+    const authz = user.is_active
+      ? this.authorizationService.effectivePermissions(user.user_id)
+      : this.authorizationService.effectivePermissionsForRoleAssignments(
+        roles.map((role) => ({
+          roleCode: role.roleCode,
+          active: role.effective,
+          validFrom: role.validFrom,
+          validUntil: role.validUntil,
+        })),
+        { userId: user.user_id, authzVersion: user.authz_version, now }
+      );
     const explanations = [];
     const byPermission = new Map();
     permissionRows.forEach((row) => {

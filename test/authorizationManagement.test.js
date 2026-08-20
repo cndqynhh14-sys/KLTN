@@ -540,7 +540,8 @@ test('authorization UI preserves dual permission effects and guards mutations wi
   assert.match(app, /value === 'ALLOW_DENY'[\s\S]*?'ALLOW'[\s\S]*?'DENY'/);
   assert.match(app, /permissionEffectsForValue\(select\?\.value\)\.includes\(effect\)/);
   assert.match(app, /reasonRequired/);
-  assert.match(app, /body:\s*\{\s*reason:\s*confirmed\s*\}/);
+  assert.match(html, /id="user-offboard-reason"[^>]*minlength="8"[^>]*maxlength="500"/);
+  assert.match(app, /users\/\$\{encodeURIComponent\(userId\)\}\/offboard[\s\S]*?reason:\s*reason\.value\.trim\(\)/);
   assert.match(app, /reason:\s*\$\('new-user-reason'\)\.value\.trim\(\)/);
   assert.match(app, /authzRoleDetail\.assignmentCount \?\? authzRoleDetail\.userCount/);
 });

@@ -1,6 +1,6 @@
 'use strict';
 
-const AUDIT_CATALOG_VERSION = '1.8.0';
+const AUDIT_CATALOG_VERSION = '1.9.0';
 const AUDIT_CATEGORIES = Object.freeze([
   'auth', 'authz', 'user', 'role', 'supplier', 'dossier', 'evaluation',
   'approval', 'question', 'report', 'scoring', 'import', 'export',
@@ -48,6 +48,10 @@ const definitions = [
     ['target_user_id', 'reason', 'authz_version'], ['active']),
   definition('user.account.reactivated', 'user', 'HIGH',
     ['target_user_id', 'reason', 'authz_version'], ['active']),
+  definition('work.transfer.completed', 'user', 'HIGH', [
+    'transfer_id', 'from_user_id', 'to_user_id', 'item_count',
+    'workload_before', 'workload_after', 'reason',
+  ]),
 
   definition('supplier.created', 'supplier', 'INFO', ['supplier_code', 'source_type'], ['supplier_name', 'region']),
   definition('supplier.updated', 'supplier', 'INFO', ['supplier_code', 'source_type'], ['supplier_name', 'region']),

@@ -7811,7 +7811,7 @@ import { state } from './js/state.js';
     });
   }
 
-  async function loadAdmin() {
+  async function loadAdmin(force = false) {
     if (!navigationItemAllowed(state.tab)) {
       syncAdminModuleView();
       showSystemLogState('permission');
@@ -7822,7 +7822,7 @@ import { state } from './js/state.js';
     const module = config?.module || 'authorization';
     if (module === 'authorization') {
       await selectAuthzTab(config.pane || 'users', { force: true, focus: false });
-      await loadAuthorizationAdmin();
+      await loadAuthorizationAdmin(force);
       return;
     }
     if (module === 'personnel-import') {
@@ -12676,23 +12676,155 @@ import { state } from './js/state.js';
   }, { event: 'submit', preventDefault: true, trigger: $('btn-submit-add-user'), announceSuccess: false });
 
   async function deactivateUser(userId, email = userId) {
-    const confirmed = await confirmAction({
-      title: 'Khóa người dùng?',
-      message: email + ' sẽ không thể đăng nhập cho đến khi được mở lại.',
-      cancelLabel: 'Giữ người dùng hoạt động',
-      confirmLabel: 'Khóa người dùng',
-      destructive: true,
-      reasonRequired: true,
-      reasonPlaceholder: `Lý do khóa ${email}`,
+    const errorMessage = (response) => {
+      const code = response?.data?.error;
+      if (code === 'work_transfer_required') return 'Tài khoản vẫn còn công việc cần bàn giao.';
+      if (code === 'transfer_recipient_inactive') return 'Người nhận đã bị vô hiệu hóa. Hãy chọn người khác.';
+      if (code === 'transfer_recipient_same_user') return 'Người nhận phải khác người đang được vô hiệu hóa.';
+      if (code === 'transfer_recipient_ineligible') return 'Người nhận không còn đủ quyền hoặc phạm vi dữ liệu phù hợp.';
+      if (code === 'workload_changed') return 'Danh sách công việc vừa thay đổi. Đóng hộp thoại và kiểm tra lại.';
+      if (code === 'last_super_admin_required') return 'Không thể vô hiệu hóa quản trị viên cuối cùng.';
+      if (code === 'cannot_deactivate_self') return 'Không thể vô hiệu hóa chính tài khoản đang thao tác.';
+      if (code === 'change_reason_required') return 'Lý do phải có từ 8 đến 500 ký tự.';
+      if (code === 'idempotency_key_conflict') return 'Yêu cầu bị trùng mã nhưng khác nội dung. Hãy mở lại hộp thoại.';
+      return 'Không thể hoàn tất vô hiệu hóa. Hãy kiểm tra và thử lại.';
+    };
+    const result = await new Promise((resolve) => {
+      const modal = $('user-offboard-modal');
+      const form = $('user-offboard-form');
+      const loading = $('user-offboard-loading');
+      const content = $('user-offboard-content');
+      const summary = $('user-offboard-summary');
+      const recipientField = $('user-offboard-recipient-field');
+      const recipient = $('user-offboard-recipient');
+      const recipientNote = $('user-offboard-recipient-note');
+      const reason = $('user-offboard-reason');
+      const submit = $('user-offboard-submit');
+      if (!modal || !form || !loading || !content || !summary || !recipientField
+          || !recipient || !recipientNote || !reason || !submit) {
+        resolve(null);
+        return;
+      }
+      let workload = null;
+      let inFlight = false;
+      const idempotencyKey = globalThis.crypto?.randomUUID
+        ? `offboard-ui-${globalThis.crypto.randomUUID()}`
+        : `offboard-ui-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      $('user-offboard-identity').textContent = email;
+      loading.classList.remove('hidden');
+      content.classList.add('hidden');
+      recipientField.classList.add('hidden');
+      recipient.replaceChildren(el('option', { text: 'Chọn người nhận bàn giao', attrs: { value: '' } }));
+      recipientNote.textContent = '';
+      reason.value = '';
+      setMsg('user-offboard-error', '');
+      submit.textContent = 'Vô hiệu hóa';
+      submit.disabled = true;
+      modal.classList.remove('hidden');
+
+      const cleanup = () => {
+        form.removeEventListener('submit', onSubmit);
+        $('user-offboard-cancel')?.removeEventListener('click', onCancel);
+        $('user-offboard-close')?.removeEventListener('click', onCancel);
+        recipient.removeEventListener('change', syncSubmit);
+        reason.removeEventListener('input', syncSubmit);
+        modal.removeEventListener('click', onBackdrop);
+      };
+      const close = (value) => {
+        cleanup();
+        modal.classList.add('hidden');
+        resolve(value);
+      };
+      const onCancel = () => { if (!inFlight) close(null); };
+      const onBackdrop = (event) => { if (event.target === modal && !inFlight) close(null); };
+      const syncSubmit = () => {
+        const validReason = reason.value.trim().length >= 8 && reason.value.trim().length <= 500;
+        const hasRecipient = !workload?.summary?.total || Boolean(recipient.value);
+        submit.disabled = inFlight || !workload || !validReason || !hasRecipient
+          || (Boolean(workload?.summary?.total) && !(workload?.eligible_recipients || []).length);
+      };
+      const onSubmit = async (event) => {
+        event.preventDefault();
+        syncSubmit();
+        if (submit.disabled || inFlight) return;
+        inFlight = true;
+        const stopLoading = setButtonLoading(submit,
+          workload.summary.total ? 'Đang chuyển giao…' : 'Đang vô hiệu hóa…');
+        setMsg('user-offboard-error', '');
+        const response = await withActionRequestContext({
+          actionId: 'authorization.user_deactivate', mutation: true, idempotencyKey,
+        }, () => api(`/admin/users/${encodeURIComponent(userId)}/offboard`, {
+          method: 'POST',
+          body: {
+            reason: reason.value.trim(),
+            ...(workload.summary.total ? { transfer_to_user_id: recipient.value } : {}),
+          },
+        }));
+        inFlight = false;
+        stopLoading();
+        if (!response.ok) {
+          setMsg('user-offboard-error', errorMessage(response), 'err');
+          syncSubmit();
+          return;
+        }
+        close(response);
+      };
+      form.addEventListener('submit', onSubmit);
+      $('user-offboard-cancel')?.addEventListener('click', onCancel);
+      $('user-offboard-close')?.addEventListener('click', onCancel);
+      recipient.addEventListener('change', syncSubmit);
+      reason.addEventListener('input', syncSubmit);
+      modal.addEventListener('click', onBackdrop);
+
+      api(`/admin/users/${encodeURIComponent(userId)}/workload`).then((response) => {
+        loading.classList.add('hidden');
+        content.classList.remove('hidden');
+        if (!response.ok) {
+          setMsg('user-offboard-error', errorMessage(response), 'err');
+          syncSubmit();
+          return;
+        }
+        workload = response.data;
+        const counts = workload.summary || {};
+        summary.replaceChildren();
+        if (!counts.total) {
+          summary.textContent = 'Người dùng không còn công việc active cần bàn giao.';
+          recipientField.classList.add('hidden');
+          submit.textContent = 'Vô hiệu hóa';
+        } else {
+          summary.appendChild(el('strong', { text: `Có ${counts.total} công việc cần bàn giao` }));
+          const list = el('ul', { className: 'mt-2' });
+          if (counts.evaluation_tickets) list.appendChild(el('li', { text: `${counts.evaluation_tickets} phiếu đánh giá` }));
+          if (counts.evaluation_approval_tasks) list.appendChild(el('li', { text: `${counts.evaluation_approval_tasks} nhiệm vụ duyệt đánh giá` }));
+          if (counts.approval_stage_assignments) list.appendChild(el('li', { text: `${counts.approval_stage_assignments} phân công tuyến phê duyệt` }));
+          summary.appendChild(list);
+          recipientField.classList.remove('hidden');
+          for (const user of workload.eligible_recipients || []) {
+            recipient.appendChild(el('option', {
+              text: user.display_name ? `${user.display_name} · ${user.email}` : user.email,
+              attrs: { value: user.user_id },
+            }));
+          }
+          if (!(workload.eligible_recipients || []).length) {
+            recipientNote.textContent = 'Không có người đang hoạt động và đủ quyền/phạm vi để nhận toàn bộ công việc.';
+            setMsg('user-offboard-error', 'Cần bổ sung người nhận phù hợp trước khi vô hiệu hóa.', 'err');
+          } else {
+            recipientNote.textContent = 'Danh sách chỉ gồm người đang hoạt động và đủ quyền/phạm vi cho toàn bộ công việc.';
+          }
+          submit.textContent = 'Chuyển giao & vô hiệu hóa';
+        }
+        syncSubmit();
+        reason.focus();
+      });
     });
-    if (!confirmed) return;
-    const r = await api('/admin/users/' + encodeURIComponent(userId), { method: 'DELETE', body: { reason: confirmed } });
-    if (r.ok) {
-      showToast('Đã khóa người dùng ' + email + '.', 'ok');
-      loadAdmin();
-    } else {
-      showToast('Không khóa được người dùng. Hãy thử lại.', 'err');
+    if (result?.ok) {
+      const transferredCount = Number(result.data?.transferred_count || 0);
+      showToast(transferredCount
+        ? `Đã chuyển giao ${transferredCount} công việc và vô hiệu hóa ${email}.`
+        : `Đã vô hiệu hóa ${email}.`, 'ok');
+      await loadAdmin(true);
     }
+    return result;
   }
 
   async function reactivateUser(userId, email = userId) {

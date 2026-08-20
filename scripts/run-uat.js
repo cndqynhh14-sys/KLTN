@@ -11,7 +11,13 @@ const root = path.resolve(__dirname, '..');
 const mode = process.argv[2] || 'local';
 const scenarioIndex = process.argv.indexOf('--scenario');
 const scenario = scenarioIndex >= 0 ? process.argv[scenarioIndex + 1] : 'smoke';
-const grepByScenario = { smoke: '@smoke', full: '@full', prompt124: '@prompt124', 'evidence-failure': '@evidence-failure' };
+const grepByScenario = {
+  smoke: '@smoke',
+  full: '@full',
+  prompt124: '@prompt124',
+  phase4: '@phase4',
+  'evidence-failure': '@evidence-failure',
+};
 
 if (!grepByScenario[scenario]) {
   process.stderr.write(`Unsupported UAT scenario: ${sanitizeString(scenario)}\n`);

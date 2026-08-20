@@ -2849,6 +2849,7 @@
       position: relative;
     }
     #add-user-modal > form::before,
+  #user-offboard-modal > form::before,
   #supplier-modal > form::before,
   #supplier-import-modal > form::before,
   #ticket-detail-modal > div::before,
@@ -4732,6 +4733,38 @@
       <button type="submit" id="btn-submit-add-user" class="btn-primary flex-1">Thêm người dùng</button>
     </div>
     <p id="add-user-msg" class="auth-msg"></p>
+  </form>
+</div>
+
+<div id="user-offboard-modal" class="modal-backdrop hidden fixed inset-0 bg-black/50 z-[310] flex" role="dialog" aria-modal="true" aria-labelledby="user-offboard-title">
+  <form id="user-offboard-form" class="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg" novalidate>
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div>
+        <h3 id="user-offboard-title" class="text-lg font-semibold">Vô hiệu hóa tài khoản</h3>
+        <p id="user-offboard-identity" class="muted mt-1"></p>
+      </div>
+      <button id="user-offboard-close" type="button" class="btn-ghost" data-action-id="dialog.close">Đóng</button>
+    </div>
+    <div id="user-offboard-loading" class="admin-state" role="status">Đang kiểm tra công việc cần bàn giao…</div>
+    <div id="user-offboard-content" class="hidden">
+      <div id="user-offboard-summary" class="placeholder-note" aria-live="polite"></div>
+      <div id="user-offboard-recipient-field" class="form-field mt-4 hidden">
+        <label for="user-offboard-recipient">Người nhận bàn giao *</label>
+        <select id="user-offboard-recipient" class="input">
+          <option value="">Chọn người nhận bàn giao</option>
+        </select>
+        <p id="user-offboard-recipient-note" class="muted mt-1"></p>
+      </div>
+      <div class="form-field mt-4">
+        <label for="user-offboard-reason">Lý do vô hiệu hóa *</label>
+        <textarea id="user-offboard-reason" class="input" rows="3" minlength="8" maxlength="500" placeholder="Nhập lý do vô hiệu hóa tài khoản"></textarea>
+      </div>
+      <p id="user-offboard-error" class="auth-msg" role="alert"></p>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button id="user-offboard-cancel" type="button" class="btn-ghost flex-1" data-action-id="dialog.cancel">Giữ tài khoản hoạt động</button>
+      <button id="user-offboard-submit" type="submit" class="btn-primary btn-danger flex-1" data-action-id="authorization.user_deactivate" disabled>Vô hiệu hóa</button>
+    </div>
   </form>
 </div>
 
