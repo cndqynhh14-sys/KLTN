@@ -24,6 +24,7 @@ test('PROMPT-08 maps backend lifecycle, read-only state and action envelopes wit
     'complete', 'complete', 'complete', 'complete', 'current',
   ]);
   assert.equal(workspace.versionState({ status: 'PUBLISHED' }).readOnly, true);
+  assert.equal(workspace.statusLabel('PUBLISHED'), 'Đã phát hành');
   assert.equal(workspace.versionState({ status: 'RETIRED' }).readOnly, true);
   assert.equal(workspace.versionState({ status: 'DRAFT' }).readOnly, false);
 

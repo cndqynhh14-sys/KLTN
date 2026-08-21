@@ -10544,7 +10544,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     return ({
       DRAFT: 'Bản nháp',
       IN_REVIEW: 'Chờ duyệt',
-      PUBLISHED: 'Đang áp dụng',
+      PUBLISHED: 'Đã phát hành',
       RETIRED: 'Ngừng áp dụng',
     })[status] || status || 'Chưa có phiên bản';
   }
@@ -10590,7 +10590,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       open.appendChild(el('span', { className: 'report-template-catalog-description', text: definition.description }));
       const meta = el('span', { className: 'report-template-catalog-meta' });
       meta.appendChild(el('span', { text: `${definition.version_count} phiên bản` }));
-      meta.appendChild(el('span', { text: definition.default_version ? `Mặc định v${definition.default_version.version_no} · ${definition.default_scope}` : 'Chưa có mặc định' }));
+      meta.appendChild(el('span', { text: definition.default_version ? `Đang áp dụng v${definition.default_version.version_no} · ${definition.default_scope}` : 'Chưa có phiên bản áp dụng' }));
       open.appendChild(meta);
       setRegisteredButtonAction(open, 'report_template.tab_open', async () => {
         if (!confirmBusinessConfigRouteLeave(window.location.hash)) return;
@@ -10682,7 +10682,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       : 'Chưa có version.';
     const select = $('report-template-version-select');
     select.textContent = '';
-    (state.reportTemplateVersions || []).forEach((item) => select.appendChild(el('option', { text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)}${item.is_default ? ' · Mặc định' : ''}`, attrs: { value: item.id } })));
+    (state.reportTemplateVersions || []).forEach((item) => select.appendChild(el('option', { text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)}${item.is_default ? ' · Đang áp dụng' : ''}`, attrs: { value: item.id } })));
     select.value = state.selectedReportTemplateVersionId || '';
     renderBusinessConfigLifecycle('report-template-lifecycle', version);
     const readOnlyBanner = $('report-template-readonly');
@@ -11693,7 +11693,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       tr.appendChild(identity);
       const versionCell = el('td');
       versionCell.appendChild(el('span', { className: 'tag sev-' + questionStatusSeverity(version?.status), text: businessVersionStatusLabel(version?.status) }));
-      if (template.default_version) versionCell.appendChild(el('span', { className: 'question-catalog-counts', text: `Mặc định v${template.default_version.version_no}` }));
+      if (template.default_version) versionCell.appendChild(el('span', { className: 'question-catalog-counts', text: `Đang áp dụng v${template.default_version.version_no}` }));
       if (template.warnings?.length) versionCell.appendChild(el('span', { className: 'question-catalog-counts', text: `${template.warnings.length} cảnh báo` }));
       tr.appendChild(versionCell);
       const actions = el('td', { className: 'table-action-cell' });
@@ -11742,7 +11742,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const versionSelect = $('question-workspace-version-select');
     if (versionSelect) {
       versionSelect.textContent = '';
-      state.questionVersions.forEach((item) => versionSelect.appendChild(el('option', { attrs: { value: String(item.id) }, text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)} · ${item.item_count ?? item.items?.length ?? 0} bản ghi phạm vi` })));
+      state.questionVersions.forEach((item) => versionSelect.appendChild(el('option', { attrs: { value: String(item.id) }, text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)}${item.is_default ? ' · Đang áp dụng' : ''} · ${item.item_count ?? item.items?.length ?? 0} bản ghi phạm vi` })));
       versionSelect.value = state.selectedQuestionVersionId;
     }
     const chip = $('question-version-status-chip');
@@ -12536,7 +12536,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       const button = el('button', { className: 'business-config-catalog-open', attrs: { type: 'button' } });
       button.appendChild(el('strong', { className: 'mono', text: policy.policy_code }));
       button.appendChild(el('span', { text: policy.policy_name }));
-      button.appendChild(el('span', { text: `${policy.version_count || 0} phiên bản · ${businessVersionStatusLabel(policy.latest_version?.status)}` }));
+      button.appendChild(el('span', { text: `${policy.version_count || 0} phiên bản · ${businessVersionStatusLabel(policy.latest_version?.status)}${policy.default_version ? ` · Đang áp dụng v${policy.default_version.version_no}` : ''}` }));
       setRegisteredButtonAction(button, 'scoring_policy.tab_open', async () => {
         if (policy.policy_code === state.selectedScoringPolicyCode || !confirmBusinessConfigRouteLeave(window.location.hash)) return;
         state.selectedScoringPolicyCode = policy.policy_code;
@@ -12625,7 +12625,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       select.textContent = '';
       (state.scoringPolicyVersions || []).forEach((item) => select.appendChild(el('option', {
         attrs: { value: String(item.id) },
-        text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)}${item.is_default ? ' · Mặc định' : ''}`,
+        text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)}${item.is_default ? ' · Đang áp dụng' : ''}`,
       })));
       select.value = state.selectedScoringPolicyVersionId || '';
     }

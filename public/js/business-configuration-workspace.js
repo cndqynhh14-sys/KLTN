@@ -19,7 +19,7 @@
     PUBLISHED: 4,
     RETIRED: 4,
   });
-  const STATUS_LABELS = Object.freeze({ DRAFT: 'Bản nháp', IN_REVIEW: 'Chờ duyệt', PUBLISHED: 'Đang áp dụng', RETIRED: 'Ngừng áp dụng' });
+  const STATUS_LABELS = Object.freeze({ DRAFT: 'Bản nháp', IN_REVIEW: 'Chờ duyệt', PUBLISHED: 'Đã phát hành', RETIRED: 'Ngừng áp dụng' });
 
   function normalizedStatus(value) {
     return String(value || '').trim().toUpperCase();

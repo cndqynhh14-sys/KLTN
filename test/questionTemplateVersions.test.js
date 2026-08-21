@@ -136,6 +136,50 @@ test('fresh database migrates BM01-BM04 into immutable Published v1 with clean r
   }
 });
 
+test('Draft item deltas preserve physical IDs while changing logical siblings and exact scopes', () => {
+  const dbPath = tempDbPath('item-delta-identity');
+  const fx = freshModules(dbPath);
+  try {
+    const service = new fx.QuestionVersionService(fx.db);
+    const source = fx.db.prepare(`SELECT v.* FROM question_template_versions v
+      JOIN question_templates t ON t.id=v.template_id WHERE t.template_code='BM01' AND v.version_no=1`).get();
+    const draft = service.createDraft({ templateId: source.template_id, cloneFromVersionId: source.id, actor: 'delta@synthetic.invalid' });
+    const before = service.get(draft.id).items;
+    assert.ok(before.length >= 3);
+    const [first, second, untouched] = before;
+    const changedText = 'Synthetic shared logical question text';
+    const patched = service.patchDraftItems({
+      versionId: draft.id,
+      expectedLockVersion: draft.lock_version,
+      updates: [{ id: first.id, question_text: changedText }, { id: second.id, question_text: changedText }],
+      additions: [{ ...first, id: undefined, facility_type: 'SYNTHETIC_SCOPE', question_code: `${first.question_code}_SYNTH` }],
+      actor: 'delta@synthetic.invalid',
+    });
+    const after = service.get(patched.id).items;
+    assert.ok(before.every((item) => after.some((candidate) => candidate.id === item.id)), 'existing physical IDs must be stable');
+    assert.equal(after.find((item) => item.id === first.id).question_text, changedText);
+    assert.equal(after.find((item) => item.id === second.id).question_text, changedText);
+    assert.equal(after.find((item) => item.id === untouched.id).question_text, untouched.question_text);
+    assert.ok(after.some((item) => item.facility_type === 'SYNTHETIC_SCOPE' && item.id > Math.max(...before.map((item) => item.id))));
+
+    const moved = service.patchDraftItems({
+      versionId: patched.id,
+      expectedLockVersion: patched.lock_version,
+      updates: [{ id: first.id, facility_type: 'MOVED_SCOPE' }],
+      actor: 'delta@synthetic.invalid',
+    });
+    assert.equal(service.get(moved.id).items.find((item) => item.id === first.id).facility_type, 'MOVED_SCOPE');
+    assert.throws(() => service.patchDraftItems({
+      versionId: source.id, expectedLockVersion: source.lock_version,
+      updates: [{ id: before[0].id, active: 0 }], actor: 'delta@synthetic.invalid',
+    }), /published_version_immutable/);
+  } finally {
+    fx.db.close();
+    fx.restore();
+    fs.rmSync(dbPath, { force: true });
+  }
+});
+
 test('publishing v2 leaves a pinned v1 ticket and its report question text unchanged', () => {
   const dbPath = tempDbPath('pin');
   const fx = freshModules(dbPath, { publishEnabled: true });

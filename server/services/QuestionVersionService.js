@@ -116,6 +116,10 @@ class QuestionVersionService {
 
   decorateVersion(row) {
     if (!row) return row;
+    const defaultScopeCount = Number(row.default_scope_count || 0);
+    const variantCount = Number(row.variant_count || 0);
+    const isDefault = defaultScopeCount > 0;
+    const isFullyDefault = variantCount > 0 && defaultScopeCount >= variantCount;
     const allowed = ['question_version.preview', 'question_version.validate'];
     const disabled = {};
     if (row.status === VERSION_STATUSES.DRAFT) {
@@ -125,23 +129,34 @@ class QuestionVersionService {
       else disabled['question_version.publish'] = 'question_version_publish_disabled';
     } else if (row.status === VERSION_STATUSES.PUBLISHED) {
       allowed.push('question_version.clone_draft');
-      if (this.publishEnabled()) allowed.push('question_version.rollback_default', 'question_version.retire');
+      if (this.publishEnabled()) {
+        if (!isFullyDefault) allowed.push('question_version.rollback_default');
+        else disabled['question_version.rollback_default'] = 'already_default';
+        if (!isDefault) allowed.push('question_version.retire');
+        else disabled['question_version.retire'] = 'default_question_version_cannot_retire';
+      }
       else {
         disabled['question_version.rollback_default'] = 'question_version_publish_disabled';
         disabled['question_version.retire'] = 'question_version_publish_disabled';
       }
     } else if (row.status === VERSION_STATUSES.RETIRED) {
       allowed.push('question_version.clone_draft');
-      if (this.publishEnabled()) allowed.push('question_version.rollback_default');
-      else disabled['question_version.rollback_default'] = 'question_version_publish_disabled';
+      if (this.publishEnabled()) {
+        if (!isFullyDefault) allowed.push('question_version.rollback_default');
+        else disabled['question_version.rollback_default'] = 'already_default';
+      } else disabled['question_version.rollback_default'] = 'question_version_publish_disabled';
     }
     if (row.status !== VERSION_STATUSES.DRAFT) disabled['question_import.preview'] = 'question_version_not_draft';
-    return { ...row, allowed_actions: allowed, disabled_reasons: disabled };
+    return { ...row, is_default: isDefault, allowed_actions: allowed, disabled_reasons: disabled };
   }
 
   getRow(versionId) {
     return this.db.prepare(`
-      SELECT v.*, t.template_code, t.template_name
+      SELECT v.*, t.template_code, t.template_name,
+        (SELECT COUNT(*) FROM question_template_variants qv
+          WHERE qv.question_template_version_id=v.id AND qv.active=1) AS variant_count,
+        (SELECT COUNT(*) FROM question_template_assignments qa
+          WHERE qa.question_template_version_id=v.id AND qa.active=1 AND qa.is_default=1) AS default_scope_count
       FROM question_template_versions v
       JOIN question_templates t ON t.id = v.template_id
       WHERE v.id = ?
@@ -491,8 +506,50 @@ class QuestionVersionService {
       items.push(addition);
     });
 
+    const normalized = validateItems(items);
+
     return this.db.transaction(() => {
-      this.replaceDraftItems(row.id, items);
+      const updateItem = this.db.prepare(`
+        UPDATE question_items SET
+          variant_code=@variant_code, facility_type=@facility_type, supplier_scale=@supplier_scale,
+          category_code=@category_code, category_label_snapshot=@category,
+          question_code=@question_code, clause_code=@clause_code, question_text=@question_text,
+          category=@category, is_elimination_clause=@is_elimination_clause,
+          is_critical_clause=@is_critical_clause, requires_attachment=@requires_attachment,
+          allowed_scores=@allowed_scores, weight=@weight, order_index=@order_index, active=@active
+        WHERE id=@id AND question_template_version_id=@version_id
+      `);
+      seen.forEach((id) => {
+        const index = indexes.get(id);
+        const result = updateItem.run({ ...normalized[index], id: Number(id), version_id: row.id });
+        if (result.changes !== 1) throw serviceError('question_item_not_found', 404);
+      });
+
+      const insertItem = this.db.prepare(`
+        INSERT INTO question_items (
+          question_template_version_id, variant_code, facility_type, supplier_scale,
+          category_code, category_label_snapshot, question_code, clause_code, question_text, category,
+          is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
+          weight, order_index, active
+        ) VALUES (@version_id, @variant_code, @facility_type, @supplier_scale,
+          @category_code, @category, @question_code, @clause_code, @question_text, @category,
+          @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
+          @weight, @order_index, @active)
+      `);
+      normalized.slice(indexes.size).forEach((item) => insertItem.run({ ...item, version_id: row.id }));
+
+      this.db.prepare('DELETE FROM question_template_variants WHERE question_template_version_id=?').run(row.id);
+      const insertVariant = this.db.prepare(`INSERT INTO question_template_variants
+        (question_template_version_id, facility_type, supplier_scale, active) VALUES (?, ?, ?, ?)`);
+      const variants = new Map();
+      normalized.forEach((item) => {
+        const key = `${item.facility_type}|${item.supplier_scale}`;
+        variants.set(key, Math.max(variants.get(key) || 0, item.active));
+      });
+      variants.forEach((active, key) => {
+        const [facilityType, supplierScale] = key.split('|');
+        insertVariant.run(row.id, facilityType, supplierScale, active);
+      });
       const result = this.db.prepare(`
         UPDATE question_template_versions
         SET checksum=NULL, lock_version=lock_version+1, updated_at=datetime('now'), updated_by=?

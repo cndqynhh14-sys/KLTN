@@ -52,8 +52,10 @@ function actionEnvelope(row, user) {
   } else {
     if (status === 'IN_REVIEW') allowed.push('scoring_policy.publish');
     else disabled['scoring_policy.publish'] = 'scoring_policy_version_not_in_review';
-    if (['PUBLISHED', 'RETIRED'].includes(status)) allowed.push('scoring_policy.rollback');
-    else disabled['scoring_policy.rollback'] = 'scoring_policy_rollback_target_invalid';
+    if (['PUBLISHED', 'RETIRED'].includes(status) && !row.is_default) allowed.push('scoring_policy.rollback');
+    else disabled['scoring_policy.rollback'] = row.is_default
+      ? 'scoring_policy_already_default'
+      : 'scoring_policy_rollback_target_invalid';
   }
   return { allowed_actions: allowed, disabled_reasons: disabled };
 }

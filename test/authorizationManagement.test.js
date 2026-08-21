@@ -279,6 +279,47 @@ test('approval preview and publish reject missing or conflicting approvers', () 
       reason: 'Attempt to remove the final configured approver for a required stage',
       confirmation: requiredConfirmation('PUBLISH_APPROVER', 'EVALUATION:LEAD'),
     }, context()), (error) => error.code === 'approval_stage_missing');
+
+    addUser(db, 'run10-scope-only@example.invalid');
+    service.authorizationService.syncLegacyUser('run10-scope-only@example.invalid');
+    db.prepare(`INSERT INTO user_scope_assignments
+      (user_id, principal_id, scope_type, scope_value, effect, source)
+      SELECT email, user_id, 'GLOBAL', NULL, 'ALLOW', 'MANUAL' FROM users WHERE email=?`)
+      .run('run10-scope-only@example.invalid');
+    assert.deepEqual(service.previewApprovalAssignment({
+      workflowType: 'EVALUATION', stageCode: 'TBP', assignedUserId: 'run10-scope-only@example.invalid',
+      scopeType: 'GLOBAL', priority: 70, fixture: {},
+    }).candidates, [], 'scope alone must not satisfy the stage permission');
+    assert.throws(() => service.previewApprovalAssignment({
+      workflowType: 'UNRELATED', stageCode: 'TBP', assignedUserId: ACTOR,
+      scopeType: 'GLOBAL', priority: 70, fixture: {},
+    }), (error) => error.code === 'invalid_approval_workflow');
+  } finally { close(db); }
+});
+
+test('approval resolution uses immutable principal membership before compatibility email', () => {
+  const { db, approvals, service } = fixture();
+  try {
+    const leadEmail = 'run10-principal-lead@example.invalid';
+    const aliasEmail = 'run10-compat-alias@example.invalid';
+    addUser(db, leadEmail, ROLES.LEAD);
+    addUser(db, aliasEmail);
+    service.authorizationService.syncLegacyUser(leadEmail);
+    service.authorizationService.syncLegacyUser(aliasEmail);
+    const lead = db.prepare('SELECT user_id FROM users WHERE email=?').get(leadEmail);
+    const role = db.prepare('SELECT id FROM roles WHERE role_code=?').get(ROLE_CODES.REGIONAL_LEAD_APPROVER);
+    db.prepare('UPDATE user_roles SET user_id=? WHERE principal_id=? AND role_id=?').run(aliasEmail, lead.user_id, role.id);
+    db.prepare('UPDATE user_roles SET principal_id=? WHERE user_id=? AND role_id=?').run(lead.user_id, aliasEmail, role.id);
+    service.authorizationService.cache.delete(leadEmail);
+
+    const preview = service.previewApprovalAssignment({
+      workflowType: 'EVALUATION', stageCode: 'LEAD', roleCode: ROLE_CODES.REGIONAL_LEAD_APPROVER,
+      scopeType: 'GLOBAL', priority: 75, fixture: {},
+    });
+    assert.ok(preview.candidates.includes(leadEmail));
+    assert.equal(preview.requiredPermission, PERMISSIONS.EVALUATION_APPROVE_LEAD);
+    assert.ok(approvals.resolve('EVALUATION', 'LEAD', {}).candidates.includes(leadEmail));
+    assert.throws(() => approvals.resolve('UNRELATED', 'LEAD', {}), /approval_assignment_not_found/);
   } finally { close(db); }
 });
 

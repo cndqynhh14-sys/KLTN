@@ -312,7 +312,10 @@ test('scoring policy API denies anonymous/unprivileged access and exposes Draft 
     assert.equal((await fetch(baseUrl, { headers: { Cookie: `qlcl_token=${viewerToken}` } })).status, 403);
     const listed = await fetch(baseUrl, { headers: { Cookie: `qlcl_token=${adminToken}` } });
     assert.equal(listed.status, 200);
-    assert.equal((await listed.json()).items[0].policy_code, 'LEGACY_RULES');
+    const listedPolicy = (await listed.json()).items[0];
+    assert.equal(listedPolicy.policy_code, 'LEGACY_RULES');
+    assert.equal(listedPolicy.latest_version.status, 'PUBLISHED');
+    assert.equal(listedPolicy.default_version.id, listedPolicy.latest_version.id);
     const created = await fetch(`${baseUrl}/LEGACY_RULES/versions`, {
       method: 'POST',
       headers: { Cookie: `qlcl_token=${adminToken}`, 'Content-Type': 'application/json' },
@@ -387,7 +390,11 @@ test('scoring policy API denies anonymous/unprivileged access and exposes Draft 
       body: JSON.stringify({ lock_version: publisherDetail.lock_version, decision_id: 'PROMPT11-PUBLISH' }),
     });
     assert.equal(publisherPublish.status, 200, 'publish-capable checker can publish after four-eyes submit');
-    assert.equal((await publisherPublish.json()).item.status, 'PUBLISHED');
+    const publishedItem = (await publisherPublish.json()).item;
+    assert.equal(publishedItem.status, 'PUBLISHED');
+    assert.equal(publishedItem.is_default, true);
+    assert.equal(publishedItem.allowed_actions.includes('scoring_policy.rollback'), false);
+    assert.equal(publishedItem.disabled_reasons['scoring_policy.rollback'], 'scoring_policy_already_default');
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     db.close();

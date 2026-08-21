@@ -46,7 +46,7 @@ class ScoringPolicyRepository {
   }
 
   listPolicies() {
-    return this.db.prepare(`
+    const policies = this.db.prepare(`
       SELECT p.*,
         COUNT(v.id) AS version_count,
         SUM(CASE WHEN v.status='PUBLISHED' THEN 1 ELSE 0 END) AS published_count
@@ -54,6 +54,20 @@ class ScoringPolicyRepository {
       LEFT JOIN scoring_policy_versions v ON v.scoring_policy_id=p.id
       GROUP BY p.id ORDER BY p.policy_code
     `).all();
+    return policies.map((policy) => {
+      const versions = this.listVersions(policy.policy_code);
+      const compact = (version) => version ? {
+        id: version.id,
+        version_no: version.version_no,
+        status: version.status,
+        updated_at: version.updated_at || version.created_at,
+      } : null;
+      return {
+        ...policy,
+        latest_version: compact(versions[0]),
+        default_version: compact(versions.find((version) => Boolean(version.is_default))),
+      };
+    });
   }
 
   getPolicy(code) {
@@ -396,6 +410,7 @@ class ScoringPolicyRepository {
     if (![VERSION_STATUSES.PUBLISHED, VERSION_STATUSES.RETIRED].includes(row.status)) {
       throw policyError('scoring_policy_rollback_target_invalid', 409);
     }
+    if (row.is_default) throw policyError('scoring_policy_already_default', 409);
     this.assertLock(row, expectedLockVersion);
     if (clean(decisionId).length < 6 || !clean(actor) || clean(actor).toLowerCase() === clean(row.submitted_by).toLowerCase()) {
       throw policyError('scoring_policy_four_eyes_required', 403);

@@ -9,6 +9,7 @@ const {
   isActivePermission,
 } = require('../authorization/permissionCatalog');
 const { sanitizeString } = require('../observability/redact');
+const { APPROVAL_PERMISSION_BY_LEVEL } = require('../authorization/policyCatalog');
 
 const REQUIRED_APPROVAL_STAGES = Object.freeze([
   Object.freeze({ workflowType: 'EVALUATION', stageCode: 'LEAD' }),
@@ -879,6 +880,7 @@ class AuthorizationAdminService {
         asa.custom_schema_version, asa.priority, asa.active,
         asa.valid_from, asa.valid_until, asa.created_at
       FROM approval_stage_assignments asa LEFT JOIN roles r ON r.id = asa.role_id
+      WHERE asa.workflow_type = 'EVALUATION'
       ORDER BY asa.workflow_type, asa.stage_code, asa.priority, asa.id`).all().map((row) => ({
       id: row.id,
       workflowType: row.workflow_type,
@@ -904,6 +906,8 @@ class AuthorizationAdminService {
     if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(workflowType) || !/^[A-Z][A-Z0-9_]{1,63}$/.test(stageCode)) {
       throw new AuthorizationAdminError('invalid_approval_stage', 400);
     }
+    if (workflowType !== 'EVALUATION') throw new AuthorizationAdminError('invalid_approval_workflow', 400);
+    if (!APPROVAL_PERMISSION_BY_LEVEL[stageCode]) throw new AuthorizationAdminError('invalid_approval_stage', 400);
     const roleCode = input.roleCode ? normalizeCode(input.roleCode, 'role_code') : null;
     const assignedUser = input.assignedPrincipalId || input.assignedUserId
       ? this._user(input.assignedPrincipalId || input.assignedUserId) : null;
@@ -943,6 +947,7 @@ class AuthorizationAdminService {
 
   previewApprovalAssignment(input) {
     const assignment = this._normalizeApproval(input);
+    const requiredPermission = APPROVAL_PERMISSION_BY_LEVEL[assignment.stageCode];
     const fixture = input.fixture && typeof input.fixture === 'object' ? input.fixture : {};
     const probe = {
       scope_type: assignment.scopeType,
@@ -954,24 +959,27 @@ class AuthorizationAdminService {
     let candidates = [];
     if (assignment.assignedUserId) {
       if (this.authorizationService._scopeMatches(probe, fixture, assignment.assignedUserId)
-          && this.authorizationService.isInScope(assignment.assignedUserId, fixture)) candidates = [assignment.assignedUserId];
+          && this.authorizationService.isInScope(assignment.assignedUserId, fixture)
+          && this.authorizationService.can(assignment.assignedPrincipalId, requiredPermission)) candidates = [assignment.assignedUserId];
     } else {
       const now = this.authorizationService._now();
       candidates = this.db.prepare(`SELECT DISTINCT u.email FROM user_roles ur
-        JOIN users u ON u.email = ur.user_id
+        JOIN users u ON u.user_id = ur.principal_id
+          OR (ur.principal_id IS NULL AND lower(u.email) = lower(ur.user_id))
         WHERE ur.role_id = ? AND ur.active = 1 AND u.is_active = 1
           AND (ur.valid_from IS NULL OR ur.valid_from <= ?)
           AND (ur.valid_until IS NULL OR ur.valid_until > ?)
         ORDER BY u.email`).all(assignment.role.id, now, now).map((row) => row.email)
         .filter((email) => this.authorizationService._scopeMatches(probe, fixture, email))
-        .filter((email) => this.authorizationService.isInScope(email, fixture));
+        .filter((email) => this.authorizationService.isInScope(email, fixture))
+        .filter((email) => this.authorizationService.can(email, requiredPermission));
     }
     const conflicts = this.db.prepare(`SELECT id FROM approval_stage_assignments
       WHERE workflow_type = ? AND stage_code = ? AND priority = ? AND active = 1
         AND scope_type = ? AND COALESCE(scope_value, '') = COALESCE(?, '')
         AND id != COALESCE(?, -1) ORDER BY id`).all(assignment.workflowType, assignment.stageCode,
       assignment.priority, assignment.scopeType, assignment.scopeValue, assignment.id).map((row) => row.id);
-    return { assignment: { ...assignment, role: undefined }, candidates, conflicts,
+    return { assignment: { ...assignment, role: undefined }, requiredPermission, candidates, conflicts,
       warnings: candidates.length ? [] : ['approval_candidate_missing'] };
   }
 
