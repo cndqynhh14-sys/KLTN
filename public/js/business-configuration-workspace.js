@@ -19,6 +19,7 @@
     PUBLISHED: 4,
     RETIRED: 4,
   });
+  const STATUS_LABELS = Object.freeze({ DRAFT: 'Bản nháp', IN_REVIEW: 'Chờ duyệt', PUBLISHED: 'Đang áp dụng', RETIRED: 'Ngừng áp dụng' });
 
   function normalizedStatus(value) {
     return String(value || '').trim().toUpperCase();
@@ -35,6 +36,11 @@
         ? 'complete'
         : index < current ? 'complete' : index === current ? 'current' : 'pending',
     }));
+  }
+
+  function statusLabel(status) {
+    const normalized = normalizedStatus(status);
+    return STATUS_LABELS[normalized] || String(status || '—');
   }
 
   function versionState(version = {}) {
@@ -111,6 +117,7 @@
     applyActionState,
     lifecycleFor,
     renderLifecycle,
+    statusLabel,
     surfaceState,
     versionState,
     workspaceHash,

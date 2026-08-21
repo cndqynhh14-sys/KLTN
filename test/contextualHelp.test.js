@@ -100,7 +100,6 @@ test('RUN-22 contextual UI links target allowlisted guides and valid anchors', (
     ['question-template-management', 'quick-start-designer'],
     ['question-template-import', 'download-sample'],
     ['report-template-management', 'quick-start-designer'],
-    ['replace-current-report', 'safe-replacement'],
     ['compliance-overview-and-scoring-policy', 'layout-vs-score'],
     ['report-troubleshooting', 'error-codes'],
     ['configuration-rollback', 'report-template'],

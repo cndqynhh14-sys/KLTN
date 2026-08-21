@@ -39,11 +39,14 @@ test('QLCL-UX option 3 progressively discloses advanced filters and safety field
 
   for (const id of [
     'authz-user-advanced-filters',
-    'authz-scope-advanced',
+    'authz-user-safety',
     'authz-approval-advanced',
     'question-catalog-filters-disclosure',
-    'report-template-filters-disclosure',
   ]) assert.match(html, new RegExp(`<details[^>]*id="${id}"`), id);
+
+  for (const id of ['report-template-search', 'report-template-status']) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+  }
 
   for (const lifecycle of ['question-lifecycle', 'report-template-lifecycle', 'scoring-policy-lifecycle']) {
     assert.match(html, new RegExp(`<details[^>]*class="[^"]*guided-lifecycle[^>]*>[\\s\\S]*?<ol id="${lifecycle}"`), lifecycle);

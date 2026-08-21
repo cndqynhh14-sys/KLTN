@@ -369,6 +369,32 @@ test('Phase 2 user authorization save is atomic across roles and scopes', () => 
   } finally { close(db); }
 });
 
+test('role creation stores metadata and four-state permission configuration atomically', () => {
+  const { db, service } = fixture();
+  try {
+    const created = service.createRole({
+      roleCode: 'ATOMIC_DRAWER_ROLE',
+      displayLabel: 'Vai trò tạo từ drawer',
+      active: false,
+      permissions: [
+        { permissionCode: PERMISSIONS.REPORT_READ, effect: 'ALLOW' },
+        { permissionCode: PERMISSIONS.REPORT_EXPORT, effect: 'ALLOW' },
+        { permissionCode: PERMISSIONS.REPORT_EXPORT, effect: 'DENY' },
+      ],
+      reason: 'Create metadata and permission states in one drawer save',
+      confirmation: requiredConfirmation('PUBLISH_ROLE', 'ATOMIC_DRAWER_ROLE'),
+    }, context());
+    assert.equal(created.display_label, 'Vai trò tạo từ drawer');
+    assert.equal(created.active, false);
+    assert.deepEqual(created.permissions, [
+      { permission_code: PERMISSIONS.REPORT_EXPORT, effect: 'ALLOW' },
+      { permission_code: PERMISSIONS.REPORT_EXPORT, effect: 'DENY' },
+      { permission_code: PERMISSIONS.REPORT_READ, effect: 'ALLOW' },
+    ]);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM authz_change_log WHERE object_key = 'ATOMIC_DRAWER_ROLE'").get().count, 1);
+  } finally { close(db); }
+});
+
 test('Phase 2 role configuration save rolls back metadata when permissions fail', () => {
   const { db, service } = fixture();
   try {
@@ -494,7 +520,7 @@ test('authorization admin UI exposes IA, master-detail, safety and responsive st
   assert.match(css, /@media[^{}]*max-width[^{}]*\{[\s\S]*authz-master-detail/);
 });
 
-test('authorization workspace exposes user filters, effective-rights sources and permission preview controls', () => {
+test('authorization workspace exposes business-first user drawers and advanced permission safety', () => {
   const root = path.resolve(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
@@ -513,17 +539,18 @@ test('authorization workspace exposes user filters, effective-rights sources and
 
   assert.match(app, /authzUserDetails/);
   assert.match(app, /permission_conflict/);
-  assert.match(app, /expired_role/);
-  assert.match(app, /deniedPermissions/);
-  assert.match(app, /effective\.sources/);
-  assert.match(app, /DENY_WINS/);
+  assert.match(app, /authzRoleDrafts/);
+  assert.match(app, /authzAssignedRoleCodes/);
+  assert.match(app, /renderAuthzScopeDraftEditor/);
+  assert.match(app, /data-authz-permission-primary/);
+  assert.match(app, /data-authz-permission-code/);
   assert.match(app, /confirmAuthzRouteLeave/);
   assert.match(css, /authz-filter-bar/);
-  assert.match(css, /authz-effective-columns/);
+  assert.match(css, /authz-user-role-chips/);
+  assert.match(css, /authz-user-scope-row/);
+  assert.match(css, /authz-permission-state/);
   assert.match(css, /\.authz-filter-bar\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
-  assert.match(css, /\.authz-choice-row\s*>\s*\.authz-role-meta\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(css, /\.authz-summary-chip\s*\{[^}]*overflow-wrap:\s*anywhere/s);
-  assert.match(css, /\.authz-source-row\s*\{[^}]*flex-wrap:\s*wrap/s);
   assert.match(css, /#authz-user-detail-title,\s*#authz-user-detail-sub\s*\{[^}]*overflow-wrap:\s*anywhere/s);
 });
 
@@ -532,7 +559,7 @@ test('authorization UI preserves dual permission effects and guards mutations wi
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
 
-  assert.match(html, /id="authz-permission-effect-filter"[\s\S]*?<option value="ALLOW_DENY">Cho phép \+ Từ chối<\/option>/);
+  assert.match(html, /id="authz-permission-effect-filter"[\s\S]*?<option value="ALLOW_DENY">Có xung đột<\/option>/);
   assert.match(html, /id="new-user-reason"[^>]*minlength="8"[^>]*maxlength="500"/);
   assert.match(html, /id="confirm-reason-field"[\s\S]*?id="confirm-reason"[^>]*minlength="8"[^>]*maxlength="500"[\s\S]*?id="confirm-reason-error"/);
 
@@ -580,16 +607,18 @@ test('authorization setup navigation and audit history expose a scannable respon
   assert.doesNotMatch(html, /data-authz-tab="(?:permissions|scopes)"/);
 
   for (const id of [
-    'authz-history-total',
-    'authz-history-system',
-    'authz-history-manual',
-    'authz-history-missing-reason',
     'authz-history-search',
     'authz-history-actor-filter',
     'authz-history-change-filter',
     'authz-history-result-count',
     'authz-export-authorization',
   ]) assert.match(html, new RegExp(`id="${id}"`));
+  for (const id of [
+    'authz-history-total',
+    'authz-history-system',
+    'authz-history-manual',
+    'authz-history-missing-reason',
+  ]) assert.doesNotMatch(html, new RegExp(`id="${id}"`));
 
   assert.match(html, /class="data-table authz-history-table"[\s\S]*?<th>Thời gian<\/th>[\s\S]*?<th>Người thực hiện<\/th>[\s\S]*?<th[^>]*>Chi tiết<\/th>/);
   assert.match(app, /let authzHistoryRows = \[\];/);
@@ -600,6 +629,6 @@ test('authorization setup navigation and audit history expose a scannable respon
   assert.match(app, /\/users\/\$\{encodeURIComponent\(authzSelectedUser\)\}\/authorization/);
   assert.match(app, /function authzHistoryCell\(label, options = \{\}\)/);
   assert.match(css, /\.authz-tab-step\s*\{/);
-  assert.match(css, /\.authz-history-overview\s*\{/);
+  assert.doesNotMatch(html, /class="authz-history-overview"/);
   assert.match(css, /@media\s*\(max-width:\s*767px\)[\s\S]*\.authz-history-table\s+thead\s*\{[^}]*position:\s*absolute;/);
 });

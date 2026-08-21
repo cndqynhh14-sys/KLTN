@@ -6,6 +6,7 @@ import { actionRequestHeaders, api, withActionRequestContext } from './js/api.js
 import { $, el } from './js/dom.js';
 import { UI_TEXT, apiErrorMessage, reportTypeText, statusText } from './js/i18n.js';
 import { state } from './js/state.js';
+import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, summarizeQuestionScopes } from './js/question-item-groups.mjs';
 
 (function () {
   'use strict';
@@ -8584,6 +8585,7 @@ import { state } from './js/state.js';
   let authzRoleDetail = null;
   let authzSelectedUser = null;
   let authzUserDetail = null;
+  let authzRoleDrafts = [];
   let authzScopeDrafts = [];
   let authzEditingApprovalId = null;
   let authzUnsaved = false;
@@ -8844,7 +8846,7 @@ import { state } from './js/state.js';
     if (summary) {
       const conflictCount = authzUsers.filter((user) => authzUserHealth(authzUserDetails.get(authzUserKey(user))).conflict).length;
       const expiredCount = authzUsers.filter((user) => authzUserHealth(authzUserDetails.get(authzUserKey(user))).expired).length;
-      summary.textContent = `${filtered.length}/${authzUsers.length} nhân sự · ${expiredCount} có role hết hạn · ${conflictCount} có xung đột DENY`;
+      summary.textContent = `${filtered.length}/${authzUsers.length} nhân sự · ${expiredCount} có vai trò hết hạn · ${conflictCount} có quyền đang bị giới hạn`;
     }
   }
 
@@ -8909,16 +8911,21 @@ import { state } from './js/state.js';
       const card = el('div', { className: `authz-role-card${authzSelectedRole === role.roleCode && authzRoleEditorOpen ? ' active' : ''}`, attrs: { role: 'listitem' } });
       const label = el('button', { className: 'authz-role-open', attrs: { type: 'button', 'data-action-id': 'authorization.role_select' } });
       label.appendChild(el('strong', { text: role.displayLabel }));
-      label.appendChild(el('div', { className: 'mono muted', text: role.roleCode }));
+      label.appendChild(el('div', { className: 'muted', text: role.roleKind === 'system' || role.role_kind === 'system' ? 'Vai trò hệ thống' : 'Vai trò tùy chỉnh' }));
       const permissions = el('div', { className: 'authz-role-actions' });
-      permissions.appendChild(el('span', { className: 'tag sev-gray', text: `${role.permissionCount} thao tác` }));
+      const allowed = Array.isArray(role.allowedPermissions) ? role.allowedPermissions.slice(0, 3) : [];
+      allowed.forEach((permissionCode) => permissions.appendChild(el('span', { className: 'tag sev-gray', text: permissionDisplayLabel(permissionCode), attrs: { title: permissionCode } })));
+      if (!allowed.length) permissions.appendChild(el('span', { className: 'tag sev-gray', text: `${role.permissionCount} thao tác` }));
+      if (Number(role.permissionCount || 0) > allowed.length && allowed.length) permissions.appendChild(el('span', { className: 'muted', text: `+${role.permissionCount - allowed.length}` }));
       if (role.approvalCount) permissions.appendChild(el('span', { className: 'tag sev-gray', text: `${role.approvalCount} bước duyệt` }));
       const people = el('span', { className: 'authz-role-people', text: `${role.userCount} người` });
       const statusNode = el('span', { className: `tag sev-${role.active ? 'green' : 'gray'}`, text: role.active ? 'Hoạt động' : 'Tạm ngưng' });
-      const menu = RowActionGroup([
+      const menu = RowActionGroup([], [
         actionDescriptor('authorization.role_select', () => openAuthzRoleEditor(role.roleCode, label), null, { label: 'Chỉnh sửa', announceSuccess: false }),
-      ], [
-        actionDescriptor('authorization.role_clone', async () => { const loaded = await loadAuthzRole(role.roleCode); if (loaded) beginNewRole(role.roleCode, label); }, null, { label: 'Nhân bản', announceSuccess: false }),
+        actionDescriptor('authorization.role_clone', async () => {
+          const loaded = await loadAuthzRole(role.roleCode);
+          if (loaded) beginNewRole(role.roleCode, authzRoleDetail, label);
+        }, null, { label: 'Nhân bản', announceSuccess: false }),
       ]);
       setRegisteredButtonAction(label, 'authorization.role_select', () => openAuthzRoleEditor(role.roleCode, label), { announceSuccess: false });
       card.append(label, permissions, people, statusNode, menu);
@@ -8950,10 +8957,11 @@ import { state } from './js/state.js';
     authzRoleCreateMode = null;
     $('authz-role-code').value = authzRoleDetail.role_code;
     $('authz-role-code').readOnly = true;
-    $('authz-role-editor-title').textContent = 'Chi tiết vai trò';
+    if ($('authz-role-technical')) $('authz-role-technical').open = false;
+    $('authz-role-editor-title').textContent = 'Điều chỉnh vai trò';
     $('authz-role-label').value = authzRoleDetail.display_label;
     $('authz-role-status').value = authzRoleDetail.active ? 'active' : 'inactive';
-    $('authz-role-counts').textContent = `${authzRoleDetail.userCount} người dùng · ${authzRoleDetail.permissionCount} quyền · ${authzRoleDetail.approvalCount || 0} luồng duyệt · ${authzRoleDetail.role_kind.toUpperCase()}`;
+    $('authz-role-counts').textContent = `${authzRoleDetail.userCount} nhân sự · ${authzRoleDetail.permissionCount} thao tác · ${authzRoleDetail.approvalCount || 0} bước duyệt`;
     const assignmentCount = authzRoleDetail.assignmentCount ?? authzRoleDetail.userCount;
     const deleteReason = authzRoleDetail.role_kind === 'system'
       ? 'Vai trò hệ thống được bảo vệ và không thể xóa.'
@@ -8982,22 +8990,34 @@ import { state } from './js/state.js';
     renderAuthzRoleCatalog();
   }
 
-  function beginNewRole(cloneFrom = null, trigger = null) {
+  function beginNewRole(cloneFrom = null, sourceDetail = null, trigger = null) {
     authzRoleRequestSequence += 1;
     authzRoleCreateMode = { cloneFrom };
     authzSelectedRole = null;
-    authzRoleDetail = null;
+    authzRoleDetail = {
+      role_code: '',
+      display_label: '',
+      active: true,
+      role_kind: 'custom',
+      userCount: 0,
+      permissionCount: sourceDetail?.permissions?.length || 0,
+      approvalCount: 0,
+      permissions: (sourceDetail?.permissions || []).map((permission) => ({ ...permission })),
+    };
     $('authz-role-code').readOnly = false;
     $('authz-role-code').value = '';
     $('authz-role-label').value = cloneFrom ? 'Bản sao vai trò' : '';
     $('authz-role-status').value = 'active';
-    $('authz-role-counts').textContent = cloneFrom ? `Clone quyền từ ${cloneFrom}; mã mới sẽ bất biến sau khi tạo.` : 'Vai trò tùy chỉnh mới, chưa có quyền.';
+    $('authz-role-counts').textContent = cloneFrom ? `Tạo bản sao từ ${roleDisplayLabel(cloneFrom)}; mã kỹ thuật mới sẽ không thể đổi sau khi tạo.` : 'Vai trò tùy chỉnh mới, chưa có quyền.';
     $('authz-delete-role').disabled = true;
     setDisabledReason($('authz-delete-role'), 'Vai trò chưa được tạo.');
     $('authz-role-delete-reason').textContent = 'Lưu vai trò trước khi có thể xóa.';
     $('authz-role-reason').value = '';
     $('authz-role-confirm').value = '';
-    $('authz-role-editor-title').textContent = cloneFrom ? 'Clone vai trò' : 'Tạo vai trò từ trắng';
+    $('authz-role-editor-title').textContent = cloneFrom ? 'Tạo bản sao vai trò' : 'Tạo vai trò mới';
+    $('authz-permission-lock')?.classList.add('hidden');
+    if ($('authz-role-technical')) $('authz-role-technical').open = true;
+    renderPermissionMatrix();
     setAuthzUnsaved(true);
     setAuthzDrawerState('user', false, null, false);
     setAuthzDrawerState('role', true, trigger);
@@ -9030,9 +9050,28 @@ import { state } from './js/state.js';
     return result;
   }
 
+  const AUTHZ_MODULE_LABELS = Object.freeze({
+    AUDIT: 'Lịch sử hệ thống', DASHBOARD: 'Bảng điều khiển', EVALUATION: 'Phiếu đánh giá',
+    QUESTION_TEMPLATE: 'Bộ câu hỏi đánh giá', REPORT: 'Báo cáo', REPORT_TEMPLATE: 'Mẫu báo cáo',
+    SCORING_POLICY: 'Chính sách tính điểm', SUPPLIER: 'Nhà cung cấp', SYSTEM: 'Quản trị hệ thống',
+    USER: 'Nhân sự và phân quyền',
+  });
+
+  function permissionDescriptionText(permission) {
+    return ({
+      'SUPPLIER.PROPOSE': 'Đề xuất nhà cung cấp mới trong quy trình được giao.',
+      'SUPPLIER.VERIFY': 'Xác minh thông tin nhà cung cấp được đề xuất.',
+      'SUPPLIER.MERGE': 'Hợp nhất hồ sơ nhà cung cấp trùng đã được xác minh.',
+    })[permission.permissionCode] || permission.description;
+  }
+
   function permissionEffectLabel(effects) {
-    const ordered = ['ALLOW', 'DENY'].filter((effect) => effects?.has(effect));
-    return ordered.length ? ordered.join(' + ') : 'NONE';
+    const allow = effects?.has('ALLOW');
+    const deny = effects?.has('DENY');
+    if (allow && deny) return 'Có xung đột — hệ thống sẽ giới hạn';
+    if (allow) return 'Được sử dụng';
+    if (deny) return 'Bị giới hạn';
+    return 'Chưa thiết lập';
   }
 
   function renderPermissionSummary() {
@@ -9054,17 +9093,17 @@ import { state } from './js/state.js';
     const allowCount = after.filter((item) => item.effect === 'ALLOW').length;
     const denyCount = after.filter((item) => item.effect === 'DENY').length;
     $('authz-before-summary').textContent = '';
-    $('authz-before-summary').appendChild(el('strong', { text: `Trước: ${before.length} quyền` }));
+    $('authz-before-summary').appendChild(el('strong', { text: `Hiện tại: ${before.length} thiết lập` }));
     $('authz-after-summary').textContent = '';
-    $('authz-after-summary').appendChild(el('strong', { text: `Sau: ${after.length} quyền` }));
+    $('authz-after-summary').appendChild(el('strong', { text: `Sau khi lưu: ${after.length} thiết lập` }));
     const deltaCount = changes.length;
-    $('authz-after-summary').appendChild(el('p', { className: 'muted', text: `${allowCount} ALLOW · ${denyCount} DENY · ${deltaCount ? `${deltaCount} thay đổi chưa publish` : 'Chưa có khác biệt'}.` }));
+    $('authz-after-summary').appendChild(el('p', { className: 'muted', text: `${allowCount} được sử dụng · ${denyCount} bị giới hạn · ${deltaCount ? `${deltaCount} thay đổi chưa lưu` : 'Chưa có khác biệt'}.` }));
     const delta = el('div', { className: 'authz-permission-delta' });
-    delta.appendChild(el('p', { text: `Tác động dự kiến: ${authzRoleDetail.userCount || 0} người dùng đang được gán vai trò này.` }));
-    if (added.length) delta.appendChild(el('p', { text: `Thêm: ${added.map((item) => `${item.permissionCode} ${permissionEffectLabel(item.afterEffects)}`).join(', ')}` }));
-    if (changed.length) delta.appendChild(el('p', { text: `Đổi hiệu lực: ${changed.map((item) => `${item.permissionCode} ${permissionEffectLabel(item.beforeEffects)} → ${permissionEffectLabel(item.afterEffects)}`).join(', ')}` }));
-    if (removed.length) delta.appendChild(el('p', { text: `Bỏ: ${removed.map((item) => `${item.permissionCode} ${permissionEffectLabel(item.beforeEffects)}`).join(', ')}` }));
-    if (denyCount) delta.appendChild(el('p', { className: 'authz-deny-wins', text: 'DENY_WINS: mọi DENY sẽ thắng ALLOW của role khác khi tính quyền hiệu lực.' }));
+    delta.appendChild(el('p', { text: `Tác động dự kiến: ${authzRoleDetail.userCount || 0} nhân sự đang có vai trò này.` }));
+    if (added.length) delta.appendChild(el('p', { text: `Thêm: ${added.map((item) => `${permissionDisplayLabel(item.permissionCode)} — ${permissionEffectLabel(item.afterEffects)}`).join(', ')}` }));
+    if (changed.length) delta.appendChild(el('p', { text: `Thay đổi: ${changed.map((item) => `${permissionDisplayLabel(item.permissionCode)}: ${permissionEffectLabel(item.beforeEffects)} → ${permissionEffectLabel(item.afterEffects)}`).join(', ')}` }));
+    if (removed.length) delta.appendChild(el('p', { text: `Bỏ: ${removed.map((item) => `${permissionDisplayLabel(item.permissionCode)} — ${permissionEffectLabel(item.beforeEffects)}`).join(', ')}` }));
+    if (denyCount) delta.appendChild(el('p', { className: 'authz-deny-wins', text: 'Nếu một thao tác vừa được cho phép vừa bị giới hạn, hệ thống sẽ ưu tiên giới hạn để bảo vệ dữ liệu.' }));
     $('authz-after-summary').appendChild(delta);
   }
 
@@ -9094,6 +9133,8 @@ import { state } from './js/state.js';
     const root = $('authz-permission-matrix');
     if (!root || !authzCatalog || !authzRoleDetail) return;
     root.textContent = '';
+    const locked = authzRoleDetail.role_code === 'SYS_ADMIN';
+    $('authz-permission-lock')?.classList.toggle('hidden', !locked);
     const grouped = new Map();
     authzCatalog.permissions.forEach((permission) => {
       const rows = grouped.get(permission.module) || [];
@@ -9101,19 +9142,17 @@ import { state } from './js/state.js';
       grouped.set(permission.module, rows);
     });
     for (const [module, permissions] of grouped) {
-      const group = el('section', { className: 'authz-permission-group' });
-      group.appendChild(el('h5', { text: module }));
+      const group = el('details', { className: 'authz-permission-group', attrs: { open: 'open' } });
+      const summary = el('summary');
+      summary.appendChild(el('strong', { text: AUTHZ_MODULE_LABELS[module] || module }));
+      summary.appendChild(el('span', { className: 'muted', text: `${permissions.length} thao tác` }));
+      group.appendChild(summary);
+      const permissionGrid = el('div', { className: 'authz-permission-grid' });
       permissions.forEach((permission) => {
+        const friendlyDescription = permissionDescriptionText(permission);
         const row = el('div', { className: 'authz-permission-row', attrs: {
-          'data-authz-permission-search': `${permission.permissionCode} ${permission.description} ${permission.module}`.toLocaleLowerCase('vi'),
+          'data-authz-permission-search': `${permission.permissionCode} ${friendlyDescription} ${permission.module}`.toLocaleLowerCase('vi'),
         } });
-        const code = el('div');
-        code.appendChild(el('strong', { className: 'mono', text: permission.permissionCode }));
-        code.appendChild(el('span', { className: `authz-risk authz-risk-${permission.risk}`, text: permission.risk }));
-        const description = el('div');
-        description.appendChild(el('span', { text: permission.description }));
-        description.appendChild(el('div', { className: 'muted', text: `Scope: ${permission.scopeTypes.join(', ')}` }));
-        const select = el('select', { className: 'input', attrs: { 'data-authz-permission-code': permission.permissionCode, 'aria-label': `Hiệu lực ${permission.permissionCode}` } });
         const assignedEffects = new Set(authzRoleDetail.permissions
           .filter((item) => item.permission_code === permission.permissionCode)
           .map((item) => item.effect));
@@ -9124,17 +9163,52 @@ import { state } from './js/state.js';
             : assignedEffects.has('DENY')
               ? 'DENY'
               : 'NONE';
+        const label = el('label', { className: 'authz-permission-check', attrs: { title: friendlyDescription } });
+        const checkbox = el('input', { attrs: { type: 'checkbox', 'data-authz-permission-primary': permission.permissionCode, 'aria-label': `Cho phép ${permissionDisplayLabel(permission.permissionCode)}` } });
+        checkbox.checked = assignedValue === 'ALLOW';
+        checkbox.indeterminate = assignedValue === 'ALLOW_DENY';
+        checkbox.disabled = locked;
+        const copy = el('span', { className: 'authz-permission-copy' });
+        copy.appendChild(el('strong', { text: permissionDisplayLabel(permission.permissionCode) }));
+        copy.appendChild(el('small', { text: friendlyDescription }));
+        label.append(checkbox, copy);
+        const advanced = el('details', { className: 'authz-permission-state', attrs: assignedValue === 'DENY' || assignedValue === 'ALLOW_DENY' ? { open: 'open' } : {} });
+        const advancedSummary = el('summary', { text: assignedValue === 'DENY' ? 'Đang giới hạn' : assignedValue === 'ALLOW_DENY' ? 'Có xung đột' : 'Trạng thái nâng cao' });
+        const select = el('select', { className: 'input', attrs: { 'data-authz-permission-code': permission.permissionCode, 'aria-label': `Trạng thái nâng cao của ${permissionDisplayLabel(permission.permissionCode)}` } });
         const effects = [
-          { value: 'NONE', label: 'Không cấp' },
-          { value: 'ALLOW', label: 'ALLOW' },
-          { value: 'DENY', label: 'DENY' },
-          { value: 'ALLOW_DENY', label: 'ALLOW + DENY (DENY thắng)' },
+          { value: 'NONE', label: 'Chưa thiết lập' },
+          { value: 'ALLOW', label: 'Cho phép' },
+          { value: 'DENY', label: 'Giới hạn' },
+          { value: 'ALLOW_DENY', label: 'Cho phép + Giới hạn' },
         ];
         effects.forEach((effect) => select.appendChild(option(effect.value, effect.label, assignedValue === effect.value)));
-        select.addEventListener('change', () => { setAuthzUnsaved(true); renderPermissionSummary(); applyPermissionFilters(); });
-        row.append(code, description, select);
-        group.appendChild(row);
+        select.disabled = locked;
+        const syncPrimary = () => {
+          checkbox.checked = select.value === 'ALLOW';
+          checkbox.indeterminate = select.value === 'ALLOW_DENY';
+          advancedSummary.textContent = select.value === 'DENY' ? 'Đang giới hạn' : select.value === 'ALLOW_DENY' ? 'Có xung đột' : 'Trạng thái nâng cao';
+          row.dataset.permissionState = select.value;
+        };
+        checkbox.addEventListener('change', () => {
+          checkbox.indeterminate = false;
+          select.value = checkbox.checked ? 'ALLOW' : 'NONE';
+          syncPrimary();
+          setAuthzUnsaved(true);
+          renderPermissionSummary();
+          applyPermissionFilters();
+        });
+        select.addEventListener('change', () => {
+          syncPrimary();
+          setAuthzUnsaved(true);
+          renderPermissionSummary();
+          applyPermissionFilters();
+        });
+        advanced.append(advancedSummary, select, el('small', { className: 'muted', text: `Mã kỹ thuật: ${permission.permissionCode}` }));
+        row.append(label, advanced);
+        syncPrimary();
+        permissionGrid.appendChild(row);
       });
+      group.appendChild(permissionGrid);
       root.appendChild(group);
     }
     $('authz-permission-confirm').placeholder = requiredConfirmation('PUBLISH_ROLE', authzSelectedRole);
@@ -9167,6 +9241,11 @@ import { state } from './js/state.js';
     authzSelectedUser = response.data.user.userId || response.data.user.user_id || userId;
     authzUserDetail = response.data;
     authzUserDetails.set(authzSelectedUser, response.data);
+    authzRoleDrafts = authzUserDetail.roles.filter((role) => role.source === 'MANUAL' && role.active).map((role) => ({
+      roleCode: role.roleCode,
+      validFrom: role.validFrom || null,
+      validUntil: role.validUntil || null,
+    }));
     authzScopeDrafts = authzUserDetail.scopes.filter((scope) => scope.source === 'MANUAL' && scope.active).map((scope) => ({ ...scope }));
     $('authz-user-role-reason').value = '';
     $('authz-user-role-confirm').value = '';
@@ -9179,6 +9258,42 @@ import { state } from './js/state.js';
     return true;
   }
 
+  const AUTHZ_SCOPE_LABELS = Object.freeze({
+    GLOBAL: 'Toàn bộ dữ liệu', REGION: 'Theo khu vực', MCH2: 'Theo ngành hàng',
+    ASSIGNED: 'Dữ liệu được phân công', OWN: 'Dữ liệu do người này tạo',
+    SUPPLIER: 'Theo nhà cung cấp', CUSTOM: 'Phạm vi tùy chỉnh',
+  });
+
+  function roleDisplayLabel(roleCode) {
+    return authzCatalog?.roles?.find((role) => role.roleCode === roleCode)?.displayLabel || roleCode || 'Vai trò chưa xác định';
+  }
+
+  function permissionDisplayLabel(permissionCode) {
+    const permission = authzCatalog?.permissions?.find((item) => item.permissionCode === permissionCode);
+    return String(permission?.description || permissionCode || 'Thao tác chưa xác định').replace(/[.]$/u, '');
+  }
+
+  function scopeDisplayLabel(scopeType, scopeValue = null) {
+    const base = AUTHZ_SCOPE_LABELS[scopeType] || 'Phạm vi khác';
+    if (!scopeValue || ['GLOBAL', 'ASSIGNED', 'OWN'].includes(scopeType)) return base;
+    return `${base}: ${scopeValue}`;
+  }
+
+  function workflowDisplayLabel(workflowType) {
+    return workflowType === 'EVALUATION' ? 'Phiếu đánh giá' : workflowType;
+  }
+
+  function approvalStageDisplayLabel(stageCode) {
+    return ({ LEAD: 'Lead miền', TBP: 'Trưởng bộ phận', GDK: 'Giám đốc khối' })[stageCode] || stageCode;
+  }
+
+  function approvalAssignedUser(assignment) {
+    const principalId = assignment.assignedPrincipalId || assignment.assigned_principal_id || null;
+    return authzUsers.find((user) => authzUserKey(user) === principalId
+      || authzUserKey(user) === assignment.assignedUserId
+      || user.email === assignment.assignedUserId);
+  }
+
   async function openAuthzUserEditor(userId, trigger = null) {
     const loaded = await loadAuthzUser(userId);
     if (!loaded) return;
@@ -9187,96 +9302,233 @@ import { state } from './js/state.js';
     renderFilteredAuthzUsers();
   }
 
+  function authzAssignedRoleCodes() {
+    return new Set([
+      ...authzUserDetail.roles.filter((role) => role.source !== 'MANUAL' && role.active).map((role) => role.roleCode),
+      ...authzRoleDrafts.map((role) => role.roleCode),
+    ]);
+  }
+
+  function removeAuthzRoleDraft(roleCode) {
+    authzRoleDrafts = authzRoleDrafts.filter((role) => role.roleCode !== roleCode);
+    const inherited = authzUserDetail.roles.some((role) => role.roleCode === roleCode && role.source !== 'MANUAL' && role.active);
+    const removedScopeCount = inherited ? 0 : authzScopeDrafts.filter((scope) => scope.roleCode === roleCode).length;
+    if (!inherited) authzScopeDrafts = authzScopeDrafts.filter((scope) => scope.roleCode !== roleCode);
+    setAuthzUnsaved(true);
+    renderAuthzUserDetail();
+    renderAuthzScopes();
+    if (removedScopeCount) showToast(`Đã bỏ vai trò và ${removedScopeCount} phạm vi đi kèm khỏi bản nháp.`, 'info');
+  }
+
+  function addAuthzScopeDraft(form) {
+    const scopeType = form.querySelector('[data-authz-drawer-scope-type]').value;
+    const valueInput = form.querySelector('[data-authz-drawer-scope-value]');
+    const roleCode = form.querySelector('[data-authz-drawer-scope-role]').value || null;
+    const needsValue = !['GLOBAL', 'ASSIGNED', 'OWN'].includes(scopeType);
+    const scopeValue = scopeType === 'GLOBAL' ? null : ['ASSIGNED', 'OWN'].includes(scopeType) ? 'SELF' : valueInput.value.trim();
+    if (needsValue && !scopeValue) {
+      valueInput.focus();
+      return showToast('Vui lòng nhập giá trị phạm vi.', 'error');
+    }
+    const customSchemaCode = form.querySelector('[data-authz-drawer-custom-code]').value.trim();
+    const customSchemaVersion = Number(form.querySelector('[data-authz-drawer-custom-version]').value || 0) || null;
+    if (scopeType === 'CUSTOM' && (!customSchemaCode || !customSchemaVersion)) {
+      form.querySelector('details').open = true;
+      form.querySelector('[data-authz-drawer-custom-code]').focus();
+      return showToast('Phạm vi tùy chỉnh cần mã và phiên bản schema.', 'error');
+    }
+    const draft = {
+      roleCode,
+      scopeType,
+      scopeValue,
+      effect: form.querySelector('[data-authz-drawer-scope-effect]').value,
+      validFrom: toApiInstant(form.querySelector('[data-authz-drawer-scope-from]').value),
+      validUntil: toApiInstant(form.querySelector('[data-authz-drawer-scope-until]').value),
+      customSchemaCode: scopeType === 'CUSTOM' ? customSchemaCode : null,
+      customSchemaVersion: scopeType === 'CUSTOM' ? customSchemaVersion : null,
+      source: 'MANUAL',
+      active: true,
+    };
+    const key = (scope) => `${scope.roleCode || ''}:${scope.scopeType}:${scope.scopeValue || ''}:${scope.effect}`;
+    if (authzScopeDrafts.some((scope) => key(scope) === key(draft))) return showToast('Phạm vi này đã có trong bản nháp.', 'info');
+    authzScopeDrafts.push(draft);
+    setAuthzUnsaved(true);
+    renderAuthzUserDetail();
+    renderAuthzScopes();
+  }
+
+  function renderAuthzScopeDraftEditor(root) {
+    const details = el('details', { className: 'authz-role-picker authz-scope-picker' });
+    details.appendChild(el('summary', { text: 'Thêm phạm vi' }));
+    const form = el('div', { className: 'authz-drawer-scope-form' });
+    const typeField = el('label', { className: 'form-field' });
+    typeField.appendChild(el('span', { text: 'Loại dữ liệu' }));
+    const type = el('select', { className: 'input', attrs: { 'data-authz-drawer-scope-type': '' } });
+    authzCatalog.scopeTypes.forEach((scope) => type.appendChild(option(scope.scopeType, AUTHZ_SCOPE_LABELS[scope.scopeType] || scope.scopeType)));
+    typeField.appendChild(type);
+    const valueField = el('label', { className: 'form-field' });
+    valueField.appendChild(el('span', { text: 'Giá trị phạm vi' }));
+    const value = el('input', { className: 'input', attrs: { 'data-authz-drawer-scope-value': '', placeholder: 'Nhập khu vực, ngành hàng hoặc nhà cung cấp' } });
+    valueField.appendChild(value);
+    const effectField = el('label', { className: 'form-field' });
+    effectField.appendChild(el('span', { text: 'Quyền xem' }));
+    const effect = el('select', { className: 'input', attrs: { 'data-authz-drawer-scope-effect': '' } });
+    effect.append(option('ALLOW', 'Cho xem'), option('DENY', 'Không cho xem'));
+    effectField.appendChild(effect);
+    form.append(typeField, valueField, effectField);
+
+    const advanced = el('details', { className: 'guided-disclosure authz-drawer-scope-advanced' });
+    advanced.appendChild(el('summary', { text: 'Tùy chọn nâng cao' }));
+    const advancedGrid = el('div', { className: 'guided-disclosure-grid' });
+    const roleField = el('label', { className: 'form-field' });
+    roleField.appendChild(el('span', { text: 'Đi kèm vai trò' }));
+    const role = el('select', { className: 'input', attrs: { 'data-authz-drawer-scope-role': '' } });
+    role.appendChild(option('', 'Áp dụng riêng cho nhân sự'));
+    const assignedRoleCodes = authzAssignedRoleCodes();
+    authzCatalog.roles.filter((item) => assignedRoleCodes.has(item.roleCode)).forEach((item) => role.appendChild(option(item.roleCode, item.displayLabel)));
+    roleField.appendChild(role);
+    const fromField = el('label', { className: 'form-field' });
+    fromField.append(el('span', { text: 'Hiệu lực từ' }), el('input', { className: 'input', attrs: { type: 'datetime-local', 'data-authz-drawer-scope-from': '' } }));
+    const untilField = el('label', { className: 'form-field' });
+    untilField.append(el('span', { text: 'Hiệu lực đến' }), el('input', { className: 'input', attrs: { type: 'datetime-local', 'data-authz-drawer-scope-until': '' } }));
+    const customCodeField = el('label', { className: 'form-field authz-custom-scope-field hidden' });
+    customCodeField.append(el('span', { text: 'Mã schema tùy chỉnh' }), el('input', { className: 'input', attrs: { 'data-authz-drawer-custom-code': '' } }));
+    const customVersionField = el('label', { className: 'form-field authz-custom-scope-field hidden' });
+    customVersionField.append(el('span', { text: 'Phiên bản schema' }), el('input', { className: 'input', attrs: { type: 'number', min: '1', 'data-authz-drawer-custom-version': '' } }));
+    advancedGrid.append(roleField, fromField, untilField, customCodeField, customVersionField);
+    advanced.appendChild(advancedGrid);
+    form.appendChild(advanced);
+    const addButton = el('button', { className: 'btn-ghost authz-drawer-scope-add', text: 'Thêm vào danh sách', attrs: { type: 'button' } });
+    setRegisteredButtonAction(addButton, 'authorization.scope_add', () => addAuthzScopeDraft(form), { announceSuccess: false });
+    form.appendChild(addButton);
+    const syncScopeFields = () => {
+      const needsValue = !['GLOBAL', 'ASSIGNED', 'OWN'].includes(type.value);
+      value.disabled = !needsValue;
+      if (!needsValue) value.value = '';
+      form.querySelectorAll('.authz-custom-scope-field').forEach((field) => field.classList.toggle('hidden', type.value !== 'CUSTOM'));
+    };
+    type.addEventListener('change', syncScopeFields);
+    syncScopeFields();
+    details.appendChild(form);
+    root.appendChild(details);
+  }
+
   function renderAuthzUserDetail() {
     const root = $('authz-user-role-list');
     if (!root || !authzCatalog || !authzUserDetail) return;
-    $('authz-user-detail-title').textContent = authzUserDetail.user.displayName || authzUserDetail.user.email;
-    $('authz-user-detail-sub').textContent = `${authzUserDetail.user.email} · authz_version ${authzUserDetail.user.authzVersion}`;
-    root.textContent = '';
-    authzCatalog.roles.forEach((role) => {
-      const assignments = authzUserDetail.roles.filter((item) => item.roleCode === role.roleCode && item.active);
-      const compatibility = assignments.find((item) => item.source !== 'MANUAL');
-      const manual = assignments.find((item) => item.source === 'MANUAL');
-      const row = el('div', { className: 'authz-choice-row' });
-      const label = el('label');
-      const checkbox = el('input', { attrs: { type: 'checkbox', 'data-authz-user-role': role.roleCode } });
-      checkbox.checked = Boolean(compatibility || manual);
-      checkbox.disabled = Boolean(compatibility);
-      label.append(checkbox, document.createTextNode(` ${role.displayLabel}`));
-      if (compatibility) label.appendChild(el('span', { className: 'tag sev-gray', text: 'compatibility' }));
-      const assignment = manual || compatibility;
-      if (assignment) label.appendChild(el('span', {
-        className: `authz-role-state authz-role-state--${assignment.effective ? 'ok' : 'warning'}`,
-        text: assignment.effective ? 'Đang hiệu lực' : 'Hết hạn / chưa hiệu lực',
-      }));
-      const dates = el('div', { className: 'authz-role-meta' });
-      const from = el('input', { className: 'input', attrs: { type: 'datetime-local', 'data-authz-role-from': role.roleCode, 'aria-label': `Hiệu lực từ ${role.roleCode}` } });
-      const until = el('input', { className: 'input', attrs: { type: 'datetime-local', 'data-authz-role-until': role.roleCode, 'aria-label': `Hiệu lực đến ${role.roleCode}` } });
-      from.value = toLocalInput(manual?.validFrom);
-      until.value = toLocalInput(manual?.validUntil);
-      from.disabled = checkbox.disabled;
-      until.disabled = checkbox.disabled;
-      dates.append(from, until);
-      row.append(label, dates);
-      root.appendChild(row);
-    });
-    const effectiveScopes = $('authz-user-effective-scopes');
-    if (effectiveScopes) {
-      effectiveScopes.textContent = '';
-      const scopes = authzUserDetail.scopes.filter((scope) => scope.effective);
-      scopes.forEach((scope) => effectiveScopes.appendChild(el('span', {
-        className: `authz-summary-chip authz-summary-chip--${scope.effect === 'DENY' ? 'deny' : 'allow'} mono`,
-        text: `${scope.effect} ${scope.scopeType}${scope.scopeValue ? `:${scope.scopeValue}` : ''}`,
-        attrs: { title: scope.roleCode ? `Nguồn vai trò ${scope.roleCode}` : 'Override trực tiếp' },
-      })));
-      if (!scopes.length) effectiveScopes.appendChild(el('span', { className: 'muted', text: 'Chưa có phạm vi hiệu lực.' }));
+    $('authz-user-detail-title').textContent = 'Điều chỉnh vai trò & dữ liệu';
+    const displayName = authzUserDetail.user.displayName || authzUserDetail.user.email;
+    $('authz-user-detail-sub').textContent = displayName === authzUserDetail.user.email
+      ? authzUserDetail.user.email
+      : `${displayName} · ${authzUserDetail.user.email}`;
+    const accountStatus = $('authz-user-account-status');
+    if (accountStatus) {
+      const isActive = authzUserDetail.user.active ?? authzUserDetail.user.isActive ?? authzUserDetail.user.is_active ?? true;
+      accountStatus.textContent = '';
+      accountStatus.dataset.state = isActive ? 'active' : 'locked';
+      const statusCopy = el('div');
+      statusCopy.appendChild(el('strong', { text: isActive ? 'Đang hoạt động' : 'Tài khoản đã khóa' }));
+      statusCopy.appendChild(el('p', { text: isActive
+        ? 'Nhân sự có thể đăng nhập và sử dụng các quyền đang có hiệu lực.'
+        : 'Vai trò vẫn được giữ lại, nhưng nhân sự không thể đăng nhập cho đến khi tài khoản được mở lại.' }));
+      accountStatus.appendChild(statusCopy);
+      if (!isActive && authzSelectedUser !== state.userId) {
+        const reactivate = el('button', { className: 'btn-primary', text: 'Mở lại tài khoản', attrs: { type: 'button', 'data-action-id': 'authorization.user_reactivate' } });
+        setRegisteredButtonAction(reactivate, 'authorization.user_reactivate', () => reactivateUser(authzSelectedUser, authzUserDetail.user.email), {
+          confirm: false, objectIdentity: authzSelectedUser,
+        });
+        accountStatus.appendChild(reactivate);
+      }
     }
+    root.textContent = '';
+    root.appendChild(el('strong', { className: 'authz-detail-section-title', text: 'Vai trò đang có' }));
+    const assignedList = el('div', { className: 'authz-user-role-chips' });
+    const availableList = el('div', { className: 'authz-role-picker-list' });
+    authzCatalog.roles.forEach((role) => {
+      const inherited = authzUserDetail.roles.find((item) => item.roleCode === role.roleCode && item.active && item.source !== 'MANUAL');
+      const manual = authzRoleDrafts.find((item) => item.roleCode === role.roleCode);
+      if (inherited || manual) {
+        const chip = el('div', { className: 'authz-user-role-chip' });
+        const checkbox = el('input', { className: 'sr-only', attrs: { type: 'checkbox', checked: '', 'data-authz-user-role': role.roleCode, 'aria-label': role.displayLabel } });
+        checkbox.checked = true;
+        checkbox.disabled = Boolean(inherited);
+        chip.append(checkbox, el('span', { text: role.displayLabel }));
+        if (inherited) chip.appendChild(el('span', { className: 'tag sev-gray', text: 'Mặc định' }));
+        else {
+          const remove = el('button', { className: 'authz-chip-remove', text: '×', attrs: { type: 'button', 'aria-label': `Bỏ vai trò ${role.displayLabel}` } });
+          setRegisteredButtonAction(remove, 'authorization.user_role_remove', () => removeAuthzRoleDraft(role.roleCode), { announceSuccess: false });
+          chip.appendChild(remove);
+        }
+        assignedList.appendChild(chip);
+      } else {
+        const label = el('label', { className: 'authz-role-picker-row' });
+        const checkbox = el('input', { attrs: { type: 'checkbox', 'data-authz-user-role': role.roleCode } });
+        checkbox.addEventListener('change', () => {
+          if (!checkbox.checked) return;
+          authzRoleDrafts.push({ roleCode: role.roleCode, validFrom: null, validUntil: null });
+          setAuthzUnsaved(true);
+          renderAuthzUserDetail();
+        });
+        label.append(checkbox, el('span', { text: role.displayLabel }));
+        availableList.appendChild(label);
+      }
+    });
+    if (!assignedList.children.length) assignedList.appendChild(el('span', { className: 'muted', text: 'Chưa có vai trò.' }));
+    root.appendChild(assignedList);
+    const picker = el('details', { className: 'authz-role-picker' });
+    picker.appendChild(el('summary', { text: 'Thêm vai trò' }));
+    picker.appendChild(availableList);
+    root.appendChild(picker);
+
     const effective = $('authz-user-effective');
     effective.textContent = '';
-    const lead = el('div', { className: 'authz-effective-lead' });
-    lead.appendChild(el('strong', { text: `${authzUserDetail.effective.permissions.length} quyền hiệu lực` }));
-    lead.appendChild(el('span', { className: 'tag sev-gray', text: `authz v${authzUserDetail.effective.authzVersion}` }));
-    effective.appendChild(lead);
-    const columns = el('div', { className: 'authz-effective-columns' });
-    const allowedColumn = el('section', { className: 'authz-effective-column' });
-    allowedColumn.appendChild(el('h5', { text: `Được phép (${authzUserDetail.effective.permissions.length})` }));
-    const permissionList = el('div', { className: 'authz-summary-wrap' });
-    authzUserDetail.effective.permissions.forEach((code) => permissionList.appendChild(el('span', { className: 'authz-summary-chip mono', text: code })));
-    if (!authzUserDetail.effective.permissions.length) permissionList.appendChild(el('span', { className: 'muted', text: 'Không có quyền ALLOW hiệu lực.' }));
-    allowedColumn.appendChild(permissionList);
-    const deniedColumn = el('section', { className: 'authz-effective-column authz-effective-column--denied' });
-    deniedColumn.appendChild(el('h5', { text: `Bị từ chối (${authzUserDetail.effective.deniedPermissions.length})` }));
-    const deniedList = el('div', { className: 'authz-summary-wrap' });
-    authzUserDetail.effective.deniedPermissions.forEach((code) => deniedList.appendChild(el('span', { className: 'authz-summary-chip mono', text: code })));
-    if (!authzUserDetail.effective.deniedPermissions.length) deniedList.appendChild(el('span', { className: 'muted', text: 'Không có quyền DENY hiệu lực.' }));
-    deniedColumn.appendChild(deniedList);
-    const sourceColumn = el('section', { className: 'authz-effective-column authz-source-list' });
-    sourceColumn.appendChild(el('h5', { text: 'Nguồn tạo quyền' }));
-    authzUserDetail.effective.sources.forEach((source) => {
-      const sourceRow = el('div', { className: 'authz-source-row' });
-      sourceRow.appendChild(el('span', { className: 'mono', text: source.permissionCode }));
-      sourceRow.appendChild(el('span', { className: `tag sev-${source.effect === 'DENY' ? 'red' : 'green'}`, text: `${source.effect} · ${source.roleCode}` }));
-      sourceColumn.appendChild(sourceRow);
+    effective.appendChild(el('strong', { className: 'authz-detail-section-title', text: 'Dữ liệu được xem' }));
+    const scopeList = el('div', { className: 'authz-user-scope-list' });
+    const roleCodes = authzAssignedRoleCodes();
+    const inheritedScopes = authzUserDetail.scopes.filter((scope) => scope.source !== 'MANUAL' && scope.active
+      && (!scope.roleCode || roleCodes.has(scope.roleCode)));
+    const activeScopes = [...inheritedScopes, ...authzScopeDrafts];
+    activeScopes.forEach((scope, index) => {
+      const row = el('div', { className: 'authz-user-scope-row' });
+      const copy = el('div');
+      copy.appendChild(el('strong', { text: scopeDisplayLabel(scope.scopeType, scope.scopeValue) }));
+      copy.appendChild(el('span', { className: `authz-scope-effect authz-scope-effect--${scope.effect === 'DENY' ? 'deny' : 'allow'}`, text: scope.effect === 'DENY' ? 'Không cho xem' : 'Cho xem' }));
+      if (scope.roleCode) copy.appendChild(el('span', { className: 'muted', text: `Đi kèm ${roleDisplayLabel(scope.roleCode)}` }));
+      row.appendChild(copy);
+      if (scope.source === 'MANUAL') {
+        const remove = el('button', { className: 'authz-scope-remove', text: '×', attrs: { type: 'button', 'aria-label': `Bỏ phạm vi ${scopeDisplayLabel(scope.scopeType, scope.scopeValue)}` } });
+        setRegisteredButtonAction(remove, 'authorization.scope_remove', () => {
+          authzScopeDrafts.splice(index - inheritedScopes.length, 1);
+          setAuthzUnsaved(true);
+          renderAuthzUserDetail();
+          renderAuthzScopes();
+        }, { confirm: false, announceSuccess: false });
+        row.appendChild(remove);
+      } else row.appendChild(el('span', { className: 'tag sev-gray', text: 'Theo vai trò' }));
+      scopeList.appendChild(row);
     });
-    if (!authzUserDetail.effective.sources.length) sourceColumn.appendChild(el('p', { className: 'muted', text: 'Không có nguồn role hiệu lực.' }));
-    columns.append(allowedColumn, deniedColumn, sourceColumn);
-    effective.appendChild(columns);
-    if (authzUserDetail.effective.explanations.length) {
-      const list = el('ul');
-      authzUserDetail.effective.explanations.forEach((item) => list.appendChild(el('li', {
-        text: item.type === 'permission_conflict' ? `${item.permissionCode}: ALLOW + DENY → DENY thắng`
-          : item.type === 'scope_conflict' ? `${item.scopeKey}: phạm vi DENY thắng`
-            : `${item.roleCode}: vai trò chưa đến hạn hoặc đã hết hạn`,
-      })));
-      effective.appendChild(list);
-    }
-    effective.appendChild(el('p', { className: 'authz-deny-wins', text: 'DENY_WINS: nếu cùng quyền có cả ALLOW và DENY, kết quả cuối cùng luôn là từ chối.' }));
+    if (!activeScopes.length) scopeList.appendChild(el('p', { className: 'muted', text: 'Chưa có phạm vi dữ liệu.' }));
+    effective.appendChild(scopeList);
+    renderAuthzScopeDraftEditor(effective);
+    const permissionDetails = el('details', { className: 'authz-effective-details' });
+    permissionDetails.appendChild(el('summary', { text: `${authzUserDetail.effective.permissions.length} thao tác hiện đang áp dụng` }));
+    const permissionList = el('div', { className: 'authz-summary-wrap' });
+    authzUserDetail.effective.permissions.forEach((code) => permissionList.appendChild(el('span', { className: 'authz-summary-chip', text: permissionDisplayLabel(code), attrs: { title: `Mã kỹ thuật: ${code}` } })));
+    if (!authzUserDetail.effective.permissions.length) permissionList.appendChild(el('span', { className: 'muted', text: 'Chưa có thao tác được áp dụng.' }));
+    permissionDetails.appendChild(permissionList);
+    effective.appendChild(permissionDetails);
+    if (authzUserDetail.effective.explanations.some((item) => item.type === 'permission_conflict' || item.type === 'scope_conflict')) effective.appendChild(el('p', {
+      className: 'authz-warning',
+      text: 'Một số thiết lập vừa cho phép vừa giới hạn. Hệ thống luôn ưu tiên giới hạn để bảo vệ dữ liệu.',
+      attrs: { role: 'note' },
+    }));
     if (authzSelectedUser === state.userId) effective.appendChild(el('p', {
       className: 'authz-warning',
       text: 'Bạn đang chỉnh quyền của chính mình. Backend sẽ chặn mọi thay đổi làm tăng quyền hoặc phạm vi.',
       attrs: { role: 'note' },
     }));
     $('authz-user-role-confirm').placeholder = requiredConfirmation('ASSIGN_ROLES', authzUserDetail.user.email);
+    $('authz-scope-confirm').placeholder = requiredConfirmation('ASSIGN_SCOPE', authzUserDetail.user.email);
   }
 
   function renderAuthzScopes() {
@@ -9287,10 +9539,10 @@ import { state } from './js/state.js';
     [...compatibility.map((scope) => ({ ...scope, locked: true })), ...authzScopeDrafts].forEach((scope, index) => {
       const row = el('div', { className: 'authz-choice-row' });
       const text = el('div');
-      text.appendChild(el('strong', { className: 'mono', text: `${scope.effect} ${scope.scopeType}${scope.scopeValue ? `:${scope.scopeValue}` : ''}` }));
-      text.appendChild(el('div', { className: 'muted', text: scope.roleCode ? `Vai trò ${scope.roleCode}` : 'Override trực tiếp' }));
+      text.appendChild(el('strong', { text: scopeDisplayLabel(scope.scopeType, scope.scopeValue) }));
+      text.appendChild(el('div', { className: 'muted', text: `${scope.effect === 'DENY' ? 'Không cho phép xem' : 'Cho phép xem'} · ${scope.roleCode ? `Đi kèm ${roleDisplayLabel(scope.roleCode)}` : 'Gán trực tiếp'}` }));
       row.appendChild(text);
-      if (scope.locked) row.appendChild(el('span', { className: 'tag sev-gray', text: 'compatibility' }));
+      if (scope.locked) row.appendChild(el('span', { className: 'tag sev-gray', text: 'Kế thừa' }));
       else {
         const remove = el('button', { className: 'btn-ghost authz-danger', text: 'Bỏ', attrs: { type: 'button', 'data-action-id': 'authorization.scope_remove' } });
         setRegisteredButtonAction(remove, 'authorization.scope_remove', () => { authzScopeDrafts.splice(index - compatibility.length, 1); renderAuthzScopes(); setAuthzUnsaved(true); }, {
@@ -9300,16 +9552,16 @@ import { state } from './js/state.js';
       }
       root.appendChild(row);
     });
-    if (!compatibility.length && !authzScopeDrafts.length) root.appendChild(el('div', { className: 'authz-empty admin-state admin-state--empty', text: 'Chưa có phạm vi. Quyền tài nguyên sẽ fail closed.', attrs: { role: 'status' } }));
+    if (!compatibility.length && !authzScopeDrafts.length) root.appendChild(el('div', { className: 'authz-empty admin-state admin-state--empty', text: 'Chưa có dữ liệu được phép xem.', attrs: { role: 'status' } }));
     const preview = $('authz-scope-preview');
     preview.textContent = '';
-    preview.appendChild(el('strong', { text: `${authzScopeDrafts.length} override trong bản nháp` }));
+    preview.appendChild(el('strong', { text: `${authzScopeDrafts.length} phạm vi gán trực tiếp sau khi lưu` }));
     const conflicts = new Map();
     authzScopeDrafts.forEach((scope) => {
       const key = `${scope.scopeType}:${scope.scopeValue || 'GLOBAL'}`;
       const values = conflicts.get(key) || new Set(); values.add(scope.effect); conflicts.set(key, values);
     });
-    [...conflicts].filter(([, effects]) => effects.size > 1).forEach(([key]) => preview.appendChild(el('p', { text: `${key}: DENY sẽ thắng ALLOW.` })));
+    [...conflicts].filter(([, effects]) => effects.size > 1).forEach(([key]) => preview.appendChild(el('p', { text: `${key}: hệ thống sẽ ưu tiên không cho phép xem.` })));
     $('authz-scope-confirm').placeholder = requiredConfirmation('ASSIGN_SCOPE', authzUserDetail?.user?.email || 'email');
   }
 
@@ -9321,37 +9573,64 @@ import { state } from './js/state.js';
     const workflow = $('authz-approval-workflow-filter')?.value || 'all';
     const rows = authzAssignments.filter((assignment) => {
       if (workflow !== 'all' && assignment.workflowType !== workflow) return false;
-      return !query || [assignment.workflowType, assignment.stageCode, assignment.roleCode, assignment.assignedUserId, assignment.scopeType, assignment.scopeValue]
-        .some((value) => String(value || '').toLocaleLowerCase('vi-VN').includes(query));
+      const assignedUser = approvalAssignedUser(assignment);
+      const subject = assignment.roleCode ? roleDisplayLabel(assignment.roleCode) : `${assignedUser?.display_name || ''} ${assignedUser?.email || assignment.assignedUserId || ''}`;
+      return !query || `${workflowDisplayLabel(assignment.workflowType)} ${approvalStageDisplayLabel(assignment.stageCode)} ${subject} ${scopeDisplayLabel(assignment.scopeType, assignment.scopeValue)}`.toLocaleLowerCase('vi-VN').includes(query);
     });
+    const scroll = el('div', { className: 'authz-table-scroll' });
+    const table = el('table', { className: 'data-table authz-approval-table' });
+    const thead = el('thead');
+    const header = el('tr');
+    ['Quy trình', 'Bước phê duyệt', 'Người phê duyệt', 'Phạm vi', 'Trạng thái', ''].forEach((label) => header.appendChild(el('th', { text: label })));
+    thead.appendChild(header);
+    const tbody = el('tbody');
     rows.forEach((assignment) => {
-      const tr = el('tr', { attrs: { ...(authzEditingApprovalId === assignment.id ? { 'aria-current': 'true' } : {}) } });
-      tr.appendChild(el('td', { text: assignment.workflowType === 'EVALUATION' ? 'Đánh giá nhà cung cấp' : assignment.workflowType }));
-      tr.appendChild(el('td', { text: assignment.stageCode }));
-      tr.appendChild(el('td', { className: 'mono', text: assignment.roleCode || assignment.assignedUserId || '—' }));
-      tr.appendChild(el('td', { text: `${assignment.scopeType}${assignment.scopeValue ? ` · ${assignment.scopeValue}` : ''}` }));
-      tr.appendChild(el('td', { text: String(assignment.priority ?? '—') }));
-      const actions = el('td', { className: 'table-action-cell' });
-      actions.appendChild(RowActionGroup([
-        actionDescriptor('authorization.approval_select', () => selectApprovalAssignment(assignment), null, { announceSuccess: false }),
-      ]));
-      tr.appendChild(actions);
-      root.appendChild(tr);
+      const tr = el('tr', { attrs: { tabindex: '0', 'data-action-id': 'authorization.approval_select', ...(authzEditingApprovalId === assignment.id ? { 'aria-current': 'true' } : {}) } });
+      tr.appendChild(el('td', { text: workflowDisplayLabel(assignment.workflowType) }));
+      tr.appendChild(el('td', { text: approvalStageDisplayLabel(assignment.stageCode) }));
+      const assignedUser = approvalAssignedUser(assignment);
+      const subject = el('td');
+      subject.appendChild(el('strong', { text: assignment.roleCode ? roleDisplayLabel(assignment.roleCode) : assignedUser?.display_name || assignedUser?.email || 'Nhân sự không còn hoạt động' }));
+      if (!assignment.roleCode && assignedUser?.display_name) subject.appendChild(el('span', { className: 'muted', text: assignedUser.email }));
+      tr.appendChild(subject);
+      tr.appendChild(el('td', { text: scopeDisplayLabel(assignment.scopeType, assignment.scopeValue) }));
+      const status = el('td');
+      status.appendChild(el('span', { className: `tag sev-${assignment.active ? 'green' : 'gray'}`, text: assignment.active ? 'Đang áp dụng' : 'Tạm ngưng' }));
+      tr.appendChild(status);
+      tr.appendChild(el('td', { className: 'table-action-cell', text: '›' }));
+      const selectAssignment = () => selectApprovalAssignment(assignment);
+      tr.addEventListener('click', selectAssignment);
+      tr.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectAssignment(); } });
+      tbody.appendChild(tr);
     });
     if (!rows.length) {
       const tr = el('tr');
       tr.appendChild(el('td', { className: 'authz-empty admin-state admin-state--empty', text: authzAssignments.length ? 'Không có người phê duyệt phù hợp bộ lọc.' : 'Chưa có người phê duyệt.', attrs: { colspan: 6 } }));
-      root.appendChild(tr);
+      tbody.appendChild(tr);
     }
+    table.append(thead, tbody);
+    scroll.appendChild(table);
+    root.appendChild(scroll);
   }
 
   function syncApprovalSubjectOptions() {
     if (!authzCatalog) return;
     const isRole = $('authz-approval-subject-type').value === 'role';
     const items = isRole
-      ? authzCatalog.roles.filter((role) => role.active).map((role) => ({ value: role.roleCode, label: `${role.displayLabel} · ${role.roleCode}` }))
-      : authzUsers.filter((user) => user.is_active).map((user) => ({ value: user.email, label: user.display_name || user.email }));
+      ? authzCatalog.roles.filter((role) => role.active).map((role) => ({ value: role.roleCode, label: role.displayLabel }))
+      : authzUsers.filter((user) => user.is_active ?? user.isActive ?? user.active ?? true)
+        .map((user) => ({ value: authzUserKey(user), label: user.display_name ? `${user.display_name} · ${user.email}` : user.email }));
+    if ($('authz-approval-subject-label')) $('authz-approval-subject-label').textContent = isRole ? 'Vai trò' : 'Email nhân sự';
     fillSelect($('authz-approval-subject'), items, $('authz-approval-subject').value);
+  }
+
+  function syncApprovalScopeFields() {
+    const scopeType = $('authz-approval-scope-type').value;
+    const value = $('authz-approval-scope-value');
+    const needsValue = !['GLOBAL', 'ASSIGNED', 'OWN'].includes(scopeType);
+    value.disabled = !needsValue;
+    if (!needsValue) value.value = '';
+    value.placeholder = ({ REGION: 'Nhập khu vực', MCH2: 'Nhập ngành hàng', SUPPLIER: 'Nhập nhà cung cấp' })[scopeType] || 'Không cần nhập giá trị';
   }
 
   function selectApprovalAssignment(assignment) {
@@ -9360,13 +9639,20 @@ import { state } from './js/state.js';
     $('authz-approval-stage').value = assignment.stageCode;
     $('authz-approval-subject-type').value = assignment.roleCode ? 'role' : 'user';
     syncApprovalSubjectOptions();
-    $('authz-approval-subject').value = assignment.roleCode || assignment.assignedUserId;
+    const assignedUser = approvalAssignedUser(assignment);
+    $('authz-approval-subject').value = assignment.roleCode
+      || assignment.assignedPrincipalId
+      || assignment.assigned_principal_id
+      || (assignedUser ? authzUserKey(assignedUser) : assignment.assignedUserId);
     $('authz-approval-scope-type').value = assignment.scopeType;
     $('authz-approval-scope-value').value = assignment.scopeValue || '';
+    syncApprovalScopeFields();
     $('authz-approval-priority').value = assignment.priority;
     $('authz-approval-reason').value = '';
     $('authz-approval-confirm').value = '';
     $('authz-approval-confirm').placeholder = requiredConfirmation('PUBLISH_APPROVER', `${assignment.workflowType}:${assignment.stageCode}`);
+    if ($('authz-approval-advanced')) $('authz-approval-advanced').open = false;
+    if ($('authz-approval-editor-sub')) $('authz-approval-editor-sub').textContent = `Đang chỉnh: ${workflowDisplayLabel(assignment.workflowType)} · ${approvalStageDisplayLabel(assignment.stageCode)}`;
     renderApprovalAssignments();
     setAuthzUnsaved(false);
   }
@@ -9382,7 +9668,11 @@ import { state } from './js/state.js';
       roleCode: type === 'role' ? $('authz-approval-subject').value : null,
       assignedUserId: type === 'user' ? $('authz-approval-subject').value : null,
       scopeType: $('authz-approval-scope-type').value,
-      scopeValue: $('authz-approval-scope-type').value === 'GLOBAL' ? null : $('authz-approval-scope-value').value.trim(),
+      scopeValue: $('authz-approval-scope-type').value === 'GLOBAL'
+        ? null
+        : ['ASSIGNED', 'OWN'].includes($('authz-approval-scope-type').value)
+          ? 'SELF'
+          : $('authz-approval-scope-value').value.trim(),
       priority: Number($('authz-approval-priority').value || 100),
       fixture: { mch2Id: $('authz-approval-fixture-mch2').value.trim() || undefined },
     };
@@ -9393,9 +9683,13 @@ import { state } from './js/state.js';
     const root = $('authz-approval-preview');
     root.textContent = '';
     if (!response.ok) return root.appendChild(el('p', { className: 'auth-msg err', text: authzErrorMessage(response) }));
-    root.appendChild(el('strong', { text: response.data.candidates.length ? `${response.data.candidates.length} approver phù hợp` : 'Không có approver phù hợp' }));
-    response.data.candidates.forEach((email) => root.appendChild(el('span', { className: 'authz-summary-chip mono', text: email })));
-    if (response.data.conflicts.length) root.appendChild(el('p', { className: 'auth-msg err', text: `Xung đột assignment: ${response.data.conflicts.join(', ')}` }));
+    root.appendChild(el('strong', { text: response.data.candidates.length ? `${response.data.candidates.length} người phê duyệt phù hợp` : 'Không có người phê duyệt phù hợp' }));
+    if (response.data.requiredPermission) root.appendChild(el('p', { className: 'muted', text: `Đã kiểm tra quyền ${permissionDisplayLabel(response.data.requiredPermission)} và phạm vi dữ liệu.` }));
+    response.data.candidates.forEach((candidate) => {
+      const value = typeof candidate === 'string' ? candidate : candidate.email || candidate.displayName || candidate.userId;
+      root.appendChild(el('span', { className: 'authz-summary-chip', text: value }));
+    });
+    if (response.data.conflicts.length) root.appendChild(el('p', { className: 'auth-msg err', text: `Trùng phân công: ${response.data.conflicts.join(', ')}` }));
   }
 
   function authzHistoryCell(label, options = {}) {
@@ -9538,13 +9832,13 @@ import { state } from './js/state.js';
     showAuthzState('ready', 'Sẵn sàng');
   }
 
-  async function exportAuthorizationWorkbook() {
-    const button = $('authz-export-authorization');
+  async function exportAuthorizationWorkbook(section = 'history', button = $('authz-export-authorization')) {
     const finish = setButtonLoading(button, 'Đang xuất Excel…');
     try {
       const query = authzHistoryQuery();
       query.delete('page');
       query.delete('pageSize');
+      query.set('section', section);
       const response = await withActionRequestContext({ actionId: 'authorization.export', mutation: false }, () => fetch(
         `/qlcl/api/admin/authorization/export.xlsx?${query.toString()}`,
         { credentials: 'same-origin', headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ...actionRequestHeaders() } },
@@ -9617,8 +9911,8 @@ import { state } from './js/state.js';
   $('authz-user-detail-backdrop')?.addEventListener('click', () => requestCloseAuthzDrawer('user'));
   $('authz-role-form-backdrop')?.addEventListener('click', () => requestCloseAuthzDrawer('role'));
 
-  bindRegisteredAction($('authz-new-role'), 'authorization.role_new', () => beginNewRole(null, $('authz-new-role')), { announceSuccess: false });
-  bindRegisteredAction($('authz-clone-role'), 'authorization.role_clone', () => { if (authzRoleDetail) beginNewRole(authzRoleDetail.role_code, $('authz-clone-role')); }, { announceSuccess: false });
+  bindRegisteredAction($('authz-new-role'), 'authorization.role_new', () => beginNewRole(null, null, $('authz-new-role')), { announceSuccess: false });
+  bindRegisteredAction($('authz-clone-role'), 'authorization.role_clone', () => { if (authzRoleDetail) beginNewRole(authzRoleDetail.role_code, authzRoleDetail, $('authz-clone-role')); }, { announceSuccess: false });
   bindRegisteredAction($('authz-role-form'), 'authorization.role_save', async (event) => {
     event.preventDefault();
     const code = $('authz-role-code').value.trim().toUpperCase();
@@ -9629,7 +9923,7 @@ import { state } from './js/state.js';
       confirmation: $('authz-role-confirm').value || $('authz-permission-confirm').value,
     };
     const response = authzRoleCreateMode
-      ? await api('/admin/authorization/roles', { method: 'POST', body: { ...body, roleCode: code, cloneFrom: authzRoleCreateMode.cloneFrom } })
+      ? await api('/admin/authorization/roles', { method: 'POST', body: { ...body, roleCode: code, cloneFrom: authzRoleCreateMode.cloneFrom, permissions: permissionAssignmentsFromForm() } })
       : await api(`/admin/authorization/roles/${encodeURIComponent(authzSelectedRole)}/configuration`, {
         method: 'PUT', body: { ...body, permissions: permissionAssignmentsFromForm() },
       });
@@ -9669,14 +9963,9 @@ import { state } from './js/state.js';
   }, { confirm: false, announceSuccess: false });
   bindRegisteredAction($('authz-save-user-roles'), 'authorization.user_roles_save', async () => {
     if (!authzSelectedUser) return;
-    const roles = Array.from(document.querySelectorAll('[data-authz-user-role]')).filter((box) => !box.disabled && box.checked).map((box) => ({
-      roleCode: box.dataset.authzUserRole,
-      validFrom: toApiInstant(document.querySelector(`[data-authz-role-from="${box.dataset.authzUserRole}"]`)?.value),
-      validUntil: toApiInstant(document.querySelector(`[data-authz-role-until="${box.dataset.authzUserRole}"]`)?.value),
-    }));
     const response = await api(`/admin/authorization/users/${encodeURIComponent(authzSelectedUser)}/authorization`, {
       method: 'PUT', body: {
-        roles, scopes: authzScopeDrafts,
+        roles: authzRoleDrafts, scopes: authzScopeDrafts,
         reason: $('authz-user-role-reason').value.trim(),
         roleConfirmation: $('authz-user-role-confirm').value,
         scopeConfirmation: $('authz-scope-confirm').value,
@@ -9684,7 +9973,7 @@ import { state } from './js/state.js';
       },
     });
     if (!response.ok) { applyExpectedConfirmation(response, 'authz-user-role-confirm'); return showAuthzState('error', authzErrorMessage(response)); }
-    setAuthzUnsaved(false); await loadAuthzUser(authzSelectedUser); showToast('Đã lưu phân vai.', 'ok');
+    setAuthzUnsaved(false); await loadAuthzUser(authzSelectedUser); showToast('Đã lưu vai trò và dữ liệu được xem.', 'ok');
   }, { confirm: false, announceSuccess: false });
   $('authz-scope-user').addEventListener('change', (event) => loadAuthzUser(event.target.value));
   $('authz-scope-type').addEventListener('change', () => { $('authz-scope-value').disabled = $('authz-scope-type').value === 'GLOBAL'; if ($('authz-scope-value').disabled) $('authz-scope-value').value = ''; });
@@ -9703,14 +9992,9 @@ import { state } from './js/state.js';
   }, { announceSuccess: false });
   bindRegisteredAction($('authz-save-scopes'), 'authorization.scopes_save', async () => {
     if (!authzSelectedUser) return;
-    const roles = Array.from(document.querySelectorAll('[data-authz-user-role]')).filter((box) => !box.disabled && box.checked).map((box) => ({
-      roleCode: box.dataset.authzUserRole,
-      validFrom: toApiInstant(document.querySelector(`[data-authz-role-from="${box.dataset.authzUserRole}"]`)?.value),
-      validUntil: toApiInstant(document.querySelector(`[data-authz-role-until="${box.dataset.authzUserRole}"]`)?.value),
-    }));
     const response = await api(`/admin/authorization/users/${encodeURIComponent(authzSelectedUser)}/authorization`, {
       method: 'PUT', body: {
-        roles, scopes: authzScopeDrafts,
+        roles: authzRoleDrafts, scopes: authzScopeDrafts,
         reason: $('authz-scope-reason').value.trim(),
         roleConfirmation: $('authz-user-role-confirm').value,
         scopeConfirmation: $('authz-scope-confirm').value,
@@ -9721,11 +10005,44 @@ import { state } from './js/state.js';
     setAuthzUnsaved(false); await loadAuthzUser(authzSelectedUser); showToast('Đã lưu phạm vi dữ liệu.', 'ok');
   }, { confirm: false, announceSuccess: false });
   $('authz-approval-subject-type').addEventListener('change', syncApprovalSubjectOptions);
+  $('authz-approval-scope-type').addEventListener('change', syncApprovalScopeFields);
   ['authz-approval-workflow', 'authz-approval-stage'].forEach((id) => $(id).addEventListener('change', () => {
     $('authz-approval-confirm').placeholder = requiredConfirmation('PUBLISH_APPROVER', `${$('authz-approval-workflow').value}:${$('authz-approval-stage').value}`);
   }));
   bindRegisteredAction($('authz-preview-approval'), 'authorization.approval_preview', previewApproval, { announceSuccess: false });
-  bindRegisteredAction($('authz-new-approval'), 'authorization.approval_new', () => { authzEditingApprovalId = null; $('authz-approval-preview').textContent = ''; $('authz-approval-reason').value = ''; $('authz-approval-confirm').value = ''; renderApprovalAssignments(); setAuthzUnsaved(true); }, { announceSuccess: false });
+  bindRegisteredAction($('authz-new-approval'), 'authorization.approval_new', () => {
+    authzEditingApprovalId = null;
+    $('authz-approval-workflow').value = 'EVALUATION';
+    $('authz-approval-stage').value = 'LEAD';
+    $('authz-approval-subject-type').value = 'role';
+    syncApprovalSubjectOptions();
+    $('authz-approval-scope-type').value = 'GLOBAL';
+    syncApprovalScopeFields();
+    $('authz-approval-priority').value = '100';
+    $('authz-approval-fixture-mch2').value = '';
+    $('authz-approval-preview').textContent = '';
+    $('authz-approval-reason').value = '';
+    $('authz-approval-confirm').value = '';
+    $('authz-approval-confirm').placeholder = requiredConfirmation('PUBLISH_APPROVER', 'EVALUATION:LEAD');
+    if ($('authz-approval-advanced')) $('authz-approval-advanced').open = false;
+    if ($('authz-approval-editor-sub')) $('authz-approval-editor-sub').textContent = 'Tạo phân công phê duyệt mới cho phiếu đánh giá.';
+    renderApprovalAssignments();
+    setAuthzUnsaved(true);
+    $('authz-approval-editor')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, { announceSuccess: false });
+  $('authz-cancel-approval')?.addEventListener('click', () => {
+    const current = authzAssignments.find((assignment) => assignment.id === authzEditingApprovalId) || authzAssignments[0];
+    if (current) selectApprovalAssignment(current);
+    else {
+      authzEditingApprovalId = null;
+      $('authz-approval-preview').textContent = '';
+      $('authz-approval-reason').value = '';
+      $('authz-approval-confirm').value = '';
+      if ($('authz-approval-editor-sub')) $('authz-approval-editor-sub').textContent = 'Chọn một phân công để chỉnh sửa hoặc tạo mới.';
+      setAuthzUnsaved(false);
+      renderApprovalAssignments();
+    }
+  });
   bindRegisteredAction($('authz-publish-approval'), 'authorization.approval_publish', async () => {
     const payload = approvalPayload();
     const response = await api('/admin/authorization/approval-assignments/publish', {
@@ -9737,10 +10054,13 @@ import { state } from './js/state.js';
       .filter((item) => item.workflowType === 'EVALUATION');
     renderApprovalAssignments();
     await previewApproval();
-    showToast('Đã publish phân công phê duyệt.', 'ok');
+    showToast('Đã lưu người phê duyệt.', 'ok');
   }, { confirm: false, announceSuccess: false });
   bindRegisteredAction($('authz-refresh-history'), 'authorization.history_refresh', loadAuthzHistory, { announceSuccess: false });
-  bindRegisteredAction($('authz-export-authorization'), 'authorization.export', exportAuthorizationWorkbook, { announceSuccess: false });
+  bindRegisteredAction($('authz-export-authorization'), 'authorization.export', () => exportAuthorizationWorkbook('history', $('authz-export-authorization')), { announceSuccess: false });
+  [['authz-export-users', 'users'], ['authz-export-roles', 'roles'], ['authz-export-approvals', 'approvals']].forEach(([id, section]) => {
+    bindRegisteredAction($(id), 'authorization.export', () => exportAuthorizationWorkbook(section, $(id)), { announceSuccess: false });
+  });
 
   const SYSTEM_LOG_FILTERS = Object.freeze({
     from: 'system-log-from',
@@ -10202,14 +10522,12 @@ import { state } from './js/state.js';
       return;
     }
     state.reportTemplateDefinitions = response.data.items || [];
-    state.reportTemplateLegacy = response.data.legacy?.items || [];
     if (!state.reportTemplateDefinitions.some((item) => item.definition_code === state.selectedReportDefinitionCode)) {
       state.selectedReportDefinitionCode = state.reportTemplateDefinitions[0]?.definition_code || '';
       state.selectedReportTemplateVersionId = '';
     }
     showReportTemplateState('ready');
     renderReportTemplatesAdmin();
-    renderReportTemplateLegacy();
     if (state.selectedReportDefinitionCode) await loadReportTemplateVersions();
   }
 
@@ -10229,6 +10547,20 @@ import { state } from './js/state.js';
       PUBLISHED: 'Đang áp dụng',
       RETIRED: 'Ngừng áp dụng',
     })[status] || status || 'Chưa có phiên bản';
+  }
+
+  function reportTemplateComponentTypeLabel(type) {
+    return ({
+      header: 'Tiêu đề báo cáo',
+      metadata_grid: 'Thông tin báo cáo',
+      scope_summary: 'Phạm vi đánh giá',
+      participants_table: 'Thành phần tham dự',
+      supplier_introduction: 'Giới thiệu NCC',
+      compliance_overview: 'Tổng quan tuân thủ',
+      text_block: 'Khối nội dung',
+      page_break: 'Ngắt trang',
+      spacer: 'Khoảng trắng',
+    })[type] || type || 'Thành phần';
   }
 
   function renderReportTemplatesAdmin() {
@@ -10294,20 +10626,6 @@ import { state } from './js/state.js';
     syncReportTemplateActionButtons();
   }
 
-  function renderReportTemplateLegacy() {
-    const host = $('report-template-legacy-list');
-    if (!host) return;
-    host.textContent = '';
-    (state.reportTemplateLegacy || []).forEach((item) => {
-      const status = item.deprecation?.status || 'PENDING_REVIEW';
-      const replacement = item.deprecation?.proposed_replacement || 'chờ quyết định mapping';
-      host.appendChild(el('div', {
-        text: `${item.legacy_source || item.report_type} · ${item.template_name} · ${status} · không tạo mới · ${replacement}`,
-      }));
-    });
-    if (!host.children.length) host.textContent = 'Không có legacy candidate cần migration.';
-  }
-
   async function loadReportTemplateVersions() {
     const definition = selectedReportDefinition();
     if (!definition) return renderReportTemplateWorkspace();
@@ -10364,7 +10682,7 @@ import { state } from './js/state.js';
       : 'Chưa có version.';
     const select = $('report-template-version-select');
     select.textContent = '';
-    (state.reportTemplateVersions || []).forEach((item) => select.appendChild(el('option', { text: `v${item.version_no} · ${item.status}${item.is_default ? ' · Mặc định' : ''}`, attrs: { value: item.id } })));
+    (state.reportTemplateVersions || []).forEach((item) => select.appendChild(el('option', { text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)}${item.is_default ? ' · Mặc định' : ''}`, attrs: { value: item.id } })));
     select.value = state.selectedReportTemplateVersionId || '';
     renderBusinessConfigLifecycle('report-template-lifecycle', version);
     const readOnlyBanner = $('report-template-readonly');
@@ -10438,14 +10756,14 @@ import { state } from './js/state.js';
     if (!host) return;
     host.textContent = '';
     const components = reportTemplateComponents();
-    $('report-template-component-count').textContent = `${components.length} component`;
+    $('report-template-component-count').textContent = `${components.length} thành phần`;
     components.forEach((component, index) => {
       const button = el('button', {
         className: 'report-template-component-node',
         attrs: { type: 'button', role: 'treeitem', 'aria-selected': component.id === state.selectedReportComponentId ? 'true' : 'false', 'data-action-id': 'report_template.tab_open' },
       });
-      button.appendChild(el('strong', { text: `${index + 1}. ${component.title || component.type}` }));
-      button.appendChild(el('span', { className: 'mono', text: `${component.type} · ${component.id}` }));
+      button.appendChild(el('strong', { text: `${index + 1}. ${component.title || reportTemplateComponentTypeLabel(component.type)}` }));
+      button.appendChild(el('span', { className: 'report-template-component-meta', text: `${reportTemplateComponentTypeLabel(component.type)} · ${component.id}` }));
       setRegisteredButtonAction(button, 'report_template.tab_open', () => {
         state.selectedReportComponentId = component.id;
         renderReportTemplateComponentTree();
@@ -10467,7 +10785,7 @@ import { state } from './js/state.js';
     const component = selectedReportTemplateComponent();
     const version = state.reportTemplateVersionDetail;
     const editable = reportTemplateEditable(version);
-    $('report-template-selected-component').textContent = component ? `${component.type} · ${component.id}` : 'Chưa chọn';
+    $('report-template-selected-component').textContent = component ? `${reportTemplateComponentTypeLabel(component.type)} · ${component.id}` : 'Chưa chọn';
     setControlValue('report-template-component-title', component?.title || '', !editable || !component || ['page_break', 'spacer'].includes(component.type));
     const binding = $('report-template-component-binding');
     binding.textContent = '';
@@ -10754,7 +11072,7 @@ import { state } from './js/state.js';
     const host = $('report-template-version-events');
     if (!host) return;
     host.textContent = '';
-    (state.reportTemplateVersions || []).forEach((version) => host.appendChild(el('div', { className: 'report-template-version-event', text: `v${version.version_no} · ${version.status} · ${version.is_default ? 'GLOBAL/* mặc định' : 'không mặc định'} · ${version.export_count || 0} export` })));
+    (state.reportTemplateVersions || []).forEach((version) => host.appendChild(el('div', { className: 'report-template-version-event', text: `v${version.version_no} · ${businessVersionStatusLabel(version.status)} · ${version.is_default ? 'Mặc định' : 'Không mặc định'} · ${version.export_count || 0} lượt xuất` })));
     (state.reportTemplateVersionEvents || []).forEach((event) => host.appendChild(el('div', { className: 'report-template-version-event', text: `${event.created_at} · ${event.action} · ${event.actor_user_id || 'system'} · ${event.correlation_id || '—'}` })));
   }
 
@@ -11197,6 +11515,8 @@ import { state } from './js/state.js';
 
   const QUESTION_WORKSPACE_TABS = ['questions', 'variants', 'scopes', 'versions'];
   const QUESTION_WORKSPACE_TAB_ALIASES = { overview: 'questions', imports: 'versions' };
+  const questionExpandedGroupKeys = new Set();
+  let questionEditorGroup = null;
 
   function canonicalQuestionWorkspaceTab(tab) {
     return QUESTION_WORKSPACE_TABS.includes(tab) ? tab : (QUESTION_WORKSPACE_TAB_ALIASES[tab] || 'questions');
@@ -11422,7 +11742,7 @@ import { state } from './js/state.js';
     const versionSelect = $('question-workspace-version-select');
     if (versionSelect) {
       versionSelect.textContent = '';
-      state.questionVersions.forEach((item) => versionSelect.appendChild(el('option', { attrs: { value: String(item.id) }, text: `v${item.version_no} · ${item.status} · ${item.item_count ?? item.items?.length ?? 0} câu` })));
+      state.questionVersions.forEach((item) => versionSelect.appendChild(el('option', { attrs: { value: String(item.id) }, text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)} · ${item.item_count ?? item.items?.length ?? 0} bản ghi phạm vi` })));
       versionSelect.value = state.selectedQuestionVersionId;
     }
     const chip = $('question-version-status-chip');
@@ -11460,7 +11780,8 @@ import { state } from './js/state.js';
     if (host) {
       host.textContent = '';
       const validation = state.questionVersionValidation || {};
-      [['Câu hỏi', detail.items?.length || 0], ['Biến thể', detail.variants?.length || 0], ['Lỗi kiểm tra', validation.error_count || 0], ['Phạm vi áp dụng', validation.scope_count ?? impact.default_scope_count ?? 0], ['Phiếu đã pin', impact.ticket_count || 0]].forEach(([label, value]) => {
+      const logicalQuestions = groupQuestionItems(detail.items || []);
+      [['Câu hỏi logic', logicalQuestions.length], ['Bản ghi phạm vi', detail.items?.length || 0], ['Biến thể', detail.variants?.length || 0], ['Lỗi kiểm tra', validation.error_count || 0], ['Phạm vi áp dụng', validation.scope_count ?? impact.default_scope_count ?? 0], ['Phiếu đã pin', impact.ticket_count || 0]].forEach(([label, value]) => {
         const card = el('div', { className: 'question-overview-card admin-metric-card', attrs: { role: 'group', 'aria-label': `${label}: ${value}` } });
         card.appendChild(el('strong', { text: String(value) })); card.appendChild(el('span', { className: 'muted', text: label })); host.appendChild(card);
       });
@@ -11496,15 +11817,57 @@ import { state } from './js/state.js';
   }
 
   function filteredVersionQuestions() {
-    const search = ($('question-item-search')?.value || '').trim().toLowerCase();
-    const category = $('question-item-category')?.value || '';
-    const active = $('question-item-active')?.value || '';
-    return (state.questionVersionDetail?.items || []).filter((item) => {
-      if (search && !`${item.question_code} ${item.question_text}`.toLowerCase().includes(search)) return false;
-      if (category && item.category !== category) return false;
-      if (active !== '' && String(Number(item.active)) !== active) return false;
-      return true;
-    }).sort((left, right) => Number(left.order_index) - Number(right.order_index) || String(left.question_code).localeCompare(String(right.question_code)));
+    return filterQuestionGroups(groupQuestionItems(state.questionVersionDetail?.items || []), {
+      search: $('question-item-search')?.value || '',
+      category: $('question-item-category')?.value || '',
+      active: $('question-item-active')?.value || '',
+    });
+  }
+
+  function questionFacilityLabels() {
+    const labels = new Map([['ALL', 'Tất cả loại cơ sở']]);
+    const templateCode = selectedQuestionTemplate()?.template_code;
+    criteriaVariants().filter((variant) => !templateCode || variant.template_code === templateCode).forEach((variant) => {
+      if (variant.facility_type && variant.facility_label) labels.set(variant.facility_type, variant.facility_label);
+    });
+    return labels;
+  }
+
+  function questionScopeSummaries(group) {
+    return summarizeQuestionScopes(group?.scopes || [], { facilityLabels: questionFacilityLabels() });
+  }
+
+  function questionScaleLabel(value) {
+    return ({ ALL: 'Tất cả quy mô', LARGE: 'Lớn', SMALL: 'Nhỏ' })[value] || value || '—';
+  }
+
+  function toggleQuestionGroupDetails(groupKey) {
+    if (questionExpandedGroupKeys.has(groupKey)) questionExpandedGroupKeys.delete(groupKey);
+    else questionExpandedGroupKeys.add(groupKey);
+    renderVersionQuestions();
+  }
+
+  function renderQuestionGroupDetails(group, detailId, editable) {
+    const detailRow = el('tr', { className: 'question-scope-detail-row', attrs: { id: detailId } });
+    const cell = el('td', { attrs: { colspan: '9' } });
+    const list = el('div', { className: 'question-scope-detail-list' });
+    const facilityLabels = questionFacilityLabels();
+    group.members.forEach((item) => {
+      const row = el('div', { className: 'question-scope-detail-item' });
+      row.appendChild(el('span', { text: facilityLabels.get(item.facility_type) || item.facility_type }));
+      row.appendChild(el('span', { text: questionScaleLabel(item.supplier_scale) }));
+      row.appendChild(el('span', { className: 'mono', text: item.question_code }));
+      row.appendChild(el('span', { text: item.category || 'Chưa phân nhóm' }));
+      row.appendChild(el('span', { className: 'mono', text: `Thứ tự ${item.order_index}` }));
+      row.appendChild(el('span', { className: 'tag sev-' + (item.active ? 'green' : 'gray'), text: item.active ? 'Đang dùng' : 'Đã tắt' }));
+      if (editable) row.appendChild(RowActionGroup([
+        actionDescriptor('question.edit', () => openQuestionEditor(item), item, { label: `Sửa riêng ${item.facility_type} / ${item.supplier_scale}` }),
+      ]));
+      list.appendChild(row);
+    });
+    cell.appendChild(list);
+    detailRow.appendChild(cell);
+    return detailRow;
   }
 
   function renderVersionQuestions() {
@@ -11522,43 +11885,53 @@ import { state } from './js/state.js';
     const rows = filteredVersionQuestions();
     tbody.textContent = '';
     $('question-items-empty')?.classList.toggle('hidden', rows.length > 0);
-    rows.forEach((item, index) => {
+    rows.forEach((group, index) => {
       const tr = el('tr');
       const choose = el('td');
       if (editable) {
-        const checkbox = el('input', { attrs: { type: 'checkbox', 'aria-label': `Chọn ${item.question_code}` } });
-        checkbox.checked = state.questionSelectedItemIds.includes(String(item.id));
-        checkbox.addEventListener('change', () => toggleQuestionItemSelection(item.id, checkbox.checked));
+        const checkbox = el('input', { attrs: { type: 'checkbox', 'aria-label': `Chọn ${group.display_question_code || group.question_code} và ${group.physical_count} phạm vi` } });
+        const selectedIds = new Set(state.questionSelectedItemIds);
+        checkbox.checked = group.member_ids.every((id) => selectedIds.has(id));
+        checkbox.indeterminate = !checkbox.checked && group.member_ids.some((id) => selectedIds.has(id));
+        checkbox.addEventListener('change', () => toggleQuestionGroupSelection(group.member_ids, checkbox.checked));
         choose.appendChild(checkbox);
       }
       tr.appendChild(choose);
-      tr.appendChild(el('td', { className: 'mono', text: String(item.order_index) }));
-      tr.appendChild(el('td', { className: 'mono', text: item.question_code }));
-      tr.appendChild(el('td', { text: item.category }));
-      tr.appendChild(el('td', { text: item.question_text }));
-      tr.appendChild(el('td', { className: 'muted mono', text: item.is_elimination_clause ? 'Đạt / Không đạt / NA' : (item.allowed_scores || '—') }));
-      tr.appendChild(el('td', { className: 'muted mono', text: `${item.facility_type} / ${item.supplier_scale}` }));
-      const active = el('td'); active.appendChild(el('span', { className: 'tag sev-' + (item.active ? 'green' : 'gray'), text: item.active ? 'Đang dùng' : 'Đã tắt' })); tr.appendChild(active);
+      tr.appendChild(el('td', { className: 'mono question-order-cell', text: group.common_order_index == null ? 'Theo phạm vi' : String(group.common_order_index) }));
+      tr.appendChild(el('td', { className: 'mono question-code-cell', text: group.display_question_code || group.question_code }));
+      const textCell = el('td', { className: 'question-text-cell' });
+      textCell.appendChild(el('strong', { text: group.question_text }));
+      textCell.appendChild(el('span', { className: 'muted', text: group.is_critical_clause ? 'Điều khoản quan trọng' : 'Câu hỏi đánh giá' }));
+      if (group.has_scope_variance) textCell.appendChild(el('span', { className: 'question-scope-warning', text: 'Nội dung khác theo phạm vi' }));
+      tr.appendChild(textCell);
+      const scopeCell = el('td', { className: 'question-scope-cell' });
+      questionScopeSummaries(group).forEach((scope) => scopeCell.appendChild(el('span', { className: 'question-scope-chip', text: scope.label })));
+      const detailId = `question-scope-detail-${index}`;
+      const expanded = questionExpandedGroupKeys.has(group.key);
+      const detailButton = el('button', { className: 'question-scope-toggle', text: `${group.physical_count} phạm vi`, attrs: { type: 'button', 'aria-expanded': expanded ? 'true' : 'false', 'aria-controls': detailId } });
+      detailButton.addEventListener('click', () => toggleQuestionGroupDetails(group.key));
+      scopeCell.appendChild(detailButton);
+      tr.appendChild(scopeCell);
+      const categoryCell = el('td'); categoryCell.appendChild(el('span', { className: 'question-soft-chip', text: group.display_category || group.category || 'Chưa phân nhóm' })); tr.appendChild(categoryCell);
+      const answerCell = el('td'); answerCell.appendChild(el('span', { className: 'question-soft-chip', text: group.is_elimination_clause ? 'Đạt / Không đạt / NA' : (group.allowed_scores || '—') })); tr.appendChild(answerCell);
+      const active = el('td'); active.appendChild(el('span', { className: 'tag sev-' + (group.active ? 'green' : 'gray'), text: group.active ? 'Đang dùng' : 'Đã tắt' })); tr.appendChild(active);
       const actions = el('td', { className: 'table-action-cell' });
       if (editable) {
         actions.appendChild(RowActionGroup([
-          actionDescriptor('question.reorder', () => reorderQuestionItem(item.id, -1), item, {
-            label: 'Đưa lên trên', disabled: index === 0, disabledReason: index === 0 ? 'first_item' : '',
-          }),
-          actionDescriptor('question.edit', () => openQuestionEditor(item), item, { label: `Sửa ${item.question_code}` }),
+          actionDescriptor('question.edit', () => openQuestionGroupEditor(group), group, { label: `Sửa nội dung chung ${group.display_question_code || group.question_code}` }),
         ]));
       } else actions.appendChild(RowActionGroup([]));
       tr.appendChild(actions); tbody.appendChild(tr);
+      if (expanded) tbody.appendChild(renderQuestionGroupDetails(group, detailId, editable));
     });
     $('question-add-item')?.classList.toggle('hidden', !editable);
     $('question-bulk-deactivate')?.classList.toggle('hidden', !editable);
     if ($('question-bulk-deactivate')) $('question-bulk-deactivate').disabled = state.questionSelectedItemIds.length === 0;
   }
 
-  function toggleQuestionItemSelection(id, checked) {
-    const key = String(id);
+  function toggleQuestionGroupSelection(ids, checked) {
     const selected = new Set(state.questionSelectedItemIds);
-    if (checked) selected.add(key); else selected.delete(key);
+    (ids || []).forEach((id) => { const key = String(id); if (checked) selected.add(key); else selected.delete(key); });
     state.questionSelectedItemIds = [...selected];
     if ($('question-bulk-deactivate')) $('question-bulk-deactivate').disabled = selected.size === 0;
   }
@@ -11625,12 +11998,24 @@ import { state } from './js/state.js';
 
   function resetQuestionEditor() {
     state.questionEditorItemId = null;
+    questionEditorGroup = null;
     const values = { 'question-editor-facility': 'ALL', 'question-editor-scale': 'ALL', 'question-editor-variant': '', 'question-editor-category-code': '', 'question-editor-category': '', 'question-editor-code': '', 'question-editor-clause': '', 'question-editor-order': String((state.questionVersionDetail?.items?.length || 0) + 1), 'question-editor-text': '', 'question-editor-scores': 'A/B/C/D/NA', 'question-editor-weight': '1' };
     Object.entries(values).forEach(([id, value]) => { if ($(id)) $(id).value = value; });
+    for (const id of ['question-editor-facility', 'question-editor-scale', 'question-editor-variant', 'question-editor-order', 'question-editor-code', 'question-editor-category-code', 'question-editor-category']) if ($(id)) $(id).disabled = false;
     for (const id of ['question-editor-elimination', 'question-editor-critical', 'question-editor-evidence']) if ($(id)) $(id).checked = false;
     if ($('question-editor-active')) $('question-editor-active').checked = true;
     $('question-editor-scope-summary')?.classList.add('hidden');
     if ($('question-editor-scope-list')) $('question-editor-scope-list').textContent = '';
+  }
+
+  function fillQuestionEditor(item) {
+    state.questionEditorItemId = item.id;
+    const values = { 'question-editor-facility': item.facility_type, 'question-editor-scale': item.supplier_scale, 'question-editor-variant': item.variant_code || '', 'question-editor-category-code': item.category_code || '', 'question-editor-category': item.category, 'question-editor-code': item.question_code, 'question-editor-clause': item.clause_code || '', 'question-editor-order': item.order_index, 'question-editor-text': item.question_text, 'question-editor-scores': item.allowed_scores, 'question-editor-weight': item.weight };
+    Object.entries(values).forEach(([id, value]) => { if ($(id)) $(id).value = value ?? ''; });
+    $('question-editor-elimination').checked = !!item.is_elimination_clause;
+    $('question-editor-critical').checked = !!item.is_critical_clause;
+    $('question-editor-evidence').checked = !!item.requires_attachment;
+    $('question-editor-active').checked = !!item.active;
   }
 
   function openQuestionEditor(item = null, returnFocus = null) {
@@ -11638,10 +12023,7 @@ import { state } from './js/state.js';
     resetQuestionEditor();
     state.questionEditorReturnFocus = returnFocus || document.activeElement;
     if (item) {
-      state.questionEditorItemId = item.id;
-      const values = { 'question-editor-facility': item.facility_type, 'question-editor-scale': item.supplier_scale, 'question-editor-variant': item.variant_code || '', 'question-editor-category-code': item.category_code || '', 'question-editor-category': item.category, 'question-editor-code': item.question_code, 'question-editor-clause': item.clause_code || '', 'question-editor-order': item.order_index, 'question-editor-text': item.question_text, 'question-editor-scores': item.allowed_scores, 'question-editor-weight': item.weight };
-      Object.entries(values).forEach(([id, value]) => { if ($(id)) $(id).value = value ?? ''; });
-      $('question-editor-elimination').checked = !!item.is_elimination_clause; $('question-editor-critical').checked = !!item.is_critical_clause; $('question-editor-evidence').checked = !!item.requires_attachment; $('question-editor-active').checked = !!item.active;
+      fillQuestionEditor(item);
       $('question-editor-scope-list')?.appendChild(el('span', { className: 'question-scope-chip', text: `${item.facility_type || 'ALL'} · ${item.supplier_scale || 'ALL'}` }));
       $('question-editor-scope-summary')?.classList.remove('hidden');
     }
@@ -11650,8 +12032,26 @@ import { state } from './js/state.js';
     $('question-editor-code')?.focus();
   }
 
+  function openQuestionGroupEditor(group, returnFocus = null) {
+    if (!isQuestionVersionEditable() || !group?.members?.length) return;
+    resetQuestionEditor();
+    questionEditorGroup = group;
+    state.questionEditorReturnFocus = returnFocus || document.activeElement;
+    fillQuestionEditor(group.representative);
+    for (const id of ['question-editor-facility', 'question-editor-scale', 'question-editor-variant', 'question-editor-order']) if ($(id)) $(id).disabled = true;
+    if ($('question-editor-code')) $('question-editor-code').disabled = !!group.has_question_code_variance;
+    for (const id of ['question-editor-category-code', 'question-editor-category']) if ($(id)) $(id).disabled = !!group.has_category_variance;
+    const scopeList = $('question-editor-scope-list');
+    if (scopeList) questionScopeSummaries(group).forEach((scope) => scopeList.appendChild(el('span', { className: 'question-scope-chip', text: scope.label })));
+    $('question-editor-scope-summary')?.classList.remove('hidden');
+    if ($('question-editor-subtitle')) $('question-editor-subtitle').textContent = `Sửa nội dung chung ${group.display_question_code || group.question_code} · ${group.physical_count} phạm vi`;
+    $('question-editor-drawer')?.classList.remove('hidden');
+    $('question-editor-text')?.focus();
+  }
+
   function closeQuestionEditor() {
     $('question-editor-drawer')?.classList.add('hidden');
+    questionEditorGroup = null;
     const target = state.questionEditorReturnFocus;
     state.questionEditorReturnFocus = null;
     if (target && document.contains(target)) target.focus();
@@ -11668,6 +12068,7 @@ import { state } from './js/state.js';
 
   async function saveQuestionEditorItem() {
     const existing = (state.questionVersionDetail?.items || []).find((item) => String(item.id) === String(state.questionEditorItemId));
+    const editingGroup = questionEditorGroup;
     const elimination = $('question-editor-elimination').checked;
     const item = {
       ...(existing || {}),
@@ -11680,20 +12081,23 @@ import { state } from './js/state.js';
       requires_attachment: !elimination && $('question-editor-evidence').checked ? 1 : 0, active: $('question-editor-active').checked ? 1 : 0,
     };
     const errors = [];
-    if (!item.facility_type) errors.push('Loại cơ sở là bắt buộc.');
+    if (!editingGroup && !item.facility_type) errors.push('Loại cơ sở là bắt buộc.');
     if (!item.category) errors.push('Nhóm câu hỏi là bắt buộc.');
     if (!item.question_code) errors.push('Mã câu hỏi là bắt buộc.');
     if (!item.question_text) errors.push('Nội dung câu hỏi là bắt buộc.');
     if (!/^(?:A|B|C|D|NA)(?:\/(?:A|B|C|D|NA))*$/.test(item.allowed_scores)) errors.push('Điểm cho phép không hợp lệ.');
     if (!Number.isFinite(item.weight) || item.weight < 0) errors.push('Trọng số phải là số không âm.');
     if (!Number.isInteger(item.order_index) || item.order_index < 0) errors.push('Thứ tự phải là số nguyên không âm.');
-    const duplicate = (state.questionVersionDetail?.items || []).find((candidate) => String(candidate.id) !== String(existing?.id) && candidate.facility_type === item.facility_type && candidate.supplier_scale === item.supplier_scale && candidate.question_code === item.question_code);
+    const duplicate = editingGroup ? null : (state.questionVersionDetail?.items || []).find((candidate) => String(candidate.id) !== String(existing?.id) && candidate.facility_type === item.facility_type && candidate.supplier_scale === item.supplier_scale && candidate.question_code === item.question_code);
     if (duplicate) errors.push('Mã câu hỏi đã tồn tại trong cùng facility/scale.');
     if (errors.length) { focusQuestionValidationSummary(errors); return; }
     const items = (state.questionVersionDetail?.items || []).map((candidate) => ({ ...candidate }));
-    if (existing) items[items.findIndex((candidate) => String(candidate.id) === String(existing.id))] = item;
+    if (editingGroup) {
+      const updates = new Map(buildSharedQuestionUpdates(editingGroup, item).map((update) => [String(update.id), update]));
+      items.forEach((candidate, index) => { const update = updates.get(String(candidate.id)); if (update) items[index] = { ...candidate, ...update }; });
+    } else if (existing) items[items.findIndex((candidate) => String(candidate.id) === String(existing.id))] = item;
     else items.push(item);
-    const saved = await saveQuestionVersionItems(items, existing ? 'Đã lưu câu hỏi trong Draft.' : 'Đã thêm câu hỏi vào Draft.');
+    const saved = await saveQuestionVersionItems(items, editingGroup ? `Đã cập nhật ${editingGroup.physical_count} phạm vi của câu hỏi logic.` : existing ? 'Đã lưu câu hỏi trong bản nháp.' : 'Đã thêm câu hỏi vào bản nháp.');
     if (saved) closeQuestionEditor();
   }
 
@@ -11940,7 +12344,7 @@ import { state } from './js/state.js';
   }
 
   function renderQuestionVersionsAudit() {
-    const timeline = $('question-version-timeline'); if (timeline) { timeline.textContent = ''; state.questionVersions.forEach((version) => { const row = el('div', { className: 'question-version-event', attrs: { 'data-current': String(version.id) === String(state.selectedQuestionVersionId) ? 'true' : 'false' } }); row.appendChild(el('strong', { text: `v${version.version_no} · ${version.status}` })); row.appendChild(el('div', { className: 'muted', text: `${version.item_count ?? version.items?.length ?? 0} câu · ${version.updated_at || version.created_at || '—'}` })); timeline.appendChild(row); }); (state.questionVersionDetail?.events || []).forEach((event) => timeline.appendChild(el('div', { className: 'question-version-event', text: `${event.created_at} · ${event.action} · ${event.actor_user_id || 'system'}` }))); }
+    const timeline = $('question-version-timeline'); if (timeline) { timeline.textContent = ''; state.questionVersions.forEach((version) => { const row = el('div', { className: 'question-version-event', attrs: { 'data-current': String(version.id) === String(state.selectedQuestionVersionId) ? 'true' : 'false' } }); row.appendChild(el('strong', { text: `v${version.version_no} · ${businessVersionStatusLabel(version.status)}` })); row.appendChild(el('div', { className: 'muted', text: `${version.item_count ?? version.items?.length ?? 0} bản ghi phạm vi · ${version.updated_at || version.created_at || '—'}` })); timeline.appendChild(row); }); (state.questionVersionDetail?.events || []).forEach((event) => timeline.appendChild(el('div', { className: 'question-version-event', text: `${event.created_at} · ${event.action} · ${event.actor_user_id || 'system'}` }))); }
     const impact = state.questionVersionImpact; if ($('question-version-impact')) $('question-version-impact').textContent = impact ? `${impact.ticket_count} phiếu đã pin · ${impact.round_count} vòng · ${impact.answer_count} câu trả lời · ${impact.default_scope_count} phạm vi mặc định` : 'Chưa có dữ liệu tác động.';
     const diff = state.questionVersionDiff; if ($('question-version-diff')) $('question-version-diff').textContent = diff ? `So với version trước: thêm ${diff.added.length}, đổi ${diff.changed.length}, xóa ${diff.removed.length}. Rollback chỉ đổi mặc định cho phiếu mới.` : 'Đây là phiên bản đầu tiên; chưa có version để so sánh.';
   }
@@ -11997,7 +12401,7 @@ import { state } from './js/state.js';
         text: role.displayLabel,
         attrs: { title: `${role.roleCode}${role.validUntil ? ` · đến ${role.validUntil}` : ''}` },
       })));
-      else tdRole.appendChild(el('span', { className: 'tag sev-gray', text: u.role || (u.is_admin ? 'Admin' : 'Chuyên viên') }));
+      else tdRole.appendChild(el('span', { className: 'muted', text: detail ? 'Chưa gán vai trò' : 'Đang tải vai trò…' }));
       if (assignedRoles.length > 3) tdRole.appendChild(el('span', { className: 'tag sev-gray', text: `+${assignedRoles.length - 3}` }));
       tr.appendChild(tdRole);
       const tdScope = el('td');
@@ -12221,7 +12625,7 @@ import { state } from './js/state.js';
       select.textContent = '';
       (state.scoringPolicyVersions || []).forEach((item) => select.appendChild(el('option', {
         attrs: { value: String(item.id) },
-        text: `v${item.version_no} · ${item.status}${item.is_default ? ' · Mặc định' : ''}`,
+        text: `v${item.version_no} · ${businessVersionStatusLabel(item.status)}${item.is_default ? ' · Mặc định' : ''}`,
       })));
       select.value = state.selectedScoringPolicyVersionId || '';
     }
@@ -12259,9 +12663,9 @@ import { state } from './js/state.js';
     const definition = state.scoringPolicyVersionDetail?.definition || {};
     const metrics = [
       ['Nhóm tiêu chí', definition.categories?.length || 0],
-      ['Band kết quả', definition.bands?.length || 0],
+      ['Khoảng xếp loại', definition.bands?.length || 0],
       ['Mức điểm', Object.keys(definition.grades || {}).length],
-      ['Schema', `v${definition.schema_version || state.scoringPolicyVersionDetail?.schema_version || '—'}`],
+      ['Phiên bản cấu trúc', `v${definition.schema_version || state.scoringPolicyVersionDetail?.schema_version || '—'}`],
     ];
     metrics.forEach(([label, value]) => {
       const card = el('div', { className: 'admin-metric-card', attrs: { role: 'group', 'aria-label': `${label}: ${value}` } });
@@ -12473,7 +12877,7 @@ import { state } from './js/state.js';
     if (!host) return;
     host.textContent = '';
     (state.scoringPolicyVersions || []).forEach((version) => host.appendChild(el('div', {
-      className: 'business-config-event', text: `v${version.version_no} · ${version.status} · ${version.is_default ? 'Mặc định' : 'Không mặc định'} · lock ${version.lock_version}`,
+      className: 'business-config-event', text: `v${version.version_no} · ${businessVersionStatusLabel(version.status)} · ${version.is_default ? 'Mặc định' : 'Không mặc định'} · phiên bản khóa ${version.lock_version}`,
     })));
     (state.scoringPolicyVersionEvents || []).forEach((event) => host.appendChild(el('div', {
       className: 'business-config-event', text: `${event.created_at || '—'} · ${event.action || '—'} · ${event.actor || event.actor_user_id || 'system'} · ${event.correlation_id || '—'}`,
@@ -13002,6 +13406,7 @@ import { state } from './js/state.js';
     announceSuccess: false, context: () => actionContext(state.reportTemplateVersionDetail),
   });
   document.querySelectorAll('[data-report-template-tab]').forEach((button) => bindRegisteredAction(button, 'report_template.tab_open', () => setReportTemplateTab(button.dataset.reportTemplateTab, { focus: true }), { announceSuccess: false }));
+  bindRegisteredAction($('report-template-open-history'), 'report_template.tab_open', () => setReportTemplateTab('versions', { focus: true }), { announceSuccess: false });
   $('report-template-tabs')?.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
@@ -13070,6 +13475,7 @@ import { state } from './js/state.js';
     announceSuccess: false, context: () => actionContext(state.scoringPolicyVersionDetail), objectIdentity: () => `v${state.scoringPolicyVersionDetail?.version_no || ''}`,
   });
   document.querySelectorAll('[data-scoring-policy-tab]').forEach((button) => bindRegisteredAction(button, 'scoring_policy.tab_open', () => setScoringPolicyTab(button.dataset.scoringPolicyTab, { focus: true }), { announceSuccess: false }));
+  bindRegisteredAction($('scoring-policy-open-history'), 'scoring_policy.tab_open', () => setScoringPolicyTab('versions', { focus: true }), { announceSuccess: false });
   $('scoring-policy-workspace')?.querySelector('.business-config-tabs')?.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();

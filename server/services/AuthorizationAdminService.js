@@ -325,14 +325,32 @@ class AuthorizationAdminService {
     const reason = normalizeReason(input.reason);
     const clone = input.cloneFrom ? this._roleSnapshot(input.cloneFrom) : null;
     if (input.cloneFrom && !clone) throw new AuthorizationAdminError('clone_role_not_found', 404);
-    if (clone?.permissions.some((item) => ['high', 'critical'].includes(permissionRisk(item.permission_code)))) {
+    const available = new Set(this.db.prepare('SELECT permission_code FROM permissions WHERE active = 1').all()
+      .map((row) => row.permission_code).filter(isActivePermission));
+    const seen = new Set();
+    const configuredPermissions = Array.isArray(input.permissions) ? input.permissions.map((item) => {
+      const permissionCode = String(item?.permissionCode || '').trim().toUpperCase();
+      const effect = String(item?.effect || 'ALLOW').trim().toUpperCase();
+      const key = `${permissionCode}:${effect}`;
+      if (!available.has(permissionCode)) throw new AuthorizationAdminError('permission_not_found', 404);
+      if (!['ALLOW', 'DENY'].includes(effect) || seen.has(key)) throw new AuthorizationAdminError('invalid_permission_assignment', 400);
+      seen.add(key);
+      return { permissionCode, effect };
+    }) : null;
+    const sensitivePermissions = configuredPermissions || clone?.permissions.map((item) => ({ permissionCode: item.permission_code, effect: item.effect })) || [];
+    if (sensitivePermissions.some((item) => ['high', 'critical'].includes(permissionRisk(item.permissionCode)))) {
       requireExactConfirmation(input.confirmation, 'PUBLISH_ROLE', roleCode);
     }
     const create = this.db.transaction(() => {
       if (this._role(roleCode)) throw new AuthorizationAdminError('role_code_exists', 409);
-      this.db.prepare(`INSERT INTO roles (role_code, display_label, role_kind)
-        VALUES (?, ?, 'FUNCTIONAL')`).run(roleCode, displayLabel);
-      if (clone) {
+      this.db.prepare(`INSERT INTO roles (role_code, display_label, role_kind, active)
+        VALUES (?, ?, 'FUNCTIONAL', ?)`).run(roleCode, displayLabel, input.active === false ? 0 : 1);
+      if (configuredPermissions) {
+        const role = this._role(roleCode);
+        const insert = this.db.prepare(`INSERT INTO role_permissions
+          (role_id, permission_code, effect, created_by) VALUES (?, ?, ?, ?)`);
+        configuredPermissions.forEach((item) => insert.run(role.id, item.permissionCode, item.effect, context.actor || null));
+      } else if (clone) {
         this.db.prepare(`INSERT INTO role_permissions (role_id, permission_code, effect, created_by)
           SELECT target.id, rp.permission_code, rp.effect, ?
           FROM roles target CROSS JOIN roles source

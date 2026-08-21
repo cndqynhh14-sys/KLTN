@@ -420,8 +420,8 @@ test.describe('@smoke QLCL foundation', () => {
       return style.outlineStyle !== 'none' || style.boxShadow !== 'none';
     });
     expect(adminFocusVisible).toBeTruthy();
-    await expect(page.locator('#authz-role-list')).toContainText('SYS_ADMIN');
-    await page.locator('#authz-role-list .authz-role-open').first().click();
+    await expect(page.locator('#authz-role-list')).toContainText('Quản trị hệ thống');
+    await page.locator('#authz-role-list .authz-role-open').filter({ hasText: 'Quản trị hệ thống' }).click();
     await expect(page.locator('#authz-permission-matrix')).toContainText('SYSTEM.ADMIN');
     await page.locator('[data-authz-tab="users"]').click();
 
@@ -430,7 +430,7 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.locator('a[href="/qlcl/help/question-template-management#quick-start-designer"]')).toBeVisible();
     await expect(page.locator('#question-workspace-version-select')).toBeVisible();
     await expect(page.locator('#question-workspace-version-select option')).toHaveCount(1);
-    await expect(page.locator('#question-workspace-version-select')).toContainText('PUBLISHED');
+    await expect(page.locator('#question-workspace-version-select')).toContainText('Đang áp dụng');
     await expect(page.locator('#question-published-readonly')).toBeVisible();
     await expect(page.locator('#question-version-clone')).toBeVisible();
     await expect(page.locator('#question-preview')).toBeVisible();
@@ -462,7 +462,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#question-validate').click();
     await expect(page.locator('#question-validation-summary')).toContainText('Kiểm tra hợp lệ');
 
-    const publishedOptionValue = await page.locator('#question-workspace-version-select option').filter({ hasText: 'PUBLISHED' }).first().getAttribute('value');
+    const publishedOptionValue = await page.locator('#question-workspace-version-select option').filter({ hasText: 'Đang áp dụng' }).first().getAttribute('value');
     await page.locator('#question-version-clone').click();
     await expect(page.locator('#question-version-status-chip')).toHaveText('Bản nháp');
     await expect(page.locator('#question-workspace-version-select option')).toHaveCount(2);
@@ -507,7 +507,7 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.locator('#report-template-tbody')).toBeVisible();
     await expect(page.locator('a[href="/qlcl/help/report-template-management#quick-start-designer"]')).toBeVisible();
     await expect(page.locator('#report-template-version-select')).toBeVisible();
-    await expect(page.locator('#report-template-version-select')).toContainText('PUBLISHED');
+    await expect(page.locator('#report-template-version-select')).toContainText('Đang áp dụng');
     await expect(page.locator('#report-template-component-tree')).toBeVisible();
     await expect(page.locator('#report-template-readonly')).toBeVisible();
     await expect(page.locator('#report-template-save-draft')).toBeDisabled();
@@ -515,7 +515,7 @@ test.describe('@smoke QLCL foundation', () => {
     expect(saveDraftReasonIds.length).toBeGreaterThan(0);
     for (const id of saveDraftReasonIds) await expect(page.locator(`#${id}`)).toBeVisible();
     await expect(page.locator('#report-template-create-draft')).toBeVisible();
-    await expect(page.locator('#report-template-legacy summary')).toContainText('không tạo mới');
+    await expect(page.locator('#report-template-legacy')).toHaveCount(0);
     await page.locator('#report-template-tab-preview').click();
     await expect(page.locator('#report-template-a4-preview')).toHaveAttribute('srcdoc', /data-report-definition="/);
     await expect(page.locator('#report-template-preview-provenance')).toContainText('data contract v1');
@@ -523,7 +523,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#report-template-tab-structure').click();
     const publishedReportVersionValue = await page.locator('#report-template-version-select option:checked').getAttribute('value');
     await page.locator('#report-template-create-draft').click();
-    await expect(page.locator('#report-template-version-select option:checked')).toContainText('DRAFT');
+    await expect(page.locator('#report-template-version-select option:checked')).toContainText('Bản nháp');
     const draftReportVersionValue = await page.locator('#report-template-version-select').inputValue();
     await expect(page.locator('#report-template-component-title')).toBeEnabled();
     const currentReportTitle = await page.locator('#report-template-component-title').inputValue();
@@ -539,14 +539,14 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#report-template-submit-review').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
     await page.locator('#confirm-accept').click();
-    await expect(page.locator('#report-template-version-select option:checked')).toContainText('IN_REVIEW');
+    await expect(page.locator('#report-template-version-select option:checked')).toContainText('Chờ duyệt');
     await expect(page.locator('#report-template-readonly-message')).toContainText('đang Review');
     await expect(page.locator('#report-template-save-draft')).toBeDisabled();
     await page.locator('#report-template-tab-preview').click();
     await page.locator('#report-template-preview-refresh').click();
     await expect(page.locator('#report-template-preview-provenance')).toContainText(`#${draftReportVersionValue}`);
     await page.locator('#report-template-version-select').selectOption(publishedReportVersionValue);
-    await expect(page.locator('#report-template-version-select option:checked')).toContainText('PUBLISHED');
+    await expect(page.locator('#report-template-version-select option:checked')).toContainText('Đang áp dụng');
     await expect(page.locator('#report-template-readonly-message')).toContainText('Published/Retired');
     await page.locator('#report-template-editor').scrollIntoViewIfNeeded();
     await page.screenshot({
@@ -750,9 +750,12 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#report-template-tab-presentation').click();
     await expect(page.locator('#report-template-properties')).toBeVisible();
     const mobileReportTargets = await page.locator('#report-template-create-draft, #report-template-preview-refresh, #report-template-export-package').evaluateAll((buttons) => (
-      buttons.filter((button) => getComputedStyle(button).display !== 'none').map((button) => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height }))
+      buttons.filter((button) => {
+        const style = getComputedStyle(button);
+        return style.display !== 'none' && style.visibility !== 'hidden' && button.getClientRects().length > 0;
+      }).map((button) => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height }))
     ));
-    expect(mobileReportTargets.every((target) => target.width >= 44 && target.height >= 44)).toBeTruthy();
+    expect(mobileReportTargets.every((target) => target.width >= 44 && target.height >= 44), JSON.stringify(mobileReportTargets)).toBeTruthy();
     await page.locator('.report-template-version-toolbar').scrollIntoViewIfNeeded();
     await page.screenshot({
       path: path.join(uat.trace.scenarioDir, 'business-config-report-mobile-390x844.png'),
@@ -765,9 +768,12 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#scoring-policy-tab-grade-scale').click();
     await expect(page.locator('#scoring-policy-pane-grade-scale')).toBeVisible();
     const mobileScoringTargets = await page.locator('#scoring-policy-create-draft, #scoring-policy-simulate, #scoring-policy-impact, #scoring-policy-validate').evaluateAll((buttons) => (
-      buttons.filter((button) => getComputedStyle(button).display !== 'none').map((button) => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height }))
+      buttons.filter((button) => {
+        const style = getComputedStyle(button);
+        return style.display !== 'none' && style.visibility !== 'hidden' && button.getClientRects().length > 0;
+      }).map((button) => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height }))
     ));
-    expect(mobileScoringTargets.every((target) => target.width >= 44 && target.height >= 44)).toBeTruthy();
+    expect(mobileScoringTargets.every((target) => target.width >= 44 && target.height >= 44), JSON.stringify(mobileScoringTargets)).toBeTruthy();
     const mobileScoringWidth = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,
       scroll: document.documentElement.scrollWidth,
@@ -786,8 +792,8 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#mobile-more-navigation [data-route-tab="admin-users"]').click();
     await expect(page.getByTestId('authorization-admin')).toBeVisible();
     await page.locator('[data-authz-tab="roles"]').click();
-    await expect(page.locator('#authz-role-list')).toContainText('SYS_ADMIN');
-    await page.locator('#authz-role-list .authz-role-open').first().click();
+    await expect(page.locator('#authz-role-list')).toContainText('Quản trị hệ thống');
+    await page.locator('#authz-role-list .authz-role-open').filter({ hasText: 'Quản trị hệ thống' }).click();
     await expect(page.locator('#authz-role-form')).toBeVisible();
     const mobileAdminWidth = await page.evaluate(() => ({
       client: document.documentElement.clientWidth,
@@ -1371,6 +1377,7 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.locator('[data-authz-tab="roles"]')).toHaveAttribute('aria-selected', 'true');
 
     await page.locator('#authz-new-role').click();
+    await page.locator('#authz-role-technical').evaluate((node) => { node.open = true; });
     await page.locator('#authz-role-code').fill(baseRole);
     await page.locator('#authz-role-label').fill('UAT Base Role');
     await page.locator('#authz-role-reason').fill('Create a synthetic empty role for authorization UAT');
@@ -1378,12 +1385,17 @@ test.describe('@smoke QLCL foundation', () => {
       && response.url().endsWith('/qlcl/api/admin/authorization/roles'));
     await page.locator('#authz-save-role').click();
     expect((await createResponse).status()).toBe(201);
-    await expect(page.locator('#authz-role-list')).toContainText(baseRole);
+    await expect(page.locator('#authz-role-list')).toContainText('UAT Base Role');
 
-    const readOnlyRole = page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: 'READ_ONLY_VIEWER' });
+    const readOnlyRole = page.locator('#authz-role-list .authz-role-open').filter({ hasText: 'Người xem' });
     await expect(readOnlyRole).toHaveCount(1);
     await readOnlyRole.click();
-    await page.locator('#authz-clone-role').click();
+    await page.locator('#authz-close-role-form').click();
+    await expect(page.locator('#authz-role-form')).toBeHidden();
+    const readOnlyRoleCard = page.locator('#authz-role-list .authz-role-card').filter({ hasText: 'Người xem' });
+    await readOnlyRoleCard.locator('.icon-btn').click();
+    await page.locator('.action-more-menu [data-action-id="authorization.role_clone"]').click();
+    await page.locator('#authz-role-technical').evaluate((node) => { node.open = true; });
     await page.locator('#authz-role-code').fill(cloneRole);
     await page.locator('#authz-role-label').fill('UAT Cloned Viewer');
     await page.locator('#authz-role-reason').fill('Clone the read-only role for deterministic authorization UAT');
@@ -1391,7 +1403,7 @@ test.describe('@smoke QLCL foundation', () => {
       && response.url().endsWith('/qlcl/api/admin/authorization/roles'));
     await page.locator('#authz-save-role').click();
     expect((await cloneResponse).status()).toBe(201);
-    await expect(page.locator('#authz-role-list')).toContainText(cloneRole);
+    await expect(page.locator('#authz-role-list')).toContainText('UAT Cloned Viewer');
     await expect(page.locator('#authz-role-code')).toHaveValue(cloneRole);
     await expect(page.locator('#authz-role-label')).toHaveValue('UAT Cloned Viewer');
 
@@ -1408,7 +1420,7 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.locator('#view-overview')).toBeVisible();
     await page.evaluate(() => { window.location.hash = '/admin/roles'; });
     await expect(page.getByTestId('authorization-admin')).toBeVisible();
-    const clonedRoleAfterDiscard = page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: cloneRole });
+    const clonedRoleAfterDiscard = page.locator('#authz-role-list .authz-role-open').filter({ hasText: 'UAT Cloned Viewer' });
     await clonedRoleAfterDiscard.click();
     await expect(page.locator('#authz-role-code')).toHaveValue(cloneRole);
 
@@ -1428,9 +1440,9 @@ test.describe('@smoke QLCL foundation', () => {
       return response.status;
     }, { roleCode: cloneRole });
     expect(permissionPublishStatus).toBe(200);
-    await page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: 'QLCL_SPECIALIST' }).click();
+    await page.locator('#authz-role-list .authz-role-open').filter({ hasText: 'Chuyên viên QLCL' }).click();
     await expect(page.locator('#authz-role-code')).toHaveValue('QLCL_SPECIALIST');
-    await page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: cloneRole }).click();
+    await page.locator('#authz-role-list .authz-role-open').filter({ hasText: 'UAT Cloned Viewer' }).click();
     await expect(page.locator('#authz-role-code')).toHaveValue(cloneRole);
     await page.locator('#authz-permission-search').evaluate((input) => {
       input.value = 'REPORT.READ';
@@ -1440,25 +1452,29 @@ test.describe('@smoke QLCL foundation', () => {
 
     await page.locator('[data-authz-tab="users"]').click();
     await page.locator('#authz-user-search').fill(targetEmail);
-    const targetRow = page.locator(`[data-authz-user-email="${targetEmail}"]`);
+    const targetRow = page.locator('#admin-users-tbody tr').filter({ hasText: targetEmail });
     await expect(targetRow).toHaveCount(1);
+    const targetUserId = await targetRow.getAttribute('data-authz-user-id');
+    expect(targetUserId).toBeTruthy();
     const targetDetailResponse = page.waitForResponse((response) => response.request().method() === 'GET'
-      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(targetEmail)}`));
+      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(targetUserId)}`));
     await targetRow.focus();
     await targetRow.press('Enter');
     expect((await targetDetailResponse).status()).toBe(200);
     await expect(page.locator('#authz-user-detail-sub')).toContainText(targetEmail);
+    await page.locator('#authz-user-role-list .authz-role-picker > summary').click();
     await page.locator(`[data-authz-user-role="${baseRole}"]`).check();
+    await page.locator('#authz-user-role-list .authz-role-picker > summary').click();
     await page.locator(`[data-authz-user-role="${cloneRole}"]`).check();
-    await page.locator(`[data-authz-role-until="${cloneRole}"]`).fill('2027-12-31T23:00');
-    await page.locator('#authz-user-role-reason').fill('Assign multiple synthetic roles with an explicit validity window');
+    await page.locator('#authz-user-role-reason').fill('Assign multiple synthetic roles through the compact authorization drawer');
+    await page.locator('#authz-user-safety > summary').click();
     await page.locator('#authz-user-role-confirm').fill(`ASSIGN ROLES ${targetEmail}`);
     const assignmentResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
-      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(targetEmail)}/roles`));
+      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(targetUserId)}/authorization`));
     await page.locator('#authz-save-user-roles').click();
     expect((await assignmentResponse).status()).toBe(200);
-    await expect(page.locator('#authz-user-effective')).toContainText('REPORT.READ');
-    await expect(page.locator('#authz-user-effective')).toContainText('DENY_WINS');
+    await expect(page.locator('#authz-user-effective')).toContainText('thao tác hiện đang áp dụng');
+    await expect(page.locator('#authz-user-effective')).toContainText('luôn ưu tiên giới hạn');
     await page.locator('#authz-close-user-detail').click();
     await expect(page.locator('#authz-user-detail')).toBeHidden();
     await page.locator('#authz-user-health-filter').evaluate((select) => {
@@ -1467,8 +1483,44 @@ test.describe('@smoke QLCL foundation', () => {
     });
     await expect(targetRow).toHaveCount(1);
 
+    await page.locator('[data-authz-tab="approvals"]').click();
+    await page.locator('#authz-new-approval').click();
+    await expect(page.locator('#authz-approval-workflow')).toHaveValue('EVALUATION');
+    await expect(page.locator('#authz-approval-advanced')).not.toHaveAttribute('open', '');
+    await page.locator('#authz-approval-subject-type').selectOption('user');
+    const actorOptionValue = await page.locator('#authz-approval-subject option').evaluateAll((options, email) => (
+      options.find((item) => item.textContent.includes(email))?.value || ''
+    ), uat.config.adminEmail);
+    expect(actorOptionValue).toBeTruthy();
+    await page.locator('#authz-approval-subject').selectOption(actorOptionValue);
+    await page.locator('#authz-approval-advanced').evaluate((node) => { node.open = true; });
+    await page.locator('#authz-approval-priority').fill('9876');
+    await page.locator('#authz-approval-reason').fill('Create an evaluation-only approver through the SOURCE-like master detail editor');
+    await page.locator('#authz-approval-confirm').fill('PUBLISH APPROVER EVALUATION:LEAD');
+    const approverCreateResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+      && response.url().endsWith('/qlcl/api/admin/authorization/approval-assignments/publish'));
+    await page.locator('#authz-publish-approval').click();
+    expect((await approverCreateResponse).status()).toBe(200);
+    const actorApprovalRow = page.locator('#authz-approval-list tbody tr').filter({ hasText: uat.config.adminEmail });
+    await expect(actorApprovalRow).toHaveCount(1);
+
+    await actorApprovalRow.click();
+    await page.locator('#authz-approval-advanced').evaluate((node) => { node.open = true; });
+    await page.locator('#authz-approval-priority').fill('9875');
+    await page.locator('#authz-approval-reason').fill('Edit the synthetic evaluation approver through the detail panel');
+    await page.locator('#authz-approval-confirm').fill('PUBLISH APPROVER EVALUATION:LEAD');
+    const approverEditResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+      && response.url().endsWith('/qlcl/api/admin/authorization/approval-assignments/publish'));
+    await page.locator('#authz-publish-approval').click();
+    expect((await approverEditResponse).status()).toBe(200);
+    await actorApprovalRow.click();
+    await page.locator('#authz-approval-advanced').evaluate((node) => { node.open = true; });
+    await page.locator('#authz-approval-priority').fill('9874');
+    await page.locator('#authz-cancel-approval').click();
+    await expect(page.locator('#authz-approval-priority')).toHaveValue('9875');
+
     await page.locator('[data-authz-tab="roles"]').click();
-    const cloneRoleCard = page.locator('[data-action-id="authorization.role_select"]').filter({ hasText: cloneRole });
+    const cloneRoleCard = page.locator('#authz-role-list .authz-role-open').filter({ hasText: 'UAT Cloned Viewer' });
     await cloneRoleCard.click();
     await expect(page.locator('#authz-role-code')).toHaveValue(cloneRole);
     await expect(page.locator('#authz-delete-role')).toBeDisabled();
@@ -1508,18 +1560,23 @@ test.describe('@smoke QLCL foundation', () => {
     await app.waitForSession(uat.config.managerEmail);
     await expect(page.getByTestId('authorization-admin')).toBeVisible();
     await page.locator('#authz-user-search').fill(uat.config.managerEmail);
-    const managerRow = page.locator(`[data-authz-user-email="${uat.config.managerEmail}"]`);
+    const managerRow = page.locator('#admin-users-tbody tr').filter({ hasText: uat.config.managerEmail });
+    await expect(managerRow).toHaveCount(1);
+    const managerUserId = await managerRow.getAttribute('data-authz-user-id');
+    expect(managerUserId).toBeTruthy();
     const managerDetailResponse = page.waitForResponse((response) => response.request().method() === 'GET'
-      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(uat.config.managerEmail)}`));
+      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(managerUserId)}`));
     await managerRow.focus();
     await managerRow.press('Enter');
     expect((await managerDetailResponse).status()).toBe(200);
-    await expect(page.locator('#authz-user-detail-title')).toHaveText('UAT Authorization Manager');
+    await expect(page.locator('#authz-user-detail-sub')).toContainText('UAT Authorization Manager');
+    await page.locator('#authz-user-role-list .authz-role-picker > summary').click();
     await page.locator('[data-authz-user-role="SYS_ADMIN"]').check();
     await page.locator('#authz-user-role-reason').fill('Attempt prohibited synthetic self escalation to system administrator');
+    await page.locator('#authz-user-safety > summary').click();
     await page.locator('#authz-user-role-confirm').fill(`ASSIGN ROLES ${uat.config.managerEmail}`);
     const selfEscalationResponse = page.waitForResponse((response) => response.request().method() === 'PUT'
-      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(uat.config.managerEmail)}/roles`));
+      && response.url().includes(`/qlcl/api/admin/authorization/users/${encodeURIComponent(managerUserId)}/authorization`));
     await page.locator('#authz-save-user-roles').click();
     expect((await selfEscalationResponse).status()).toBe(409);
     await expect(page.locator('[data-authz-state-message]')).toContainText('Không thể tự mở rộng quyền');

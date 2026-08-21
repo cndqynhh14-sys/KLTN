@@ -3886,7 +3886,7 @@
     <div id="admin-dashboard" class="admin-dashboard-groups" data-navigation-surface="admin-cards"></div>
     <div class="section-hdr admin-page-header">
       <h2 id="admin-page-title">Quản trị</h2>
-      <span class="sub">Người dùng · lịch sử tải lên · ngưỡng cảnh báo</span>
+      <span class="sub">Nhân sự · phân quyền · cấu hình nghiệp vụ · nhật ký hệ thống</span>
       <div class="line"></div>
       <button id="btn-admin-close" class="btn-ghost" type="button">← Bảng điều khiển</button>
     </div>
@@ -3905,7 +3905,7 @@
 
       <ol id="personnel-import-steps" class="admin-stepper personnel-import-steps guided-stage-list" data-guided-stages aria-label="Tiến trình nhập nhân sự">
         <li data-personnel-step-indicator="upload" data-state="current"><span class="personnel-import-step-number">1</span><span><strong>Tải danh sách</strong><small>Chọn file XLSX</small></span></li>
-        <li data-personnel-step-indicator="columns" data-state="pending"><span class="personnel-import-step-number">2</span><span><strong>Mapping cột</strong><small>Ghép trường dữ liệu</small></span></li>
+        <li data-personnel-step-indicator="columns" data-state="pending"><span class="personnel-import-step-number">2</span><span><strong>Đối chiếu cột</strong><small>Ghép trường dữ liệu</small></span></li>
         <li data-personnel-step-indicator="roles" data-state="pending"><span class="personnel-import-step-number">3</span><span><strong>Gán vai trò</strong><small>Dùng vai trò hiện hữu</small></span></li>
         <li data-personnel-step-indicator="review" data-state="pending"><span class="personnel-import-step-number">4</span><span><strong>Kiểm tra &amp; nhập</strong><small>Chưa bắt đầu</small></span></li>
       </ol>
@@ -3939,7 +3939,7 @@
 
           <section class="personnel-import-step hidden" data-personnel-step="columns" aria-labelledby="personnel-import-columns-title">
             <div class="personnel-import-section-head">
-              <div><h4 id="personnel-import-columns-title">Mapping cột dữ liệu</h4><p>Chọn cột nguồn tương ứng. Email là trường bắt buộc; phòng ban chỉ có thể bỏ qua.</p></div>
+              <div><h4 id="personnel-import-columns-title">Đối chiếu cột dữ liệu</h4><p>Chọn cột nguồn tương ứng. Email là trường bắt buộc; phòng ban có thể bỏ qua.</p></div>
               <span id="personnel-import-column-progress" class="admin-status-badge">0 trường đã đối chiếu</span>
             </div>
             <div id="personnel-import-column-mapping" class="personnel-import-mapping-grid" aria-live="polite"></div>
@@ -3955,7 +3955,7 @@
 
           <section class="personnel-import-step hidden" data-personnel-step="review" aria-labelledby="personnel-import-review-title">
             <div class="personnel-import-section-head">
-              <div><h4 id="personnel-import-review-title">Kiểm tra &amp; nhập</h4><p>Chỉ batch hợp lệ mới có thể commit. Hệ thống sẽ kiểm tra lại checksum và phiên bản quyền tại thời điểm nhập.</p></div>
+              <div><h4 id="personnel-import-review-title">Kiểm tra trước khi nhập</h4><p>Chỉ danh sách hợp lệ mới có thể nhập. Hệ thống kiểm tra lại file và phiên bản quyền tại thời điểm xác nhận.</p></div>
               <button id="personnel-import-retry" class="btn-ghost" type="button" data-action-id="personnel_import.retry">Kiểm tra lại</button>
             </div>
             <div class="personnel-import-commit-fields">
@@ -4007,7 +4007,7 @@
       </div>
     </section>
 
-    <section id="scoring-policy-workspace" class="panel business-config-workspace guided-workspace hidden" data-business-config-workspace="scoring-policies" data-guided-workspace="scoring-policies" aria-labelledby="admin-scoring-policies-title">
+    <section id="scoring-policy-workspace" class="panel business-config-host business-config-workspace guided-workspace hidden" data-business-config-workspace="scoring-policies" data-guided-workspace="scoring-policies" aria-labelledby="admin-scoring-policies-title">
       <div class="business-config-heading business-config-page-head">
         <div><h3 id="admin-scoring-policies-title">Chính sách tính điểm</h3><p>Quản lý phiên bản công thức, ngưỡng và quy tắc kết luận.</p></div>
         <div class="business-config-toolbar" role="search" aria-label="Tìm và lọc chính sách tính điểm"><label class="business-config-search" for="scoring-policy-search"><span class="sr-only">Tìm chính sách</span><input id="scoring-policy-search" class="input" type="search" placeholder="Tìm chính sách"></label><label for="scoring-policy-status-filter" class="sr-only">Lọc trạng thái</label><select id="scoring-policy-status-filter" class="input"><option value="">Tất cả trạng thái</option><option value="DRAFT">Bản nháp</option><option value="IN_REVIEW">Chờ duyệt</option><option value="PUBLISHED">Đang áp dụng</option><option value="RETIRED">Ngừng áp dụng</option></select><button id="scoring-policy-create-draft" type="button" class="btn-primary" data-action-id="scoring_policy.create_draft">Tạo bản nháp</button><a class="context-help-link business-config-help-link" href="/qlcl/help/scoring-policy-management" target="_blank" rel="noopener noreferrer">Hướng dẫn</a></div>
@@ -4028,18 +4028,18 @@
           <div class="business-config-version-toolbar">
             <div><span id="scoring-policy-code" class="mono"></span><h4 id="scoring-policy-version-title">Chọn một chính sách</h4><p id="scoring-policy-version-meta" class="muted"></p></div>
             <label class="business-config-version-picker" for="scoring-policy-version-select"><span>Phiên bản</span><select id="scoring-policy-version-select" class="input"></select></label>
-            <span id="scoring-policy-status" class="admin-status-badge">—</span>
+            <span id="scoring-policy-status" class="admin-status-badge">—</span><button id="scoring-policy-open-history" type="button" class="btn-ghost" data-action-id="scoring_policy.tab_open">Xem lịch sử</button>
           </div>
           <details class="guided-disclosure guided-lifecycle"><summary>Vòng đời phiên bản</summary><ol id="scoring-policy-lifecycle" class="business-config-lifecycle" aria-label="Lifecycle chính sách tính điểm"></ol></details>
-          <div id="scoring-policy-readonly" class="business-config-readonly hidden" role="note">Published/Retired luôn chỉ đọc. Clone thành Draft để thay đổi metadata hoặc nội dung ở workflow chuyên biệt.</div>
+          <div id="scoring-policy-readonly" class="business-config-readonly hidden" role="note">Phiên bản đang áp dụng hoặc đã ngừng áp dụng chỉ xem. Tạo bản nháp để thay đổi.</div>
           <div class="business-config-tabs" role="tablist" aria-label="Workspace chính sách tính điểm">
             <button id="scoring-policy-tab-overview" type="button" role="tab" aria-selected="true" data-scoring-policy-tab="overview" data-action-id="scoring_policy.tab_open">Tổng quan</button>
             <button id="scoring-policy-tab-grade-scale" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="grade-scale" data-action-id="scoring_policy.tab_open">Thang điểm</button>
-            <button id="scoring-policy-tab-bands" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="bands" data-action-id="scoring_policy.tab_open">Ngưỡng &amp; xếp loại</button>
-            <button id="scoring-policy-tab-penalties" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="penalties" data-action-id="scoring_policy.tab_open">Loại trừ/penalty</button>
-            <button id="scoring-policy-tab-simulation" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="simulation" data-action-id="scoring_policy.tab_open">Mô phỏng</button>
+            <button id="scoring-policy-tab-bands" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="bands" data-action-id="scoring_policy.tab_open">Khoảng xếp loại</button>
+            <button id="scoring-policy-tab-penalties" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="penalties" data-action-id="scoring_policy.tab_open">Điểm trừ</button>
+            <button id="scoring-policy-tab-simulation" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="simulation" data-action-id="scoring_policy.tab_open">Kiểm thử</button>
             <button id="scoring-policy-tab-impact" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="impact" data-action-id="scoring_policy.tab_open">Tác động</button>
-            <button id="scoring-policy-tab-versions" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="versions" data-action-id="scoring_policy.tab_open">Phiên bản &amp; Audit</button>
+            <button id="scoring-policy-tab-versions" type="button" role="tab" aria-selected="false" data-scoring-policy-tab="versions" data-action-id="scoring_policy.tab_open">Lịch sử</button>
           </div>
           <div id="scoring-policy-live" class="business-config-live" role="status" aria-live="polite"></div>
           <section id="scoring-policy-pane-overview" class="business-config-pane" data-scoring-policy-pane="overview" role="tabpanel" aria-labelledby="scoring-policy-tab-overview">
@@ -4059,17 +4059,17 @@
             <div class="table-scroll"><table class="data-table"><thead><tr><th>Mức</th><th>Nhãn</th><th>Giá trị điểm</th><th>Đạt</th><th>Đánh giá lại (tháng)</th></tr></thead><tbody id="scoring-policy-grade-tbody"></tbody></table></div>
           </section>
           <section id="scoring-policy-pane-bands" class="business-config-pane hidden" data-scoring-policy-pane="bands" role="tabpanel" aria-labelledby="scoring-policy-tab-bands">
-            <div class="business-config-pane-head"><div><h4>Ngưỡng, xếp loại và rounding</h4><p>Các biên liền kề sẽ được engine kiểm tra gap/overlap.</p></div></div>
-            <div class="table-scroll"><table class="data-table"><thead><tr><th>Band</th><th>Grade</th><th>Từ</th><th>Đến</th><th>Kết luận</th></tr></thead><tbody id="scoring-policy-band-tbody"></tbody></table></div>
+            <div class="business-config-pane-head"><div><h4>Khoảng điểm và xếp loại</h4><p>Hệ thống kiểm tra khoảng trống hoặc chồng lấn giữa các mức.</p></div></div>
+            <div class="table-scroll"><table class="data-table"><thead><tr><th>Khoảng</th><th>Xếp loại</th><th>Từ</th><th>Đến</th><th>Kết luận</th></tr></thead><tbody id="scoring-policy-band-tbody"></tbody></table></div>
             <div class="form-shell business-config-metadata-form">
               <label class="form-field" for="scoring-policy-pass-min"><span>Điểm đạt tối thiểu</span><input id="scoring-policy-pass-min" class="input" type="number" step="0.01"></label>
               <label class="form-field" for="scoring-policy-lead-threshold"><span>Ngưỡng gửi Lead</span><input id="scoring-policy-lead-threshold" class="input" type="number" step="0.01"></label>
-              <label class="form-field" for="scoring-policy-rounding-mode"><span>Chế độ rounding</span><select id="scoring-policy-rounding-mode" class="input"><option value="NONE">NONE</option><option value="ROUND">ROUND</option></select></label>
+              <label class="form-field" for="scoring-policy-rounding-mode"><span>Cách làm tròn</span><select id="scoring-policy-rounding-mode" class="input"><option value="NONE">Không làm tròn</option><option value="ROUND">Làm tròn</option></select></label>
               <label class="form-field" for="scoring-policy-display-decimals"><span>Số chữ số hiển thị</span><input id="scoring-policy-display-decimals" class="input" type="number" min="0" max="6" step="1"></label>
             </div>
           </section>
           <section id="scoring-policy-pane-penalties" class="business-config-pane hidden" data-scoring-policy-pane="penalties" role="tabpanel" aria-labelledby="scoring-policy-tab-penalties">
-            <div class="business-config-pane-head"><div><h4>Penalty và điều khoản loại</h4><p>Engine là nơi duy nhất áp dụng multiplier, priority và forced score.</p></div></div>
+            <div class="business-config-pane-head"><div><h4>Điểm trừ và điều khoản loại</h4><p>Hệ thống tính điểm áp dụng hệ số, mức ưu tiên và điểm bắt buộc.</p></div></div>
             <div class="table-scroll"><table class="data-table"><thead><tr><th>Mã</th><th>Điều kiện</th><th>Hệ số</th><th>Ưu tiên</th><th>Giải thích</th></tr></thead><tbody id="scoring-policy-penalty-tbody"></tbody></table></div>
             <div class="form-shell business-config-metadata-form">
               <label class="form-field" for="scoring-policy-elimination-clause"><span>Loại điều khoản</span><input id="scoring-policy-elimination-clause" class="input" type="text"></label>
@@ -4079,15 +4079,15 @@
             </div>
           </section>
           <section id="scoring-policy-pane-simulation" class="business-config-pane hidden" data-scoring-policy-pane="simulation" role="tabpanel" aria-labelledby="scoring-policy-tab-simulation">
-            <div class="business-config-pane-head"><div><h4>Fixture synthetic biên điểm</h4><p>Input an toàn được gửi tới engine; bảng dưới chỉ render response từ server.</p></div></div>
+            <div class="business-config-pane-head"><div><h4>Dữ liệu kiểm thử biên điểm</h4><p>Dùng dữ liệu mẫu an toàn để kiểm tra kết quả trước khi gửi duyệt.</p></div></div>
             <div id="scoring-policy-simulation-result" class="business-config-impact admin-state admin-state--empty" role="status">Chưa chạy mô phỏng.</div>
-            <div class="table-scroll"><table class="data-table"><thead><tr><th>Fixture</th><th>Input score</th><th>Band trước</th><th>Band sau</th><th>Grade sau</th><th>Timing sau</th></tr></thead><tbody id="scoring-policy-simulation-tbody"></tbody></table></div>
+            <div class="table-scroll"><table class="data-table"><thead><tr><th>Kịch bản</th><th>Điểm nhập</th><th>Khoảng trước</th><th>Khoảng sau</th><th>Xếp loại sau</th><th>Lịch đánh giá sau</th></tr></thead><tbody id="scoring-policy-simulation-tbody"></tbody></table></div>
           </section>
           <section id="scoring-policy-pane-impact" class="business-config-pane hidden" data-scoring-policy-pane="impact" role="tabpanel" aria-labelledby="scoring-policy-tab-impact">
             <div class="business-config-pane-head"><div><h4>Tác động so với Published</h4><p>Không có chart giả; chỉ hiển thị summary và delta do endpoint impact trả về.</p></div></div>
             <div id="scoring-policy-impact-summary" class="business-config-impact admin-metric-grid"></div>
             <div id="scoring-policy-impact-result" class="admin-state admin-state--empty" role="status">Chưa phân tích tác động.</div>
-            <div class="table-scroll"><table class="data-table"><thead><tr><th>Fixture</th><th>Band trước</th><th>Band sau</th><th>Grade trước</th><th>Grade sau</th><th>Timing trước/sau</th></tr></thead><tbody id="scoring-policy-impact-tbody"></tbody></table></div>
+            <div class="table-scroll"><table class="data-table"><thead><tr><th>Kịch bản</th><th>Khoảng trước</th><th>Khoảng sau</th><th>Xếp loại trước</th><th>Xếp loại sau</th><th>Lịch đánh giá trước/sau</th></tr></thead><tbody id="scoring-policy-impact-tbody"></tbody></table></div>
           </section>
           <section id="scoring-policy-pane-versions" class="business-config-pane hidden" data-scoring-policy-pane="versions" role="tabpanel" aria-labelledby="scoring-policy-tab-versions">
             <div id="scoring-policy-version-events" class="business-config-timeline"></div>
@@ -4095,30 +4095,30 @@
           <div class="business-config-actions admin-sticky-action-bar" role="toolbar" aria-label="Thao tác chính sách tính điểm">
             <span id="scoring-policy-dirty-state" class="muted">Không có thay đổi chưa lưu</span>
             <span class="admin-disabled-reason" role="status" aria-live="polite"></span>
-            <label id="scoring-policy-decision-field" class="business-config-decision hidden" for="scoring-policy-decision-id"><span>Decision ID</span><input id="scoring-policy-decision-id" class="input mono" minlength="6" placeholder="SCORE-001"></label>
-            <button id="scoring-policy-simulate" type="button" class="btn-ghost" data-action-id="scoring_policy.simulate">Mô phỏng</button>
-            <button id="scoring-policy-impact" type="button" class="btn-ghost" data-action-id="scoring_policy.impact">Tác động</button>
+            <label id="scoring-policy-decision-field" class="business-config-decision hidden" for="scoring-policy-decision-id"><span>Mã quyết định</span><input id="scoring-policy-decision-id" class="input mono" minlength="6" placeholder="SCORE-001"></label>
+            <button id="scoring-policy-simulate" type="button" class="btn-ghost" data-action-id="scoring_policy.simulate">Kiểm thử</button>
+            <button id="scoring-policy-impact" type="button" class="btn-ghost" data-action-id="scoring_policy.impact">Xem tác động</button>
             <button id="scoring-policy-validate" type="button" class="btn-ghost" data-action-id="scoring_policy.validate">Kiểm tra</button>
-            <button id="scoring-policy-save-draft" type="button" class="btn-primary" data-action-id="scoring_policy.save_draft">Lưu bản nháp</button>
+            <button id="scoring-policy-save-draft" type="button" class="btn-primary" data-action-id="scoring_policy.save_draft">Lưu thay đổi</button>
             <button id="scoring-policy-submit-review" type="button" class="btn-ghost" data-action-id="scoring_policy.submit_review">Gửi duyệt</button>
-            <button id="scoring-policy-publish" type="button" class="btn-primary" data-action-id="scoring_policy.publish">Publish</button>
-            <button id="scoring-policy-rollback" type="button" class="btn-danger" data-action-id="scoring_policy.rollback">Rollback</button>
+            <button id="scoring-policy-publish" type="button" class="btn-primary" data-action-id="scoring_policy.publish">Công bố</button>
+            <button id="scoring-policy-rollback" type="button" class="btn-danger" data-action-id="scoring_policy.rollback">Khôi phục bản trước</button>
           </div>
         </main>
       </div>
     </section>
 
     <div class="panel guided-authorization-panel" data-testid="authorization-admin">
-      <div class="panel-head">
-        <div><h3>Tài khoản &amp; phân quyền</h3><span class="muted">Role code ổn định · DENY luôn thắng · mọi thay đổi được audit</span></div>
-        <div class="context-help-actions"><a class="context-help-link" href="/qlcl/help/role-permission-management#quick-start-admin" target="_blank" rel="noopener noreferrer">Hướng dẫn phân quyền</a></div>
+      <div class="panel-head authz-shell-head" aria-hidden="true">
+        <div><h3>Nhân sự &amp; phân quyền</h3><span class="muted">Quản lý ai được đăng nhập, được làm gì và được xem dữ liệu nào</span></div>
+        <a class="context-help-link" href="/qlcl/help/role-permission-management#quick-start-admin" tabindex="-1">Hướng dẫn phân quyền</a>
       </div>
       <div id="authorization-admin" class="authorization-admin guided-workspace">
         <nav class="authz-ia-tabs" role="tablist" aria-label="Các phần thiết lập tài khoản và phân quyền">
-          <button id="authz-tab-users" type="button" role="tab" aria-selected="true" aria-controls="authz-pane-users" data-authz-tab="users"><span class="authz-tab-copy"><strong>Nhân sự</strong></span></button>
-          <button id="authz-tab-roles" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-roles" data-authz-tab="roles"><span class="authz-tab-copy"><strong>Vai trò</strong></span></button>
-          <button id="authz-tab-approvals" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-approvals" data-authz-tab="approvals"><span class="authz-tab-copy"><strong>Người phê duyệt</strong></span></button>
-          <button id="authz-tab-history" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-history" data-authz-tab="history"><span class="authz-tab-copy"><strong>Lịch sử thay đổi</strong></span></button>
+          <button id="authz-tab-users" type="button" role="tab" aria-selected="true" aria-controls="authz-pane-users" data-authz-tab="users"><span class="authz-tab-step" aria-hidden="true">01</span><span class="authz-tab-copy"><strong>Nhân sự</strong><small>Tài khoản &amp; trạng thái</small></span></button>
+          <button id="authz-tab-roles" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-roles" data-authz-tab="roles"><span class="authz-tab-step" aria-hidden="true">02</span><span class="authz-tab-copy"><strong>Vai trò &amp; quyền</strong><small>Nhóm thao tác theo công việc</small></span></button>
+          <button id="authz-tab-approvals" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-approvals" data-authz-tab="approvals"><span class="authz-tab-step" aria-hidden="true">03</span><span class="authz-tab-copy"><strong>Người phê duyệt</strong><small>Ai duyệt ở từng bước</small></span></button>
+          <button id="authz-tab-history" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-history" data-authz-tab="history"><span class="authz-tab-step" aria-hidden="true">04</span><span class="authz-tab-copy"><strong>Lịch sử thay đổi</strong><small>Ai đổi, trước và sau</small></span></button>
         </nav>
         <div id="authz-admin-state" class="authz-admin-state admin-state" aria-live="polite" role="status" tabindex="-1">
           <span data-authz-state-icon>○</span><span data-authz-state-message>Đang tải cấu hình phân quyền…</span>
@@ -4132,39 +4132,39 @@
           </ol>
           <div class="authz-master-detail admin-master-detail">
             <div class="authz-master">
-              <div class="authz-pane-head authz-list-toolbar"><div><h4 id="authz-users-title">Danh sách nhân sự</h4><p>Quản lý tài khoản và quyền đang áp dụng.</p></div><div class="authz-toolbar-actions"><button id="authz-import-users" class="btn-ghost" type="button" data-action-id="navigation.open">Nhập danh sách</button><button id="btn-add-user" class="btn-primary" type="button">Thêm nhân sự</button></div></div>
+              <div class="authz-pane-head authz-list-toolbar"><div><span class="authz-pane-kicker">Mỗi nhân sự một dòng</span><h4 id="authz-users-title">Danh sách nhân sự</h4><p>Mở menu dấu ba chấm để điều chỉnh vai trò, dữ liệu hoặc trạng thái tài khoản.</p></div><div class="authz-inline-actions authz-toolbar-actions"><button id="btn-add-user" class="btn-primary" type="button" data-action-id="authorization.user_add">Thêm nhân sự</button><button id="authz-import-users" class="btn-ghost" type="button" data-action-id="authorization.personnel_import_open">Nhập Excel</button><button id="authz-export-users" type="button" class="btn-ghost" data-action-id="authorization.export">Xuất Excel</button></div></div>
               <div class="authz-filter-bar" role="search" aria-label="Lọc danh sách nhân sự">
                 <label class="authz-filter-search" for="authz-user-search"><span>Tìm nhân sự</span><input id="authz-user-search" class="input" type="search" autocomplete="off" placeholder="Email hoặc tên"></label>
-                <label for="authz-user-active-filter"><span>Trạng thái</span><select id="authz-user-active-filter" class="input"><option value="all">Tất cả</option><option value="active">Đang hoạt động</option><option value="inactive">Đã khóa</option></select></label>
+                <label for="authz-user-active-filter"><span>Trạng thái</span><select id="authz-user-active-filter" class="input"><option value="all">Tất cả trạng thái</option><option value="active">Đang hoạt động</option><option value="inactive">Đã khóa</option></select></label>
                 <details id="authz-user-advanced-filters" class="guided-disclosure guided-filter-disclosure">
                   <summary>Thêm bộ lọc</summary>
                   <div class="guided-disclosure-grid">
-                    <label for="authz-user-role-filter"><span>Vai trò</span><select id="authz-user-role-filter" class="input"><option value="all">Tất cả vai trò</option></select></label>
-                    <label for="authz-user-health-filter"><span>Cảnh báo</span><select id="authz-user-health-filter" class="input"><option value="all">Tất cả trạng thái</option><option value="expired">Role hết hạn</option><option value="conflict">Xung đột DENY</option></select></label>
+                    <label for="authz-user-role-filter"><span>Vai trò công việc</span><select id="authz-user-role-filter" class="input"><option value="all">Tất cả vai trò</option></select></label>
+                    <label for="authz-user-health-filter"><span>Cần kiểm tra</span><select id="authz-user-health-filter" class="input"><option value="all">Tất cả</option><option value="expired">Vai trò đã hết hạn</option><option value="conflict">Quyền đang bị giới hạn</option></select></label>
                   </div>
                 </details>
               </div>
               <p id="authz-user-filter-summary" class="authz-filter-summary" role="status" aria-live="polite">Đang tổng hợp quyền hiệu lực…</p>
-              <div class="authz-table-scroll">
-                <table class="data-table authz-user-table">
+              <div class="authz-table-scroll authz-users-table-scroll">
+                <table class="data-table authz-users-table">
                   <thead><tr><th>Nhân sự</th><th>Vai trò</th><th>Dữ liệu được xem</th><th>Trạng thái</th><th class="table-action-cell text-right">Thao tác</th></tr></thead>
                   <tbody id="admin-users-tbody"></tbody>
                 </table>
               </div>
             </div>
-            <div id="authz-user-detail-backdrop" class="authz-drawer-backdrop" aria-hidden="true"></div>
+            <button id="authz-user-detail-backdrop" class="authz-user-detail-backdrop authz-drawer-backdrop" type="button" data-action-id="dialog.close" aria-label="Đóng khung điều chỉnh quyền truy cập" tabindex="-1"></button>
             <aside id="authz-user-detail" class="authz-detail authz-drawer authz-user-drawer" role="dialog" aria-modal="true" aria-labelledby="authz-user-detail-title" aria-hidden="true">
-              <header class="authz-drawer-head"><div><span class="authz-pane-kicker">Điều chỉnh nhân sự</span><h4 id="authz-user-detail-title" tabindex="-1">Quyền hiệu lực</h4><p id="authz-user-detail-sub" class="muted">Chọn một người dùng để xem giải thích quyền.</p></div><button id="authz-close-user-detail" type="button" class="btn-ghost authz-drawer-close" data-action-id="dialog.close" aria-label="Đóng drawer nhân sự">Đóng</button></header>
-              <div class="authz-drawer-body">
-                <section aria-labelledby="authz-user-roles-heading"><h5 id="authz-user-roles-heading">Vai trò được gán</h5><div id="authz-user-role-list" class="authz-choice-list"></div></section>
-                <section aria-labelledby="authz-user-scopes-heading"><h5 id="authz-user-scopes-heading">Phạm vi dữ liệu hiệu lực</h5><p class="muted authz-readonly-note">Chỉ xem tại đây. Việc điều chỉnh phạm vi sẽ được bổ sung ở giai đoạn tiếp theo.</p><div id="authz-user-effective-scopes" class="authz-summary-wrap"></div></section>
-                <div id="authz-user-effective" class="authz-effective-preview"></div>
+              <header class="authz-user-drawer-head authz-drawer-head"><div><h4 id="authz-user-detail-title" tabindex="-1">Điều chỉnh vai trò &amp; dữ liệu</h4><p id="authz-user-detail-sub" class="muted">Chọn “Điều chỉnh vai trò” từ menu của một nhân sự.</p></div><button id="authz-close-user-detail" type="button" class="btn-ghost authz-drawer-close" data-action-id="dialog.close" aria-label="Đóng khung điều chỉnh quyền truy cập">Đóng</button></header>
+              <div class="authz-user-drawer-body authz-drawer-body">
+                <div id="authz-user-account-status" class="authz-account-status" aria-live="polite"></div>
+                <div id="authz-user-role-list"></div>
+                <div id="authz-user-effective"></div>
                 <label class="auth-label" for="authz-user-role-reason">Lý do thay đổi *</label>
-                <textarea id="authz-user-role-reason" class="input" rows="2" maxlength="500"></textarea>
-                <label class="auth-label" for="authz-user-role-confirm">Xác nhận chính xác khi cấp vai trò nhạy cảm</label>
-                <input id="authz-user-role-confirm" class="input mono" autocomplete="off">
+                <textarea id="authz-user-role-reason" class="input" rows="2" maxlength="500" placeholder="Ví dụ: Điều chỉnh theo phạm vi công việc mới"></textarea>
+                <details id="authz-user-safety" class="guided-disclosure authz-technical-details"><summary>Xác nhận bảo vệ khi cần</summary><div class="authz-safety-grid"><label class="form-field" for="authz-user-role-confirm"><span>Xác nhận thay đổi vai trò nhạy cảm</span><input id="authz-user-role-confirm" class="input mono" autocomplete="off"></label><label class="form-field" for="authz-scope-confirm"><span>Xác nhận khi cấp toàn bộ dữ liệu</span><input id="authz-scope-confirm" class="input mono" autocomplete="off"></label></div></details>
+                <div class="authz-direct-save-note" role="note">Vai trò và dữ liệu được xem được lưu cùng lúc; hệ thống tự ghi lịch sử thay đổi.</div>
               </div>
-              <footer class="authz-drawer-footer" role="toolbar" aria-label="Lưu phân vai"><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="authz-cancel-user-detail" type="button" class="btn-ghost" data-action-id="dialog.cancel">Hủy</button><button id="authz-save-user-roles" type="button" class="btn-primary">Lưu phân vai</button></footer>
+              <footer class="authz-drawer-footer authz-sticky-save admin-sticky-action-bar" role="toolbar" aria-label="Lưu quyền truy cập"><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="authz-cancel-user-detail" type="button" class="btn-ghost" data-action-id="dialog.cancel">Hủy</button><button id="authz-save-user-roles" type="button" class="btn-primary">Lưu thay đổi</button></footer>
             </aside>
           </div>
         </section>
@@ -4177,118 +4177,74 @@
           </ol>
           <div class="authz-master-detail admin-master-detail">
             <div class="authz-master">
-              <div class="authz-pane-head authz-list-toolbar"><div><h4 tabindex="-1">Vai trò công việc</h4><p>Quản lý tên vai trò và các quyền đi kèm.</p></div></div>
+              <div class="authz-pane-head authz-list-toolbar"><div><span class="authz-pane-kicker">Mỗi vai trò một dòng</span><h4 tabindex="-1">Vai trò &amp; quyền</h4><p>Chọn vai trò để điều chỉnh thông tin và thao tác được phép.</p></div></div>
               <div class="authz-filter-bar authz-role-filters authz-catalog-toolbar" role="search" aria-label="Lọc danh sách vai trò">
-                <label class="authz-filter-search" for="authz-role-search"><span>Tìm vai trò</span><input id="authz-role-search" class="input" type="search" autocomplete="off" placeholder="Tên hoặc mã vai trò"></label>
+                <label class="authz-filter-search" for="authz-role-search"><span>Tìm vai trò</span><input id="authz-role-search" class="input" type="search" autocomplete="off" placeholder="Tìm theo tên vai trò"></label>
                 <label for="authz-role-status-filter"><span>Trạng thái</span><select id="authz-role-status-filter" class="input"><option value="all">Tất cả</option><option value="active">Hoạt động</option><option value="inactive">Tạm ngưng</option></select></label>
-                <button id="authz-new-role" type="button" class="btn-primary">Tạo vai trò</button>
+                <button id="authz-new-role" type="button" class="btn-primary">Tạo vai trò</button><button id="authz-export-roles" type="button" class="btn-ghost" data-action-id="authorization.export">Xuất Excel</button>
               </div>
               <p id="authz-role-filter-summary" class="authz-filter-summary" role="status" aria-live="polite">Đang tải vai trò…</p>
               <div id="authz-role-list" class="authz-role-list"></div>
             </div>
-            <div id="authz-role-form-backdrop" class="authz-drawer-backdrop" aria-hidden="true"></div>
+            <button id="authz-role-form-backdrop" class="authz-role-detail-backdrop authz-drawer-backdrop" type="button" aria-label="Đóng phần điều chỉnh vai trò" tabindex="-1" data-action-id="dialog.cancel"></button>
             <form id="authz-role-form" class="authz-detail authz-drawer authz-role-drawer" role="dialog" aria-modal="true" aria-labelledby="authz-role-editor-title" aria-hidden="true">
-              <header class="authz-drawer-head"><div><span class="authz-pane-kicker">Cấu hình vai trò</span><h4 id="authz-role-editor-title" tabindex="-1">Chi tiết vai trò</h4></div><button id="authz-close-role-form" type="button" class="btn-ghost authz-drawer-close" data-action-id="dialog.close" aria-label="Đóng drawer vai trò">Đóng</button></header>
-              <div class="authz-drawer-body">
-                <label class="auth-label" for="authz-role-code">Mã vai trò bất biến</label>
-                <input id="authz-role-code" class="input mono" maxlength="64" autocomplete="off">
-                <label class="auth-label" for="authz-role-label">Tên hiển thị</label>
-                <input id="authz-role-label" class="input" maxlength="160">
-                <label class="auth-label" for="authz-role-status">Trạng thái</label>
-                <select id="authz-role-status" class="input"><option value="active">Hoạt động</option><option value="inactive">Tạm ngưng</option></select>
+              <header class="authz-role-drawer-head authz-drawer-head"><div><h4 id="authz-role-editor-title" tabindex="-1">Điều chỉnh vai trò</h4><p class="muted">Tên, trạng thái và các thao tác được áp dụng cùng lúc.</p></div><button id="authz-close-role-form" type="button" class="btn-ghost authz-drawer-close" data-action-id="dialog.close" aria-label="Đóng phần điều chỉnh vai trò">Đóng</button></header>
+              <div class="authz-role-drawer-body authz-drawer-body">
+                <div class="authz-role-primary-fields"><label class="form-field" for="authz-role-label"><span>Tên vai trò</span><input id="authz-role-label" class="input" maxlength="160"></label><label class="form-field" for="authz-role-status"><span>Trạng thái</span><select id="authz-role-status" class="input"><option value="active">Hoạt động</option><option value="inactive">Tạm ngưng</option></select></label></div>
                 <p id="authz-role-counts" class="muted"></p>
-                <div class="authz-inline-actions"><button id="authz-clone-role" type="button" class="btn-ghost">Clone vai trò đang chọn</button><button id="authz-delete-role" type="button" class="btn-ghost authz-danger">Xóa vai trò tùy chỉnh</button></div>
-                <p id="authz-role-delete-reason" class="authz-resource-reason" role="status"></p>
+                <select id="authz-permission-role" class="hidden" aria-label="Vai trò cần sửa quyền"></select>
                 <section class="authz-role-permissions" aria-labelledby="authz-role-permissions-title">
-                  <div class="authz-pane-head"><div><h5 id="authz-role-permissions-title">Quyền của vai trò</h5><p>Thông tin vai trò và danh sách quyền được lưu bằng hai thao tác riêng.</p></div><select id="authz-permission-role" class="input authz-compact-select hidden" aria-label="Vai trò cần sửa quyền"></select></div>
-                  <div class="authz-filter-bar authz-permission-filters" role="search" aria-label="Lọc danh mục quyền"><label class="authz-filter-search" for="authz-permission-search"><span>Tìm quyền</span><input id="authz-permission-search" class="input" type="search" autocomplete="off" placeholder="Mã hoặc mô tả quyền"></label><label for="authz-permission-effect-filter"><span>Hiệu lực</span><select id="authz-permission-effect-filter" class="input"><option value="all">Tất cả</option><option value="assigned">Đã cấu hình</option><option value="ALLOW">Cho phép</option><option value="DENY">Từ chối</option><option value="ALLOW_DENY">Cho phép + Từ chối</option><option value="NONE">Không cấp</option></select></label></div>
+                   <div class="authz-permission-heading"><div><h5 id="authz-role-permissions-title">Thao tác được phép</h5><small>Đánh dấu để cho phép; mở “Trạng thái nâng cao” khi cần giới hạn hoặc giữ xung đột hiện hữu.</small></div><span id="authz-permission-lock" class="admin-status-badge hidden">Toàn quyền · đã khóa</span></div>
+                  <div class="authz-filter-bar authz-permission-filters" role="search" aria-label="Lọc danh mục quyền"><label class="authz-filter-search" for="authz-permission-search"><span>Tìm thao tác</span><input id="authz-permission-search" class="input" type="search" autocomplete="off" placeholder="Tên chức năng hoặc thao tác"></label><label for="authz-permission-effect-filter"><span>Trạng thái</span><select id="authz-permission-effect-filter" class="input"><option value="all">Tất cả</option><option value="assigned">Đã thiết lập</option><option value="ALLOW">Cho phép</option><option value="DENY">Đang giới hạn</option><option value="ALLOW_DENY">Có xung đột</option><option value="NONE">Chưa thiết lập</option></select></label></div>
                   <div id="authz-permission-matrix" class="authz-permission-matrix"></div>
-                  <aside id="authz-permission-preview" class="authz-effective-preview"><h5>Trước / sau khi lưu</h5><div id="authz-before-summary"></div><div id="authz-after-summary"></div><label class="auth-label" for="authz-permission-scope-preview">Phạm vi áp dụng dự kiến</label><select id="authz-permission-scope-preview" class="input"><option>GLOBAL</option><option>REGION</option><option>MCH2</option><option>ASSIGNED</option><option>OWN</option><option>SUPPLIER</option><option>CUSTOM</option></select></aside>
-                  <label class="auth-label" for="authz-permission-reason">Lý do thay đổi quyền *</label><textarea id="authz-permission-reason" class="input" rows="2" maxlength="500"></textarea>
-                  <label class="auth-label" for="authz-permission-confirm">Xác nhận khi thay đổi quyền nhạy cảm</label><input id="authz-permission-confirm" class="input mono" autocomplete="off">
+                  <details id="authz-permission-preview" class="authz-effective-preview authz-effective-details"><summary>Xem ảnh hưởng sau khi lưu</summary><div id="authz-before-summary"></div><div id="authz-after-summary"></div><label class="auth-label" for="authz-permission-scope-preview">Dữ liệu dùng để kiểm tra</label><select id="authz-permission-scope-preview" class="input"><option value="GLOBAL">Toàn bộ dữ liệu</option><option value="REGION">Theo khu vực</option><option value="MCH2">Theo ngành hàng</option><option value="ASSIGNED">Dữ liệu được phân công</option><option value="OWN">Dữ liệu do người này tạo</option><option value="SUPPLIER">Theo nhà cung cấp</option><option value="CUSTOM">Phạm vi tùy chỉnh</option></select></details>
+                   <input id="authz-permission-reason" class="hidden" tabindex="-1"><input id="authz-permission-confirm" class="hidden" tabindex="-1">
                 </section>
                 <label class="auth-label" for="authz-role-reason">Lý do thay đổi *</label>
-                <textarea id="authz-role-reason" class="input" rows="2" maxlength="500"></textarea>
-                <label class="auth-label" for="authz-role-confirm">Xác nhận chính xác khi thay đổi nhạy cảm</label>
-                <input id="authz-role-confirm" class="input mono" autocomplete="off">
+                <textarea id="authz-role-reason" class="input" rows="2" maxlength="500" placeholder="Ví dụ: Bổ sung thao tác theo trách nhiệm mới"></textarea>
+                <details id="authz-role-technical" class="guided-disclosure authz-technical-details"><summary>Thông tin kỹ thuật &amp; thao tác khác</summary><div class="authz-safety-grid"><label class="form-field" for="authz-role-code"><span>Mã vai trò (không thể đổi sau khi tạo)</span><input id="authz-role-code" class="input mono" maxlength="64" autocomplete="off"></label><label class="form-field" for="authz-role-confirm"><span>Xác nhận khi thay đổi nhạy cảm</span><input id="authz-role-confirm" class="input mono" autocomplete="off"></label><div><button id="authz-delete-role" type="button" class="btn-ghost authz-danger">Xóa vai trò tùy chỉnh</button><p id="authz-role-delete-reason" class="authz-resource-reason" role="status"></p></div></div></details>
+                <div class="authz-direct-save-note" role="note">Vai trò và quyền được lưu trong một lần; quyền Quản trị hệ thống được bảo vệ.</div>
               </div>
-              <footer class="authz-drawer-footer" role="toolbar" aria-label="Lưu vai trò"><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="authz-cancel-role-form" type="button" class="btn-ghost" data-action-id="dialog.cancel">Hủy</button><button id="authz-save-permissions" type="button" class="btn-ghost">Lưu quyền</button><button id="authz-save-role" type="submit" class="btn-primary">Lưu thông tin</button></footer>
+              <footer class="authz-drawer-footer authz-sticky-save admin-sticky-action-bar" role="toolbar" aria-label="Lưu vai trò và quyền"><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="authz-cancel-role-form" type="button" class="btn-ghost" data-action-id="dialog.cancel">Hủy</button><button id="authz-save-permissions" type="button" class="hidden" tabindex="-1">Lưu quyền</button><button id="authz-save-role" type="submit" class="btn-primary">Lưu thay đổi</button></footer>
             </form>
           </div>
         </section>
 
-        <section id="authz-pane-scopes" class="hidden" aria-hidden="true">
-          <div class="authz-pane-head"><div><span class="authz-pane-kicker">Phần 4 · Thiết lập phạm vi</span><h4 tabindex="-1">Phạm vi dữ liệu</h4><p>Override theo người dùng hoặc theo vai trò; DENY thắng khi phạm vi chồng lấn.</p></div><select id="authz-scope-user" class="input authz-compact-select" aria-label="Người dùng cần sửa phạm vi"></select></div>
-          <div class="authz-master-detail admin-master-detail">
-            <div class="authz-master"><div id="authz-scope-list" class="authz-choice-list"></div></div>
-            <div class="authz-detail">
-              <div class="authz-form-grid guided-sentence-form">
-                <div><label class="auth-label" for="authz-scope-type">Loại phạm vi</label><select id="authz-scope-type" class="input"><option value="GLOBAL">Toàn bộ</option><option value="REGION">Khu vực</option><option value="MCH2">Ngành hàng</option><option value="ASSIGNED">Được phân công</option><option value="OWN">Dữ liệu của mình</option><option value="SUPPLIER">Nhà cung cấp</option><option value="CUSTOM">Tùy chỉnh</option></select></div>
-                <div><label class="auth-label" for="authz-scope-value">Giá trị</label><input id="authz-scope-value" class="input" placeholder="Chọn hoặc nhập giá trị"></div>
-                <div><label class="auth-label" for="authz-scope-effect">Quyền truy cập</label><select id="authz-scope-effect" class="input"><option value="ALLOW">Cho phép</option><option value="DENY">Từ chối</option></select></div>
-                <details id="authz-scope-advanced" class="guided-disclosure">
-                  <summary>Tùy chọn nâng cao</summary>
-                  <div class="guided-disclosure-grid">
-                    <div><label class="auth-label" for="authz-scope-role">Vai trò liên kết</label><select id="authz-scope-role" class="input"></select></div>
-                    <div><label class="auth-label" for="authz-scope-from">Hiệu lực từ</label><input id="authz-scope-from" class="input" type="datetime-local"></div>
-                    <div><label class="auth-label" for="authz-scope-until">Hiệu lực đến</label><input id="authz-scope-until" class="input" type="datetime-local"></div>
-                  </div>
-                </details>
-              </div>
-              <button id="authz-add-scope" type="button" class="btn-ghost">Thêm vào bản nháp</button>
-              <div id="authz-scope-preview" class="authz-effective-preview"></div>
-              <label class="auth-label" for="authz-scope-reason">Lý do thay đổi *</label><textarea id="authz-scope-reason" class="input" rows="2" maxlength="500"></textarea>
-              <label class="auth-label" for="authz-scope-confirm">Xác nhận chính xác khi cấp GLOBAL</label><input id="authz-scope-confirm" class="input mono" autocomplete="off">
-              <div class="authz-sticky-save admin-sticky-action-bar" role="toolbar" aria-label="Lưu phạm vi"><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="authz-save-scopes" type="button" class="btn-primary">Lưu phạm vi</button></div>
-            </div>
-          </div>
-        </section>
+        <section id="authz-pane-scopes" class="hidden" aria-hidden="true"><select id="authz-scope-user"></select><select id="authz-scope-role"></select><select id="authz-scope-type"><option value="GLOBAL">GLOBAL</option></select><input id="authz-scope-value"><select id="authz-scope-effect"><option value="ALLOW">ALLOW</option></select><input id="authz-scope-from"><input id="authz-scope-until"><button id="authz-add-scope" type="button">Thêm phạm vi</button><div id="authz-scope-list"></div><div id="authz-scope-preview"></div><textarea id="authz-scope-reason"></textarea><button id="authz-save-scopes" type="button">Lưu phạm vi</button></section>
 
         <section id="authz-pane-approvals" class="authz-pane guided-workspace hidden" data-authz-pane="approvals" data-guided-workspace="approval-assignments" role="tabpanel" aria-labelledby="authz-tab-approvals">
           <ol class="guided-stage-list" data-guided-stages aria-label="Các bước phân công phê duyệt">
-            <li class="guided-stage-item" data-guided-step="1" data-state="current"><span>1</span><div><strong>Chọn luồng</strong><small>Chọn workflow và bước cần phân công</small></div></li>
-            <li class="guided-stage-item" data-guided-step="2" data-state="pending"><span>2</span><div><strong>Chọn người duyệt</strong><small>Chọn vai trò hoặc người dùng phù hợp</small></div></li>
-            <li class="guided-stage-item" data-guided-step="3" data-state="pending"><span>3</span><div><strong>Kiểm tra &amp; công bố</strong><small>Preview trước khi áp dụng</small></div></li>
+            <li class="guided-stage-item" data-guided-step="1" data-state="current"><span>1</span><div><strong>Chọn quy trình</strong><small>Chọn nghiệp vụ và bước cần phân công</small></div></li>
+            <li class="guided-stage-item" data-guided-step="2" data-state="pending"><span>2</span><div><strong>Chọn người duyệt</strong><small>Chọn vai trò hoặc nhân sự phù hợp</small></div></li>
+            <li class="guided-stage-item" data-guided-step="3" data-state="pending"><span>3</span><div><strong>Kiểm tra &amp; lưu</strong><small>Xem trước khi áp dụng</small></div></li>
           </ol>
-          <div class="authz-pane-head authz-list-toolbar"><div><h4 tabindex="-1">Người phê duyệt</h4><p>Chọn người hoặc vai trò phê duyệt cho từng bước đánh giá.</p></div><button id="authz-new-approval" type="button" class="btn-primary">Thêm người phê duyệt</button></div>
-          <div class="authz-filter-bar authz-approval-filters" role="search" aria-label="Lọc người phê duyệt"><label class="authz-filter-search" for="authz-approval-search"><span>Tìm kiếm</span><input id="authz-approval-search" class="input" type="search" placeholder="Bước, vai trò hoặc email"></label><label for="authz-approval-workflow-filter"><span>Luồng</span><select id="authz-approval-workflow-filter" class="input"><option value="all">Tất cả</option><option value="EVALUATION">Đánh giá nhà cung cấp</option></select></label></div>
+          <div class="authz-pane-head authz-list-toolbar"><div><span class="authz-pane-kicker">Theo quy trình và bước duyệt</span><h4 tabindex="-1">Người phê duyệt</h4><p>Kiểm tra quyền, phạm vi và phân công trùng trước khi lưu.</p></div></div>
+          <div class="authz-catalog-toolbar authz-approval-filters" role="search" aria-label="Lọc người phê duyệt"><label class="sr-only" for="authz-approval-search">Tìm quy trình, bước hoặc người phê duyệt</label><input id="authz-approval-search" class="input" type="search" placeholder="Tìm theo quy trình, bước, người phê duyệt"><label class="sr-only" for="authz-approval-workflow-filter">Lọc quy trình</label><select id="authz-approval-workflow-filter" class="input"><option value="all">Tất cả quy trình</option><option value="EVALUATION">Phiếu đánh giá</option></select><div class="authz-inline-actions authz-toolbar-actions"><button id="authz-new-approval" type="button" class="btn-primary" data-action-id="authorization.approval_new">Thêm người phê duyệt</button><button id="authz-export-approvals" type="button" class="btn-ghost" data-action-id="authorization.export">Xuất Excel</button></div></div>
           <div class="authz-master-detail admin-master-detail">
-            <div class="authz-master"><div class="authz-table-scroll"><table class="data-table authz-approval-table"><thead><tr><th>Luồng</th><th>Bước</th><th>Người phê duyệt</th><th>Phạm vi</th><th>Ưu tiên</th><th class="table-action-cell">Thao tác</th></tr></thead><tbody id="authz-approval-list"></tbody></table></div></div>
-            <div class="authz-detail">
-              <div class="authz-form-grid guided-sentence-form">
-                <div><label class="auth-label" for="authz-approval-workflow">Quy trình</label><select id="authz-approval-workflow" class="input"><option value="EVALUATION">Đánh giá nhà cung cấp</option></select></div>
-                <div><label class="auth-label" for="authz-approval-stage">Bước phê duyệt</label><select id="authz-approval-stage" class="input"><option>LEAD</option><option>TBP</option><option>GDK</option></select></div>
-                <div><label class="auth-label" for="authz-approval-subject-type">Phân cho</label><select id="authz-approval-subject-type" class="input"><option value="role">Vai trò</option><option value="user">Người dùng</option></select></div>
-                <div><label class="auth-label" for="authz-approval-subject">Vai trò / email</label><select id="authz-approval-subject" class="input"></select></div>
-                <details id="authz-approval-advanced" class="guided-disclosure">
-                  <summary>Phạm vi và tùy chọn nâng cao</summary>
-                  <div class="guided-disclosure-grid">
-                    <div><label class="auth-label" for="authz-approval-scope-type">Phạm vi</label><select id="authz-approval-scope-type" class="input"><option>GLOBAL</option><option>REGION</option><option>MCH2</option><option>ASSIGNED</option><option>OWN</option><option>SUPPLIER</option></select></div>
-                    <div><label class="auth-label" for="authz-approval-scope-value">Giá trị phạm vi</label><input id="authz-approval-scope-value" class="input mono"></div>
-                    <div><label class="auth-label" for="authz-approval-priority">Ưu tiên</label><input id="authz-approval-priority" class="input" type="number" min="1" max="10000" value="100"></div>
-                    <div><label class="auth-label" for="authz-approval-fixture-mch2">Ngành hàng kiểm tra</label><input id="authz-approval-fixture-mch2" class="input mono" placeholder="MCH2_FRESH"></div>
-                  </div>
-                </details>
+            <div class="authz-master"><div id="authz-approval-list" class="authz-role-list"></div></div>
+            <div id="authz-approval-editor" class="authz-detail">
+              <h4 tabindex="-1">Điều chỉnh người phê duyệt</h4><p id="authz-approval-editor-sub" class="authz-drawer-subject muted">Chọn một phân công để chỉnh sửa hoặc tạo mới.</p>
+              <div class="authz-form-grid guided-sentence-form authz-approval-primary-fields">
+                <div><label class="auth-label" for="authz-approval-workflow">Nghiệp vụ</label><select id="authz-approval-workflow" class="input"><option value="EVALUATION">Phiếu đánh giá</option></select></div>
+                <div><label class="auth-label" for="authz-approval-stage">Bước phê duyệt</label><select id="authz-approval-stage" class="input"><option value="LEAD">Lead miền</option><option value="TBP">Trưởng bộ phận</option><option value="GDK">Giám đốc khối</option></select></div>
+                <div><label class="auth-label" for="authz-approval-subject-type">Phân cho</label><select id="authz-approval-subject-type" class="input"><option value="role">Vai trò công việc</option><option value="user">Nhân sự</option></select></div>
+                <div><label class="auth-label" for="authz-approval-subject"><span id="authz-approval-subject-label">Vai trò / email</span></label><select id="authz-approval-subject" class="input"></select></div>
+                <div><label class="auth-label" for="authz-approval-scope-type">Dữ liệu áp dụng</label><select id="authz-approval-scope-type" class="input"><option value="GLOBAL">Toàn bộ dữ liệu</option><option value="REGION">Theo khu vực</option><option value="MCH2">Theo ngành hàng</option><option value="ASSIGNED">Dữ liệu được phân công</option><option value="OWN">Dữ liệu do người này tạo</option><option value="SUPPLIER">Theo nhà cung cấp</option></select></div>
+                <div><label class="auth-label" for="authz-approval-scope-value">Giá trị phạm vi</label><input id="authz-approval-scope-value" class="input" placeholder="Chọn hoặc nhập giá trị"></div>
               </div>
-              <div class="authz-inline-actions"><button id="authz-preview-approval" type="button" class="btn-ghost">Kiểm tra người phù hợp</button></div>
+              <details id="authz-approval-advanced" class="guided-disclosure"><summary>Tùy chọn nâng cao</summary><div class="guided-disclosure-grid"><div><label class="auth-label" for="authz-approval-priority">Thứ tự ưu tiên</label><input id="authz-approval-priority" class="input" type="number" min="1" max="10000" value="100"></div><div><label class="auth-label" for="authz-approval-fixture-mch2">Ngành hàng dùng để kiểm tra</label><input id="authz-approval-fixture-mch2" class="input" placeholder="Nhập khi cần kiểm tra ứng viên"></div><div><label class="auth-label" for="authz-approval-confirm">Xác nhận khi thay đổi nhạy cảm</label><input id="authz-approval-confirm" class="input mono" autocomplete="off"></div></div></details>
+              <div class="authz-inline-actions"><button id="authz-preview-approval" type="button" class="btn-ghost">Kiểm tra người phê duyệt</button></div>
               <div id="authz-approval-preview" class="authz-effective-preview" aria-live="polite"></div>
               <label class="auth-label" for="authz-approval-reason">Lý do thay đổi *</label><textarea id="authz-approval-reason" class="input" rows="2" maxlength="500"></textarea>
-              <label class="auth-label" for="authz-approval-confirm">Xác nhận chính xác</label><input id="authz-approval-confirm" class="input mono" autocomplete="off">
-              <div class="authz-sticky-save admin-sticky-action-bar" role="toolbar" aria-label="Lưu người phê duyệt"><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="authz-publish-approval" type="button" class="btn-primary">Lưu người phê duyệt</button></div>
+              <div class="authz-sticky-save admin-sticky-action-bar" role="toolbar" aria-label="Lưu người phê duyệt"><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="authz-cancel-approval" type="button" class="btn-ghost" data-action-id="dialog.cancel">Hủy</button><button id="authz-publish-approval" type="button" class="btn-primary">Lưu thay đổi</button></div>
             </div>
           </div>
         </section>
 
         <section id="authz-pane-history" class="authz-pane hidden" data-authz-pane="history" role="tabpanel" aria-labelledby="authz-tab-history">
-          <div class="authz-pane-head"><div><span class="authz-pane-kicker">Phần 6 · Kiểm tra &amp; truy vết</span><h4 tabindex="-1">Lịch sử thay đổi</h4><p>Theo dõi người thực hiện, đối tượng bị tác động và dữ liệu trước/sau mỗi thay đổi.</p></div><div class="authz-inline-actions"><button id="authz-export-authorization" type="button" class="btn-ghost">Xuất Excel</button><button id="authz-refresh-history" type="button" class="btn-ghost">Làm mới</button></div></div>
-          <div class="authz-history-overview hidden" aria-hidden="true">
-            <article class="admin-metric-card authz-history-metric"><strong id="authz-history-total">0</strong><span>Tổng thay đổi đã tải</span></article>
-            <article class="admin-metric-card authz-history-metric"><strong id="authz-history-system">0</strong><span>Thay đổi hệ thống</span></article>
-            <article class="admin-metric-card authz-history-metric"><strong id="authz-history-manual">0</strong><span>Thay đổi bởi người dùng</span></article>
-            <article class="admin-metric-card authz-history-metric authz-history-metric--warning"><strong id="authz-history-missing-reason">0</strong><span>Chưa ghi nhận lý do</span></article>
-          </div>
+          <div class="authz-pane-head"><div><span class="authz-pane-kicker">Một dòng cho mỗi thay đổi</span><h4 tabindex="-1">Lịch sử thay đổi</h4><p>Xem nhanh trước, sau, người thực hiện và thời gian. Mở chi tiết khi cần truy vết.</p></div><div class="authz-inline-actions"><button id="authz-refresh-history" type="button" class="btn-ghost">Làm mới</button><button id="authz-export-authorization" type="button" class="btn-ghost" data-action-id="authorization.export">Xuất lịch sử</button></div></div>
           <div class="authz-filter-bar authz-history-filters" role="search" aria-label="Lọc lịch sử thay đổi">
-            <label class="authz-filter-search" for="authz-history-search"><span>Tìm lịch sử</span><input id="authz-history-search" class="input" type="search" autocomplete="off" placeholder="Sự kiện, đối tượng hoặc correlation ID"></label>
+            <label class="authz-filter-search" for="authz-history-search"><span>Tìm lịch sử</span><input id="authz-history-search" class="input" type="search" autocomplete="off" placeholder="Người thực hiện hoặc nội dung"></label>
             <label for="authz-history-actor-filter"><span>Người thực hiện</span><select id="authz-history-actor-filter" class="input"><option value="all">Tất cả</option><option value="system">Hệ thống</option><option value="manual">Người dùng</option></select></label>
             <label for="authz-history-change-filter"><span>Loại thay đổi</span><select id="authz-history-change-filter" class="input"><option value="all">Tất cả thay đổi</option></select></label>
             <label for="authz-history-date-from"><span>Từ ngày</span><input id="authz-history-date-from" class="input" type="date"></label>
@@ -4309,10 +4265,10 @@
       <form id="system-log-filter-form" class="system-log-filter-grid">
         <div class="form-field"><label for="system-log-from">Từ thời điểm</label><input id="system-log-from" class="input" type="datetime-local"></div>
         <div class="form-field"><label for="system-log-to">Đến thời điểm</label><input id="system-log-to" class="input" type="datetime-local"></div>
-        <div class="form-field"><label for="system-log-category">Nhóm</label><select id="system-log-category" class="input"><option value="">Tất cả</option><option>auth</option><option>authz</option><option>user</option><option>role</option><option>supplier</option><option>dossier</option><option>evaluation</option><option>approval</option><option>question</option><option>report</option><option>scoring</option><option>import</option><option>export</option><option>artifact</option><option>config</option><option>audit</option><option>uat</option></select></div>
+        <div class="form-field"><label for="system-log-category">Nhóm</label><select id="system-log-category" class="input"><option value="">Tất cả</option><option>auth</option><option>authz</option><option>user</option><option>role</option><option>supplier</option><option value="dossier">dossier — chỉ lưu trữ</option><option>evaluation</option><option>approval</option><option>question</option><option>report</option><option>scoring</option><option>import</option><option>export</option><option>artifact</option><option>config</option><option>audit</option><option>uat</option></select></div>
         <div class="form-field"><label for="system-log-event">Sự kiện</label><input id="system-log-event" class="input" autocomplete="off" placeholder="audit.read"></div>
         <div class="form-field"><label for="system-log-severity">Mức độ</label><select id="system-log-severity" class="input"><option value="">Tất cả</option><option>INFO</option><option>WARN</option><option>HIGH</option><option>CRITICAL</option></select></div>
-        <div class="form-field"><label for="system-log-actor">Người thực hiện</label><input id="system-log-actor" class="input" autocomplete="off" placeholder="email"></div>
+        <div class="form-field"><label for="system-log-actor">Người thực hiện</label><input id="system-log-actor" class="input" autocomplete="off" placeholder="Tên, email hoặc mã người dùng"></div>
         <div class="form-field"><label for="system-log-entity">Đối tượng</label><input id="system-log-entity" class="input" autocomplete="off" placeholder="Mã NCC / phiếu"></div>
         <div class="form-field"><label for="system-log-outcome">Kết quả</label><select id="system-log-outcome" class="input"><option value="">Tất cả</option><option>SUCCESS</option><option>FAILURE</option><option>DENIED</option><option>DEGRADED</option></select></div>
         <div class="form-field"><label for="system-log-request">Request ID</label><input id="system-log-request" class="input mono" autocomplete="off"></div>
@@ -4401,39 +4357,39 @@
                 <div class="business-config-version-actions"><span id="question-version-status-chip" class="tag sev-gray" data-tooltip="Trạng thái phiên bản quyết định có được sửa trực tiếp hay chỉ xem."></span><button id="question-open-history" type="button" class="btn-ghost" data-action-id="question_template.tab_open">Xem lịch sử</button></div>
               </div>
               <details class="guided-disclosure guided-lifecycle"><summary>Vòng đời phiên bản</summary><ol id="question-lifecycle" class="business-config-lifecycle" aria-label="Lifecycle bộ câu hỏi đánh giá"></ol></details>
-              <div id="question-published-readonly" class="question-readonly-callout hidden" role="status">Phiên bản Published là bất biến. Tạo Draft mới để chỉnh sửa nội dung.</div>
+              <div id="question-published-readonly" class="question-readonly-callout hidden" role="status">Phiên bản đang áp dụng chỉ xem. Tạo bản nháp mới để chỉnh sửa nội dung.</div>
               <div class="question-overview-cards admin-metric-grid business-config-impact" id="question-overview-counts"></div>
               <div id="question-overview-warnings" class="question-warning-list"></div>
               <div id="question-workspace-tabs" class="question-workspace-tabs business-config-tabs" role="tablist" aria-label="Workspace bộ câu hỏi">
                 <button id="question-tab-questions" type="button" role="tab" aria-selected="true" data-question-tab="questions">Câu hỏi</button>
                 <button id="question-tab-variants" type="button" role="tab" aria-selected="false" data-question-tab="variants">Biến thể</button>
                 <button id="question-tab-scopes" type="button" role="tab" aria-selected="false" data-question-tab="scopes">Phạm vi áp dụng</button>
-                <button id="question-tab-versions" type="button" role="tab" aria-selected="false" data-question-tab="versions">Phiên bản &amp; Audit</button>
+                <button id="question-tab-versions" type="button" role="tab" aria-selected="false" data-question-tab="versions">Lịch sử</button>
               </div>
               <div id="question-workspace-live" class="question-workspace-live" aria-live="polite" role="status"></div>
               <div id="question-validation-summary" class="question-validation-summary hidden" tabindex="-1" role="alert"></div>
               <section id="question-pane-questions" class="question-workspace-pane" data-question-pane="questions" role="tabpanel" aria-labelledby="question-tab-questions">
                 <div class="question-pane-head"><div><h4>Câu hỏi trong phiên bản</h4><p class="muted">Tìm, lọc, sắp xếp và chỉnh sửa chỉ trong Draft.</p></div><button id="question-add-item" type="button" class="btn-primary">Thêm câu hỏi</button></div>
                 <div class="question-question-filters"><input id="question-item-search" class="input" type="search" aria-label="Tìm câu hỏi" placeholder="Mã hoặc nội dung"><select id="question-item-category" class="input" aria-label="Lọc nhóm câu hỏi"><option value="">Tất cả nhóm</option></select><select id="question-item-active" class="input" aria-label="Lọc trạng thái"><option value="">Tất cả trạng thái</option><option value="1">Đang hoạt động</option><option value="0">Đã tắt</option></select><button id="question-bulk-deactivate" type="button" class="btn-danger" disabled>Tắt câu hỏi đã chọn</button></div>
-                <div class="table-scroll question-items-scroll"><table class="data-table question-items-table"><thead><tr><th><span class="sr-only">Chọn</span></th><th>Thứ tự</th><th>Mã</th><th>Nhóm</th><th>Câu hỏi</th><th>Loại trả lời</th><th>Phạm vi</th><th>Trạng thái</th><th class="table-action-cell text-right">Thao tác</th></tr></thead><tbody id="question-version-tbody"></tbody></table></div><div id="question-items-empty" class="question-empty admin-state admin-state--empty hidden" role="status">Không có câu hỏi phù hợp bộ lọc.</div>
+                <div class="table-scroll question-items-scroll"><table class="data-table question-items-table"><thead><tr><th><span class="sr-only">Chọn</span></th><th>Thứ tự</th><th>Mã</th><th>Câu hỏi</th><th>Phạm vi</th><th>Nhóm</th><th>Loại trả lời</th><th>Trạng thái</th><th class="table-action-cell text-right">Thao tác</th></tr></thead><tbody id="question-version-tbody"></tbody></table></div><div id="question-items-empty" class="question-empty admin-state admin-state--empty hidden" role="status">Không có câu hỏi phù hợp bộ lọc.</div>
                 <details id="question-import-panel" class="question-import-panel">
-                  <summary>Import workbook vào Draft</summary>
-                  <div class="question-pane-head"><div><h4>Upload workbook hai pha</h4><p class="muted">Preview và so sánh trước; commit chỉ ghi vào Draft, không publish.</p></div><div class="context-help-actions"><button id="question-download-template" type="button" class="btn-ghost">Tải file mẫu</button><a class="context-help-link" href="/qlcl/help/question-template-import#download-sample" target="_blank" rel="noopener noreferrer">Cách dùng file mẫu</a></div></div>
+                  <summary>Nhập câu hỏi từ Excel</summary>
+                  <div class="question-pane-head"><div><h4>Kiểm tra trước khi ghi vào bản nháp</h4><p class="muted">Xem trước và so sánh trước; thao tác chỉ ghi vào bản nháp, không tự công bố.</p></div><div class="context-help-actions"><button id="question-download-template" type="button" class="btn-ghost">Tải file mẫu</button><a class="context-help-link" href="/qlcl/help/question-template-import#download-sample" target="_blank" rel="noopener noreferrer">Cách dùng file mẫu</a></div></div>
                   <div id="question-import-wizard" class="question-import-wizard">
                     <ol class="question-wizard-steps admin-stepper" aria-label="Các bước import"><li data-import-step="select" data-state="current">1. Chọn file</li><li data-import-step="validate">2. Kiểm tra</li><li data-import-step="compare">3. So sánh</li><li data-import-step="confirm">4. Xác nhận</li></ol>
                     <div class="question-import-select"><label for="question-workspace-import-file">Workbook canonical hoặc BM01–BM04 (.xlsx)</label><input id="question-workspace-import-file" class="input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"><button id="question-workspace-import-preview" type="button" class="btn-primary" data-resource-action="true">Kiểm tra file</button></div>
                     <div class="question-import-validation"><label for="question-import-error-filter">Lọc kết quả kiểm tra</label><select id="question-import-error-filter" class="input"><option value="">Tất cả thay đổi</option><option value="errors">Chỉ lỗi / trùng</option><option value="changed">Chỉ thay đổi</option></select><button id="question-workspace-import-errors" type="button" class="btn-ghost hidden">Tải danh sách lỗi</button></div>
                     <div id="question-workspace-import-status" class="auth-msg" role="status"></div><div id="question-workspace-import-summary" class="muted"></div>
                     <div class="table-scroll"><table class="data-table"><thead><tr><th>Loại</th><th>Khóa ổn định</th><th>Trước</th><th>Sau</th></tr></thead><tbody id="question-workspace-diff-tbody"></tbody></table></div>
-                    <div class="question-import-confirm"><label id="question-workspace-partial-wrap" class="muted hidden"><input id="question-workspace-accept-partial" type="checkbox"> Chấp nhận một phần; giữ nguyên dòng lỗi</label><button id="question-workspace-import-rollback" type="button" class="btn-danger hidden" data-resource-action="true">Hoàn tác batch</button><button id="question-workspace-import-commit" type="button" class="btn-primary" data-resource-action="true" disabled>Commit vào Draft</button></div>
+                    <div class="question-import-confirm"><label id="question-workspace-partial-wrap" class="muted hidden"><input id="question-workspace-accept-partial" type="checkbox"> Chấp nhận một phần; giữ nguyên dòng lỗi</label><button id="question-workspace-import-rollback" type="button" class="btn-danger hidden" data-resource-action="true">Hoàn tác lần nhập</button><button id="question-workspace-import-commit" type="button" class="btn-primary" data-resource-action="true" disabled>Ghi vào bản nháp</button></div>
                   </div>
                   <h4>Lịch sử import</h4><div class="table-scroll"><table class="data-table"><thead><tr><th>Thời điểm</th><th>File</th><th>Trạng thái</th><th>Diff</th><th>Người thực hiện</th></tr></thead><tbody id="question-import-history-tbody"></tbody></table></div>
                 </details>
               </section>
-              <section id="question-pane-variants" class="question-workspace-pane hidden" data-question-pane="variants" role="tabpanel" aria-labelledby="question-tab-variants"><div class="question-pane-head"><div><h4>Biến thể</h4><p class="muted">Biến thể được suy ra từ facility/scale của câu hỏi trong phiên bản.</p></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Facility</th><th>Scale</th><th>Nguồn</th><th>Trạng thái</th><th>Số câu hỏi</th></tr></thead><tbody id="question-variant-tbody"></tbody></table></div></section>
+              <section id="question-pane-variants" class="question-workspace-pane hidden" data-question-pane="variants" role="tabpanel" aria-labelledby="question-tab-variants"><div class="question-pane-head"><div><h4>Biến thể</h4><p class="muted">Biến thể được suy ra từ loại cơ sở và quy mô của câu hỏi trong phiên bản.</p></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Loại cơ sở</th><th>Quy mô</th><th>Nguồn</th><th>Trạng thái</th><th>Số câu hỏi</th></tr></thead><tbody id="question-variant-tbody"></tbody></table></div></section>
               <section id="question-pane-scopes" class="question-workspace-pane hidden" data-question-pane="scopes" role="tabpanel" aria-labelledby="question-tab-scopes"><div class="question-pane-head"><div><h4>Phạm vi áp dụng</h4><p class="muted">Phạm vi Published mặc định chỉ áp dụng cho phiếu mới; phiếu hiện hữu giữ version đã pin.</p></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Facility</th><th>Scale</th><th>Hiệu lực</th><th>Mặc định</th><th>Trạng thái</th></tr></thead><tbody id="question-scope-tbody"></tbody></table></div></section>
               <section id="question-pane-versions" class="question-workspace-pane hidden" data-question-pane="versions" role="tabpanel" aria-labelledby="question-tab-versions"><div class="form-shell question-version-form"><div class="form-field field-full"><label for="question-version-note">Ghi chú phiên bản</label><textarea id="question-version-note" class="input" rows="3"></textarea></div><div class="form-field"><label for="question-version-effective-from">Hiệu lực từ</label><input id="question-version-effective-from" class="input" type="date"></div><div class="form-field"><label for="question-version-effective-to">Hiệu lực đến</label><input id="question-version-effective-to" class="input" type="date"></div></div><div class="question-version-audit-grid"><div><h4>Timeline phiên bản</h4><div id="question-version-timeline" class="question-version-timeline"></div></div><div><h4>Diff và tác động</h4><div id="question-version-impact" class="question-impact"></div><div id="question-version-diff" class="question-version-diff"></div></div></div></section>
-              <div class="question-sticky-actions admin-sticky-action-bar business-config-actions" role="toolbar" aria-label="Thao tác phiên bản bộ câu hỏi"><span id="question-unsaved-indicator" class="muted"></span><span id="question-publish-impact" class="context-action-hint">Publish chỉ đổi default cho ticket mới; ticket cũ giữ version đã pin.</span><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="question-preview" type="button" class="btn-ghost" data-resource-action="true">Xem trước</button><button id="question-validate" type="button" class="btn-ghost" data-resource-action="true">Kiểm tra</button><button id="question-version-clone" type="button" class="btn-ghost" data-resource-action="true">Clone thành Draft</button><button id="question-save-draft" type="button" class="btn-primary" data-resource-action="true">Lưu nháp</button><button id="question-submit-review" type="button" class="btn-ghost" data-resource-action="true">Gửi duyệt</button><button id="question-publish" type="button" class="btn-primary" data-resource-action="true" aria-describedby="question-publish-impact">Publish</button></div>
+              <div class="question-sticky-actions admin-sticky-action-bar business-config-actions" role="toolbar" aria-label="Thao tác phiên bản bộ câu hỏi"><span id="question-unsaved-indicator" class="muted"></span><span id="question-publish-impact" class="context-action-hint">Công bố chỉ đổi phiên bản mặc định cho phiếu mới; phiếu cũ giữ phiên bản đã chọn.</span><span class="admin-disabled-reason" role="status" aria-live="polite"></span><button id="question-preview" type="button" class="btn-ghost" data-resource-action="true">Xem trước</button><button id="question-validate" type="button" class="btn-ghost" data-resource-action="true">Kiểm tra</button><button id="question-version-clone" type="button" class="btn-ghost" data-resource-action="true">Tạo bản nháp</button><button id="question-save-draft" type="button" class="btn-primary" data-resource-action="true">Lưu thay đổi</button><button id="question-submit-review" type="button" class="btn-ghost" data-resource-action="true">Gửi duyệt</button><button id="question-publish" type="button" class="btn-primary" data-resource-action="true" aria-describedby="question-publish-impact">Công bố</button></div>
             </div>
           </main>
         </div>
@@ -4495,10 +4451,10 @@
       </div>
     </div>
 
-    <div class="panel report-template-workspace-panel">
+    <div class="panel business-config-host report-template-workspace-panel">
       <div id="report-template-workspace" class="report-template-workspace business-config-workspace guided-workspace" data-business-config-workspace="report-templates" data-guided-workspace="report-templates">
         <div class="report-template-heading business-config-page-head">
-          <div><h3>Mẫu báo cáo</h3><p class="muted">Thiết kế nội dung, dữ liệu và trình bày theo từng phiên bản.</p></div>
+          <div><h3>Mẫu báo cáo</h3><p class="muted">Thiết kế cấu trúc, dữ liệu và cách trình bày báo cáo.</p></div>
           <div class="business-config-toolbar" role="search" aria-label="Tìm và lọc mẫu báo cáo"><label class="business-config-search" for="report-template-search"><span class="sr-only">Tìm mẫu</span><input id="report-template-search" class="input" type="search" placeholder="Tìm mẫu báo cáo"></label><label for="report-template-status" class="sr-only">Lọc trạng thái</label><select id="report-template-status" class="input"><option value="">Tất cả trạng thái</option><option value="DRAFT">Bản nháp</option><option value="IN_REVIEW">Chờ duyệt</option><option value="PUBLISHED">Đang áp dụng</option><option value="RETIRED">Ngừng áp dụng</option></select><button id="report-template-create-draft" type="button" class="btn-primary" data-action-id="report_template.create_draft" data-resource-action="true">Tạo bản nháp</button><a class="context-help-link business-config-help-link" href="/qlcl/help/report-template-management#quick-start-designer" target="_blank" rel="noopener noreferrer">Hướng dẫn</a><span id="report-template-msg" class="auth-msg" role="status"></span></div>
         </div>
         <ol class="guided-stage-list" data-guided-stages aria-label="Các bước quản lý mẫu báo cáo">
@@ -4508,12 +4464,7 @@
         </ol>
         <div id="report-template-state" class="report-template-state admin-state" data-state="loading" role="status">Đang tải catalog mẫu báo cáo…</div>
 
-        <details id="report-template-filters-disclosure" class="guided-disclosure guided-filter-disclosure hidden" aria-hidden="true">
-          <summary>Tìm và lọc mẫu báo cáo</summary>
-          <div class="report-template-catalog-filters">
-            <button id="report-template-catalog-apply" type="button" class="btn-ghost" data-action-id="report_template.filter_apply">Lọc catalog</button>
-          </div>
-        </details>
+        <button id="report-template-catalog-apply" type="button" class="hidden" tabindex="-1" data-action-id="report_template.filter_apply" aria-hidden="true">Lọc</button>
 
         <div class="report-template-workspace-grid business-config-shell">
         <aside class="report-template-catalog-column business-config-catalog" aria-label="Danh sách mẫu báo cáo">
@@ -4521,7 +4472,6 @@
         <div id="report-template-catalog" class="report-template-catalog">
           <div id="report-template-tbody" class="report-template-catalog-list" role="list" aria-label="Catalog mẫu báo cáo canonical"></div>
         </div>
-        <details id="report-template-legacy" class="report-template-legacy"><summary>Migration / Legacy đã lưu trữ — không tạo mới</summary><div id="report-template-legacy-list" class="muted"></div><a class="context-help-link" href="/qlcl/help/replace-current-report#safe-replacement" target="_blank" rel="noopener noreferrer">Quy trình thay mẫu hiện hành và xử lý legacy</a></details>
         </aside>
 
         <section id="report-template-editor" class="report-template-editor business-config-version" aria-labelledby="report-template-editor-title">
@@ -4529,10 +4479,11 @@
             <div><h4 id="report-template-editor-title">Chọn một mẫu canonical</h4><p id="report-template-version-meta" class="muted"></p></div>
             <label for="report-template-version-select" class="sr-only">Phiên bản mẫu báo cáo</label>
             <select id="report-template-version-select" class="input report-template-version-select" aria-label="Phiên bản mẫu báo cáo" data-tooltip="Preview dùng exact version; production chỉ dùng Published default đúng scope và thời hạn."></select>
+            <button id="report-template-open-history" type="button" class="btn-ghost" data-action-id="report_template.tab_open">Xem lịch sử</button>
           </div>
           <details class="guided-disclosure guided-lifecycle"><summary>Vòng đời phiên bản</summary><ol id="report-template-lifecycle" class="business-config-lifecycle" aria-label="Lifecycle mẫu báo cáo"></ol></details>
           <div id="report-template-readonly" class="report-template-readonly hidden" role="note">
-            <span id="report-template-readonly-message">Published/Retired là bất biến. Hãy clone thành Draft để chỉnh sửa.</span>
+            <span id="report-template-readonly-message">Phiên bản đang áp dụng chỉ xem. Tạo bản nháp để chỉnh sửa.</span>
           </div>
           <div id="report-template-tabs" class="report-template-tabs business-config-tabs" role="tablist" aria-label="Workspace mẫu báo cáo">
             <button id="report-template-tab-structure" type="button" role="tab" aria-selected="true" aria-controls="report-template-builder-panel" data-report-template-tab="structure" data-action-id="report_template.tab_open">Cấu trúc</button>
@@ -4540,7 +4491,7 @@
             <button id="report-template-tab-presentation" type="button" role="tab" aria-selected="false" aria-controls="report-template-builder-panel" data-report-template-tab="presentation" data-action-id="report_template.tab_open">Trình bày</button>
             <button id="report-template-tab-preview" type="button" role="tab" aria-selected="false" aria-controls="report-template-builder-panel" data-report-template-tab="preview" data-action-id="report_template.tab_open">Xem trước</button>
             <button id="report-template-tab-validation" type="button" role="tab" aria-selected="false" aria-controls="report-template-validation" data-report-template-tab="validation" data-action-id="report_template.tab_open">Kiểm tra</button>
-            <button id="report-template-tab-versions" type="button" role="tab" aria-selected="false" aria-controls="report-template-version-timeline" data-report-template-tab="versions" data-action-id="report_template.tab_open">Phiên bản</button>
+            <button id="report-template-tab-versions" type="button" role="tab" aria-selected="false" aria-controls="report-template-version-timeline" data-report-template-tab="versions" data-action-id="report_template.tab_open">Lịch sử</button>
             <button id="report-template-tab-scope" type="button" role="tab" aria-selected="false" aria-controls="report-template-scope" data-report-template-tab="scope" data-action-id="report_template.tab_open">Phạm vi</button>
           </div>
 
@@ -4548,12 +4499,12 @@
           <a id="report-template-error-help" data-error-code="" class="context-help-link hidden" href="/qlcl/help/report-troubleshooting#error-codes" target="_blank" rel="noopener noreferrer">Mở hướng dẫn xử lý lỗi báo cáo</a>
           <div id="report-template-builder-panel" class="report-template-builder admin-master-detail" role="tabpanel" aria-labelledby="report-template-tab-structure" data-active-tab="structure">
             <aside class="report-template-tree-panel" data-report-builder-panel="tree" aria-label="Cây component">
-              <div class="report-template-panel-head"><div><strong>Cây component</strong><span id="report-template-component-count" class="muted"></span></div></div>
+              <div class="report-template-panel-head"><div><strong>Trình thiết kế</strong><span id="report-template-component-count" class="muted"></span></div></div>
               <div id="report-template-component-tree" class="report-template-component-tree" role="tree" aria-label="Component trong mẫu"></div>
               <div class="report-template-component-controls">
                 <label for="report-template-component-type" class="sr-only">Loại component</label>
                 <select id="report-template-component-type" class="input"><option value="text_block">Khối văn bản</option><option value="page_break">Ngắt trang</option><option value="spacer">Khoảng trống</option></select>
-                <button id="report-template-component-add" type="button" class="btn-ghost" data-action-id="report_template.component_add" data-resource-action="true">Thêm component</button>
+                <button id="report-template-component-add" type="button" class="btn-ghost" data-action-id="report_template.component_add" data-resource-action="true">Thêm thành phần</button>
                 <button id="report-template-component-up" type="button" class="btn-ghost" data-action-id="report_template.component_move" data-resource-action="true" aria-label="Đưa component lên">Lên</button>
                 <button id="report-template-component-down" type="button" class="btn-ghost" data-action-id="report_template.component_move" data-resource-action="true" aria-label="Đưa component xuống">Xuống</button>
               </div>
@@ -4573,7 +4524,7 @@
             </section>
 
             <aside id="report-template-properties" class="report-template-properties" data-report-builder-panel="inspector" aria-label="Thuộc tính component">
-              <div class="report-template-panel-head"><strong>Thuộc tính</strong><span id="report-template-selected-component" class="muted"></span></div>
+              <div class="report-template-panel-head"><strong>Thuộc tính thành phần</strong><span id="report-template-selected-component" class="muted"></span></div>
               <div id="report-template-standard-properties">
                 <div class="form-field" data-report-inspector-tab="structure"><label for="report-template-component-title">Tiêu đề</label><input id="report-template-component-title" class="input"></div>
                 <div class="form-field" data-report-inspector-tab="data"><label for="report-template-component-binding">Nguồn dữ liệu</label><select id="report-template-component-binding" class="input"></select></div>
@@ -4591,7 +4542,7 @@
                 <label for="report-template-overview-category">Nhóm tiêu chí từ scoring policy</label><input id="report-template-overview-category" class="input" value="Được quyết định bởi scoring policy" readonly></label>
               </fieldset>
               <div id="report-template-policy-banner" class="report-template-policy-banner" role="note">Công thức điểm, band, penalty và kết luận nằm ở <strong>Chính sách tính điểm</strong>; builder này không thay đổi công thức. <a class="context-help-link" href="/qlcl/help/compliance-overview-and-scoring-policy#layout-vs-score" target="_blank" rel="noopener noreferrer">Phân biệt layout và điểm</a></div>
-              <details id="report-template-advanced" class="report-template-advanced hidden" data-report-inspector-tab="structure"><summary>Advanced JSON</summary>
+              <details id="report-template-advanced" class="report-template-advanced hidden" data-report-inspector-tab="structure"><summary>Cấu hình nâng cao (JSON)</summary>
                 <p class="muted">JSON vẫn phải qua schema validation và sanitizer; không chấp nhận HTML/script/event handler.</p>
                 <textarea id="report-template-advanced-json" class="input mono" rows="14" spellcheck="false"></textarea>
                 <button id="report-template-advanced-apply" type="button" class="btn-ghost" data-action-id="report_template.advanced_json" data-resource-action="true">Áp dụng JSON đã kiểm tra</button>
@@ -4601,27 +4552,27 @@
 
           <div class="report-template-secondary-panels">
             <section id="report-template-validation" class="report-template-secondary-panel" role="tabpanel" aria-labelledby="report-template-tab-validation"><h4>Kiểm tra</h4><div id="report-template-validation-result" class="muted">Chưa chạy validation.</div></section>
-            <section id="report-template-version-timeline" class="report-template-secondary-panel" role="tabpanel" aria-labelledby="report-template-tab-versions"><h4>Phiên bản / Audit</h4><div id="report-template-version-events" class="report-template-version-events"></div></section>
+            <section id="report-template-version-timeline" class="report-template-secondary-panel" role="tabpanel" aria-labelledby="report-template-tab-versions"><h4>Lịch sử</h4><div id="report-template-version-events" class="report-template-version-events"></div></section>
             <section id="report-template-scope" class="report-template-secondary-panel" role="tabpanel" aria-labelledby="report-template-tab-scope" data-tooltip="Default chỉ áp dụng trong scope và effective window hiển thị."><h4>Phạm vi mặc định</h4><p id="report-template-scope-summary" class="muted">GLOBAL/* — chỉ Publish/Rollback mới đổi output production cho lượt xuất mới.</p></section>
           </div>
 
           <div class="report-template-package-actions">
             <input id="report-template-package-file" type="file" accept="application/json,.json" class="input" aria-label="Chọn definition package JSON">
             <select id="report-template-package-conflict" class="input" aria-label="Xử lý xung đột code"><option value="CREATE_DRAFT">Giữ đúng code package</option><option value="USE_TARGET_CODE">Dùng code mẫu đang chọn</option></select>
-            <button id="report-template-import-package" type="button" class="btn-ghost" data-action-id="report_template.import_package" data-resource-action="true">Import vào Draft mới</button>
-            <button id="report-template-export-package" type="button" class="btn-ghost" data-action-id="report_template.export_package" data-resource-action="true">Export definition package</button>
+            <button id="report-template-import-package" type="button" class="btn-ghost" data-action-id="report_template.import_package" data-resource-action="true">Nhập vào bản nháp mới</button>
+            <button id="report-template-export-package" type="button" class="btn-ghost" data-action-id="report_template.export_package" data-resource-action="true">Xuất gói cấu hình</button>
           </div>
 
           <div class="report-template-sticky-actions admin-sticky-action-bar business-config-actions" role="toolbar" aria-label="Thao tác mẫu báo cáo">
             <span id="report-template-dirty-state" class="muted">Không có thay đổi chưa lưu</span>
-            <span id="report-template-publish-impact" class="context-action-hint">Publish mới đổi output production cho lượt xuất mới.</span>
+            <span id="report-template-publish-impact" class="context-action-hint">Công bố mới thay đổi báo cáo cho lượt xuất mới.</span>
             <span class="admin-disabled-reason" role="status" aria-live="polite"></span>
-            <button id="report-template-save-draft" type="button" class="btn-primary" data-action-id="report_template.save_draft" data-resource-action="true">Lưu Draft</button>
-            <button id="report-template-validate" type="button" class="btn-ghost" data-action-id="report_template.validate" data-resource-action="true">Kiểm tra Draft</button>
+            <button id="report-template-save-draft" type="button" class="btn-primary" data-action-id="report_template.save_draft" data-resource-action="true">Lưu thay đổi</button>
+            <button id="report-template-validate" type="button" class="btn-ghost" data-action-id="report_template.validate" data-resource-action="true">Kiểm tra</button>
             <button id="report-template-submit-review" type="button" class="btn-ghost" data-action-id="report_template.submit_review" data-resource-action="true">Gửi duyệt</button>
-            <button id="report-template-publish" type="button" class="btn-ghost" data-action-id="report_template.publish" data-resource-action="true" aria-describedby="report-template-publish-impact">Publish & đặt mặc định</button>
-            <button id="report-template-rollback" type="button" class="btn-danger" data-action-id="report_template.rollback" data-resource-action="true">Rollback mặc định</button>
-            <a class="context-help-link" href="/qlcl/help/configuration-rollback#report-template" target="_blank" rel="noopener noreferrer">Runbook rollback</a>
+            <button id="report-template-publish" type="button" class="btn-ghost" data-action-id="report_template.publish" data-resource-action="true" aria-describedby="report-template-publish-impact">Công bố</button>
+            <button id="report-template-rollback" type="button" class="btn-danger" data-action-id="report_template.rollback" data-resource-action="true">Khôi phục bản trước</button>
+            <a class="context-help-link" href="/qlcl/help/configuration-rollback#report-template" target="_blank" rel="noopener noreferrer">Hướng dẫn khôi phục</a>
           </div>
           <div id="report-template-live" class="report-template-live" aria-live="polite"></div>
         </section>

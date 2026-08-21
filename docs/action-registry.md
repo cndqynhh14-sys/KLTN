@@ -102,7 +102,8 @@ Generated from `public/js/action-registry.js` (version 15). Do not edit this fil
 | report.filter_reset | Xóa bộ lọc báo cáo | REPORT | control | secondary | REPORT.READ | — | — | — |
 | authorization.tab_open | Mở khu vực phân quyền | AUTHORIZATION | control | secondary | USER.MANAGE | — | — | — |
 | authorization.user_add | Thêm người dùng | AUTHORIZATION | page | primary | USER.MANAGE | — | Idempotency-Key | user.account.upserted |
-| authorization.user_roles_save | Lưu phân vai người dùng | AUTHORIZATION | form | primary | USER.MANAGE | — | Idempotency-Key | user.authorization.changed |
+| authorization.personnel_import_open | Mở màn hình nhập nhân sự | AUTHORIZATION | page | secondary | USER.MANAGE | — | — | — |
+| authorization.user_roles_save | Lưu vai trò và dữ liệu được xem | AUTHORIZATION | form | primary | USER.MANAGE | — | Idempotency-Key | user.authorization.changed |
 | authorization.role_new | Tạo vai trò mới | AUTHORIZATION | page | secondary | USER.MANAGE | — | — | — |
 | authorization.role_clone | Nhân bản vai trò | AUTHORIZATION | page | secondary | USER.MANAGE | — | — | — |
 | authorization.role_save | Lưu vai trò | AUTHORIZATION | form | primary | USER.MANAGE | — | Idempotency-Key | role.catalog.changed |
@@ -116,6 +117,7 @@ Generated from `public/js/action-registry.js` (version 15). Do not edit this fil
 | authorization.history_refresh | Làm mới lịch sử phân quyền | AUTHORIZATION | control | secondary | USER.MANAGE | — | — | — |
 | authorization.export | Xuất cấu hình phân quyền | AUTHORIZATION | page | secondary | USER.MANAGE | — | — | authz.exported |
 | authorization.role_select | Chọn vai trò để chỉnh sửa | AUTHORIZATION | control | secondary | USER.MANAGE | — | — | — |
+| authorization.user_role_remove | Bỏ vai trò khỏi bản nháp | AUTHORIZATION | control | danger | USER.MANAGE | — | — | — |
 | authorization.scope_remove | Bỏ phạm vi khỏi bản nháp | AUTHORIZATION | control | danger | USER.MANAGE | — | — | — |
 | authorization.approval_select | Chọn phân công phê duyệt | AUTHORIZATION | control | secondary | USER.MANAGE | — | — | — |
 | authorization.user_deactivate | Khóa tài khoản người dùng | AUTHORIZATION | row | danger | USER.MANAGE | — | Idempotency-Key | user.account.deactivated |
@@ -137,7 +139,7 @@ Generated from `public/js/action-registry.js` (version 15). Do not edit this fil
 | question.save | Lưu câu hỏi | QUESTION_TEMPLATE | form | primary | QUESTION_TEMPLATE.MANAGE | — | Idempotency-Key | question.template.changed |
 | question.edit | Chỉnh sửa câu hỏi | QUESTION_TEMPLATE | row | secondary | QUESTION_TEMPLATE.MANAGE | — | — | — |
 | question.deactivate | Tắt câu hỏi | QUESTION_TEMPLATE | row | danger | QUESTION_TEMPLATE.MANAGE | — | Idempotency-Key | question.template.changed |
-| question_version.clone_draft | Tạo Draft bộ câu hỏi | QUESTION_TEMPLATE | form | secondary | QUESTION_TEMPLATE.MANAGE | — | Idempotency-Key | question.template.changed |
+| question_version.clone_draft | Tạo bản nháp bộ câu hỏi | QUESTION_TEMPLATE | form | secondary | QUESTION_TEMPLATE.MANAGE | — | Idempotency-Key | question.template.changed |
 | question_import.preview | Xem trước nhập bộ câu hỏi | QUESTION_TEMPLATE | form | secondary | QUESTION_TEMPLATE.MANAGE | — | Idempotency-Key | question.import.previewed |
 | question_import.commit | Commit bộ câu hỏi vào Draft | QUESTION_TEMPLATE | form | primary | QUESTION_TEMPLATE.MANAGE | — | Idempotency-Key | question.import.committed |
 | question_import.rollback | Hoàn tác batch nhập câu hỏi | QUESTION_TEMPLATE | form | danger | QUESTION_TEMPLATE.MANAGE | — | Idempotency-Key | question.import.rolled_back |
@@ -149,8 +151,8 @@ Generated from `public/js/action-registry.js` (version 15). Do not edit this fil
 | report_template.deactivate | Tắt mẫu báo cáo | REPORT_TEMPLATE | row | danger | REPORT_TEMPLATE.MANAGE | — | Idempotency-Key | report.template.changed |
 | report_template.filter_apply | Lọc catalog mẫu báo cáo | REPORT_TEMPLATE | control | secondary | REPORT.READ | — | — | — |
 | report_template.tab_open | Mở tab workspace mẫu báo cáo | REPORT_TEMPLATE | control | secondary | REPORT.READ | — | — | — |
-| report_template.create_draft | Clone thành Draft mẫu báo cáo | REPORT_TEMPLATE | page | secondary | REPORT_TEMPLATE.MANAGE | report_template.create_draft | Idempotency-Key | report.template.changed |
-| report_template.save_draft | Lưu Draft mẫu báo cáo | REPORT_TEMPLATE | form | primary | REPORT_TEMPLATE.MANAGE | report_template.save_draft | Idempotency-Key | report.template.changed |
+| report_template.create_draft | Tạo bản nháp mẫu báo cáo | REPORT_TEMPLATE | page | secondary | REPORT_TEMPLATE.MANAGE | report_template.create_draft | Idempotency-Key | report.template.changed |
+| report_template.save_draft | Lưu thay đổi mẫu báo cáo | REPORT_TEMPLATE | form | primary | REPORT_TEMPLATE.MANAGE | report_template.save_draft | Idempotency-Key | report.template.changed |
 | report_template.validate | Kiểm tra Draft mẫu báo cáo | REPORT_TEMPLATE | form | secondary | REPORT_TEMPLATE.MANAGE | report_template.validate | — | — |
 | report_template.submit_review | Gửi duyệt mẫu báo cáo | REPORT_TEMPLATE | form | secondary | REPORT_TEMPLATE.MANAGE | report_template.submit_review | Idempotency-Key | report.template.changed |
 | report_template.publish | Publish và đặt mẫu báo cáo mặc định | REPORT_TEMPLATE | form | primary | REPORT_TEMPLATE.PUBLISH | report_template.publish | Idempotency-Key | report.template.changed |
@@ -165,10 +167,10 @@ Generated from `public/js/action-registry.js` (version 15). Do not edit this fil
 | scoring_policy.simulate | Mô phỏng chính sách tính điểm bằng fixture synthetic | SCORING_POLICY | form | secondary | SCORING_POLICY.MANAGE | scoring_policy.simulate | — | — |
 | scoring_policy.impact | Phân tích tác động chính sách tính điểm | SCORING_POLICY | form | secondary | SCORING_POLICY.MANAGE | scoring_policy.impact | — | — |
 | scoring_policy.validate | Kiểm tra chính sách tính điểm | SCORING_POLICY | form | secondary | SCORING_POLICY.MANAGE | scoring_policy.validate | — | — |
-| scoring_policy.create_draft | Clone thành Draft chính sách tính điểm | SCORING_POLICY | page | secondary | SCORING_POLICY.MANAGE | scoring_policy.create_draft | Idempotency-Key | scoring.policy.changed |
-| scoring_policy.save_draft | Lưu Draft chính sách tính điểm | SCORING_POLICY | form | primary | SCORING_POLICY.MANAGE | scoring_policy.save_draft | Idempotency-Key | scoring.policy.changed |
+| scoring_policy.create_draft | Tạo bản nháp chính sách tính điểm | SCORING_POLICY | page | secondary | SCORING_POLICY.MANAGE | scoring_policy.create_draft | Idempotency-Key | scoring.policy.changed |
+| scoring_policy.save_draft | Lưu thay đổi chính sách tính điểm | SCORING_POLICY | form | primary | SCORING_POLICY.MANAGE | scoring_policy.save_draft | Idempotency-Key | scoring.policy.changed |
 | scoring_policy.submit_review | Gửi duyệt chính sách tính điểm | SCORING_POLICY | form | secondary | SCORING_POLICY.MANAGE | scoring_policy.submit_review | Idempotency-Key | scoring.policy.changed |
-| scoring_policy.publish | Publish chính sách tính điểm | SCORING_POLICY | form | primary | SCORING_POLICY.PUBLISH | scoring_policy.publish | Idempotency-Key | scoring.policy.changed |
+| scoring_policy.publish | Công bố chính sách tính điểm | SCORING_POLICY | form | primary | SCORING_POLICY.PUBLISH | scoring_policy.publish | Idempotency-Key | scoring.policy.changed |
 | scoring_policy.rollback | Rollback chính sách tính điểm mặc định | SCORING_POLICY | form | danger | SCORING_POLICY.PUBLISH | scoring_policy.rollback | Idempotency-Key | scoring.policy.changed |
 | audit.filter_apply | Áp dụng bộ lọc audit | AUDIT | control | secondary | AUDIT.READ | — | — | — |
 | audit.filter_reset | Xóa bộ lọc audit | AUDIT | control | secondary | AUDIT.READ | — | — | — |

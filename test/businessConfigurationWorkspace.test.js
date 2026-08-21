@@ -113,11 +113,11 @@ test('PROMPT-11 exposes the complete scoring-policy workspace without frontend s
   const tabs = [
     ['overview', 'Tổng quan'],
     ['grade-scale', 'Thang điểm'],
-    ['bands', 'Ngưỡng &amp; xếp loại'],
-    ['penalties', 'Loại trừ/penalty'],
-    ['simulation', 'Mô phỏng'],
+    ['bands', 'Khoảng xếp loại'],
+    ['penalties', 'Điểm trừ'],
+    ['simulation', 'Kiểm thử'],
     ['impact', 'Tác động'],
-    ['versions', 'Phiên bản &amp; Audit'],
+    ['versions', 'Lịch sử'],
   ];
   for (const [id, label] of tabs) {
     assert.match(html, new RegExp(`data-scoring-policy-tab="${id}"[^>]*>${label}<`), id);
