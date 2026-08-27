@@ -24,6 +24,8 @@ function calculatedScore(score, definition) {
 function normalizeAttendee(value) {
   return {
     name: String(value?.name || value?.title || '').trim(),
+    principal_id: String(value?.principal_id || '').trim() || null,
+    user_id: String(value?.user_id || '').trim() || null,
     opening: !!(value?.opening || value?.opening_meeting),
     closing: !!(value?.closing || value?.closing_meeting),
   };
@@ -141,6 +143,8 @@ class EvaluationScoringService {
       .filter((participant) => participant.participant_role === 'ATTENDEE')
       .map((participant) => ({
         name: participant.display_name,
+        ...(participant.principal_id ? { principal_id: participant.principal_id } : {}),
+        ...(participant.user_id ? { user_id: participant.user_id } : {}),
         opening: !!participant.opening_meeting,
         closing: !!participant.closing_meeting,
       }));
@@ -193,7 +197,10 @@ class EvaluationScoringService {
     const userEmail = typeof user === 'string' ? user : user.email;
     const workflowUser = typeof user === 'string' ? { email: userEmail, role: null } : user;
     const existing = this.getRound(ticket.id, roundNo);
-    if (existing) return existing;
+    if (existing) {
+      this.participantRepository.ensureRoundOwnerAttendee(existing.id, user?.user_id || userEmail);
+      return existing;
+    }
     if (roundNo !== 2) return null;
     if (!this.round2Gate(ticket).eligible) return null;
     return this.db.transaction(() => this.openRound2Transaction(ticket, workflowUser, null))();
@@ -386,6 +393,8 @@ class EvaluationScoringService {
       .filter((participant) => participant.participant_role === 'ATTENDEE')
       .map((participant) => ({
         name: participant.display_name,
+        ...(participant.principal_id ? { principal_id: participant.principal_id } : {}),
+        ...(participant.user_id ? { user_id: participant.user_id } : {}),
         opening: !!participant.opening_meeting,
         closing: !!participant.closing_meeting,
       }));
@@ -427,6 +436,7 @@ class EvaluationScoringService {
     if (![1, 2].includes(roundNo)) throw Object.assign(new Error('invalid_round'), { status: 400, payload: { error: 'invalid_round' } });
     const round = this.getRound(ticket.id, roundNo);
     if (!round) throw Object.assign(new Error('round_not_found'), { status: 404, payload: { error: 'round_not_found' } });
+    this.participantRepository.ensureRoundOwnerAttendee(round.id, user?.user_id || user?.email);
     return this.roundPayload(this.ticketRepository.getByCode(ticket.ticket_code), round);
   }
 
@@ -453,7 +463,9 @@ class EvaluationScoringService {
       });
     }
     this.db.transaction(() => {
-      if (Array.isArray(attendees)) this.roundRepository.updateAttendees(round.id, normalizeAttendees(attendees));
+      if (Array.isArray(attendees)) this.roundRepository.updateAttendees(
+        round.id, normalizeAttendees(attendees), user.user_id || user.email
+      );
       this.maybeUpdateSupplierIntroduction(ticket, roundNo, supplierIntroduction, user.email);
       this.upsertRoundAnswers(round, normalizedAnswers, user.email);
       this.syncRoundNonconformities(ticket, round, this.questionsForTicket(ticket), this.answersForRound(round.id), user.email);
@@ -517,7 +529,9 @@ class EvaluationScoringService {
         });
       }
       if (normalizedIncomingAnswers) this.upsertRoundAnswers(round, normalizedIncomingAnswers, user.email);
-      if (hasAttendeePayload) this.roundRepository.updateAttendees(round.id, normalizedAttendees);
+      if (hasAttendeePayload) this.roundRepository.updateAttendees(
+        round.id, normalizedAttendees, user.user_id || user.email
+      );
       this.maybeUpdateSupplierIntroduction(ticket, roundNo, normalizedSupplierIntroduction, user.email);
       const questions = this.questionsForTicket(ticket);
       const answers = this.answersForRound(round.id);

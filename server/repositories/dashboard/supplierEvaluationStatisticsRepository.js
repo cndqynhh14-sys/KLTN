@@ -35,6 +35,7 @@ class SupplierEvaluationStatisticsRepository {
         t.region,
         t.evaluation_type,
         t.mch2,
+        t.mch3,
         t.source_kind,
         t.actual_evaluation_date,
         t.correction_date,

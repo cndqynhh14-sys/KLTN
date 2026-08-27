@@ -72,6 +72,42 @@ test('dashboard snapshot follows the ticket lifecycle once per period and final 
   assert.equal(august.trend.length, 6);
 });
 
+test('dashboard trend counts completed tickets rather than distinct suppliers or completed rounds', () => {
+  const tickets = [
+    { id: 1, ticket_code: 'EVAL-A-1', supplier_id: 101, supplier_code: 'NCC-101', supplier_name: 'NCC A', current_status: 'Hoàn thành', created_at: '2026-07-01 08:00:00' },
+    { id: 2, ticket_code: 'EVAL-A-2', supplier_id: 101, supplier_code: 'NCC-101', supplier_name: 'NCC A', current_status: 'Hoàn thành', created_at: '2026-08-01 08:00:00' },
+  ];
+  const history = [
+    { id: 1, ticket_id: 1, to_status: 'Khởi tạo', created_at: '2026-07-01 08:00:00' },
+    { id: 2, ticket_id: 1, to_status: 'Chờ khắc phục', created_at: '2026-07-20 16:00:00' },
+    { id: 3, ticket_id: 1, to_status: 'Hoàn thành', created_at: '2026-08-10 16:00:00' },
+    { id: 4, ticket_id: 2, to_status: 'Khởi tạo', created_at: '2026-08-01 08:00:00' },
+    { id: 5, ticket_id: 2, to_status: 'Hoàn thành', created_at: '2026-08-15 16:00:00' },
+  ];
+  const rounds = [
+    { id: 1, ticket_id: 1, round_no: 1, completed_at: '2026-07-20 15:00:00', total_score: 45, final_result: 'Không đạt', classification: 'D' },
+    { id: 2, ticket_id: 1, round_no: 2, completed_at: '2026-08-10 15:00:00', total_score: 92, final_result: 'Đạt mức cao', classification: 'A' },
+    { id: 3, ticket_id: 2, round_no: 1, completed_at: '2026-08-15 15:00:00', total_score: 50, final_result: 'Không đạt', classification: 'D' },
+  ];
+  const service = new StatisticalDashboardService({
+    repository: {
+      listTicketsBefore(end) { return tickets.filter((row) => row.created_at < end); },
+      listWorkflowHistory(ids, end) { return history.filter((row) => ids.includes(row.ticket_id) && row.created_at < end); },
+      listCompletedRounds(ids, end) { return rounds.filter((row) => ids.includes(row.ticket_id) && row.completed_at < end); },
+      filterOptions() { return { regions: [], evaluation_types: [], mch2: [] }; },
+    },
+  });
+
+  const august = service.get({ periodType: 'MONTH', periodValue: '2026-08' });
+  const selected = august.trend.find((row) => row.is_selected);
+  assert.equal(selected.evaluated_supplier_count, 1, 'the two tickets belong to one supplier');
+  assert.equal(selected.evaluation_ticket_count, 2, 'both completed tickets are counted');
+  assert.equal(selected.passed_ticket_count, 1, 'ticket 1 uses its final round 2 result');
+  assert.equal(selected.failed_ticket_count, 1, 'ticket 2 uses its final round 1 result');
+  assert.equal(selected.evaluation_ticket_count, selected.passed_ticket_count + selected.failed_ticket_count);
+  assert.equal(selected.failed_rate, 0.5);
+});
+
 test('dashboard applies shared business filters and quarter completion rules', () => {
   const service = new StatisticalDashboardService({ repository: fixtureRepository() });
   const q3 = service.get({ periodType: 'QUARTER', periodValue: '2026-Q3', regions: ['MB'] });
@@ -205,7 +241,7 @@ test('RUN-29 ranking uses 1:5:2:2 columns, required alignment and score-only cel
   assert.match(ranking, /className:\s*'statistics-score',[\s\S]*text:\s*`\$\{[^}]+\}%`/);
 });
 
-test('RUN-29 trend doubles columns without desktop horizontal scroll and retains line, axes, tooltip and selection', () => {
+test('RUN-29 trend uses stacked ticket columns, segment hit testing and subtle selected-period highlighting', () => {
   const root = path.resolve(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
@@ -213,12 +249,24 @@ test('RUN-29 trend doubles columns without desktop horizontal scroll and retains
 
   assert.match(html, /\.statistics-chart-wrap\s*\{[^}]*min-width:\s*0;/);
   assert.match(html, /\.statistics-chart-scroll\s*\{[^}]*overflow-x:\s*hidden;/);
+  assert.match(html, /Phiếu đạt[\s\S]*Phiếu không đạt[\s\S]*Tỷ lệ không đạt \(%\)/);
+  assert.match(html, /Tỷ lệ không đạt = Phiếu không đạt \/ Tổng số phiếu đánh giá/);
   assert.match(trend, /const width = Math\.max\(280,\s*Math\.round\(canvas\.parentElement\?\.clientWidth \|\| 760\)\)/);
-  assert.match(trend, /const columnWidth = Math\.min\(92,\s*step \* \.92\)/);
+  assert.match(trend, /evaluation_ticket_count:\s*total/);
+  assert.match(trend, /const columnWidth = Math\.max\(16,\s*Math\.min\(78,\s*step \* \.54\)\)/);
   assert.doesNotMatch(trend, /Math\.max\(680/);
+  assert.doesNotMatch(trend, /row\.evaluated_supplier_count/);
   assert.match(trend, /const yCount[\s\S]*const yRate/);
+  assert.match(trend, /drawSegment\(row, 'passed'[\s\S]*drawSegment\(row, 'failed'/);
   assert.match(trend, /context\.lineTo\(x, y\)[\s\S]*context\.stroke\(\)/);
-  assert.match(trend, /row\.is_selected[\s\S]*selected \? '#D84646'/);
-  assert.match(trend, /NCC \u0111\u01b0\u1ee3c \u0111\u00e1nh gi\u00e1:[\s\S]*T\u1ef7 l\u1ec7 kh\u00f4ng \u0111\u1ea1t:/u);
-  assert.match(trend, /fillText\(String\(Math\.round\(maxCount \* ratioValue\)\)[\s\S]*fillText\(`\$\{Math\.round\(ratioValue \* 100\)\}%`/);
+  assert.match(trend, /row\.is_selected[\s\S]*rgba\(37,99,235,\.045\)/);
+  assert.doesNotMatch(trend, /selected \? '#D84646'/);
+  assert.match(trend, /_dashboardTrendHitTargets/);
+  assert.match(trend, /target\.kind === 'rate'[\s\S]*target\.kind === 'passed'/);
+  assert.match(trend, /Phiếu đạt'[\s\S]*'Phiếu không đạt'/);
+  assert.doesNotMatch(trend, /NCC \u0111\u01b0\u1ee3c \u0111\u00e1nh gi\u00e1:/u);
+  assert.match(trend, /fmtInt\(row\.evaluation_ticket_count\)/);
+  assert.match(trend, /formatRate\(row\.failed_rate\)/);
+  assert.match(trend, /width < 520 && label\.includes\('\/'\)/);
+  assert.match(trend, /width >= 560 \|\| row\.is_selected/);
 });

@@ -262,9 +262,14 @@ class StatisticalDashboardService {
   industryPerformance(records) {
     const industries = new Map();
     records.forEach((record) => {
-      const industry = String(record.mch2 || '').trim() || 'Chưa xác định';
+      const score = record.final_score == null || String(record.final_score).trim() === ''
+        ? NaN
+        : Number(record.final_score);
+      if (!Number.isFinite(score)) return;
+      const industry = String(record.mch3 || '').trim() || 'Chưa xác định';
       if (!industries.has(industry)) industries.set(industry, {
         industry,
+        mch3: industry,
         total_suppliers: 0,
         passed_suppliers: 0,
         failed_suppliers: 0,
@@ -272,12 +277,13 @@ class StatisticalDashboardService {
       });
       const row = industries.get(industry);
       row.total_suppliers += 1;
-      row.score_sum += Number(record.final_score);
-      if (Number(record.final_score) >= 60) row.passed_suppliers += 1;
+      row.score_sum += score;
+      if (score >= 60) row.passed_suppliers += 1;
       else row.failed_suppliers += 1;
     });
     return [...industries.values()].map((row) => ({
       industry: row.industry,
+      mch3: row.mch3,
       total_suppliers: row.total_suppliers,
       passed_suppliers: row.passed_suppliers,
       failed_suppliers: row.failed_suppliers,
@@ -346,6 +352,7 @@ class StatisticalDashboardService {
         period_value: item.value,
         label: item.label,
         evaluated_supplier_count: itemSummary.evaluated_supplier_count,
+        evaluation_ticket_count: itemSummary.evaluation_ticket_count,
         passed_ticket_count: itemSummary.passed_ticket_count,
         failed_ticket_count: itemSummary.failed_ticket_count,
         failed_rate: itemSummary.failed_rate,
@@ -383,6 +390,7 @@ class StatisticalDashboardService {
         final_score_rule: 'official_round_2_else_official_round_1',
         ratio_unit: 'fraction',
         detail_supplier_grain: 'latest_completed_evaluation_per_supplier_in_filtered_period',
+        industry_dimension: 'mch3',
         violation_unit: 'occurrence',
       },
       generated_at: new Date().toISOString(),

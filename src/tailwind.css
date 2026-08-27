@@ -1492,6 +1492,21 @@
   margin-bottom: 1rem;
 }
 .authz-catalog-toolbar .input { width: 100%; min-width: 0; }
+@media (min-width: 768px) {
+  #authz-pane-roles .authz-role-filters {
+    grid-template-columns:
+      minmax(280px, 1fr)
+      minmax(140px, 180px)
+      max-content
+      max-content;
+    align-items: end;
+  }
+
+  #authz-pane-roles .authz-role-filters > button {
+    width: max-content;
+    white-space: nowrap;
+  }
+}
 .authz-toolbar-actions,
 .authz-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
 .authz-list-toolbar { min-height: 0; margin: 0 0 .8rem; }

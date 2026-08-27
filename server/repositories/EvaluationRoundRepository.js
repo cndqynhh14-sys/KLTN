@@ -69,6 +69,7 @@ class EvaluationRoundRepository {
       payload.evaluator_id,
       payload.evaluator_id,
     );
+    this.participantRepository.ensureRoundOwnerAttendee(info.lastInsertRowid, payload.evaluator_id);
     return info;
   }
 
@@ -80,8 +81,9 @@ class EvaluationRoundRepository {
     return this.statements.complete.run(payload);
   }
 
-  updateAttendees(roundId, attendees) {
-    this.participantRepository.setRoundAttendees(roundId, attendees);
+  updateAttendees(roundId, attendees, actor = null) {
+    this.participantRepository.setRoundAttendees(roundId, attendees, actor);
+    this.participantRepository.ensureRoundOwnerAttendee(roundId, actor);
     return { changes: 1 };
   }
 

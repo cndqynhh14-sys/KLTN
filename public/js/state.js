@@ -36,6 +36,7 @@ export const state = {
     error: '',
   },
   evalSearch: '',
+  evalStatusTab: '',
   evalFilters: {},
   evalSort: { field: 'created_at', dir: 'desc' },
   evalPage: 1,

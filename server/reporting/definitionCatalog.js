@@ -23,6 +23,7 @@ function componentBindings(component) {
     component?.binding,
     component?.subtitle_binding,
     ...(component?.fields || []).map((field) => field.binding),
+    ...(component?.meta_fields || []).map((field) => field.binding),
   ].filter(Boolean);
 }
 
@@ -41,9 +42,12 @@ function validateDefinitionTreePolicy(definition, tree) {
   return tree;
 }
 
+const headerMetaFields = Object.freeze([
+  { label: 'Số', binding: 'doc4.related_information.report_no' },
+  { label: 'Ngày đánh giá', binding: 'doc4.related_information.evaluation_date', format: 'date_ddmmyyyy' },
+]);
+
 const metadataFields = Object.freeze([
-  { label: 'Số báo cáo', binding: 'doc4.related_information.report_no' },
-  { label: 'Ngày đánh giá', binding: 'doc4.related_information.evaluation_date' },
   { label: 'Nhà cung cấp', binding: 'doc4.related_information.supplier_name' },
   { label: 'Mã nhà cung cấp', binding: 'doc4.related_information.supplier_code' },
   { label: 'Địa điểm đánh giá', binding: 'doc4.related_information.evaluation_address' },
@@ -54,31 +58,40 @@ const scopeFields = Object.freeze([
   { label: 'Sản phẩm', binding: 'doc4.scope.product' },
   { label: 'Loại hình', binding: 'doc4.scope.business_type' },
   { label: 'Loại đánh giá', binding: 'doc4.scope.evaluation_type' },
-  { label: 'Phiên bản bộ câu hỏi', binding: 'doc4.scope.question_template_version_id' },
 ]);
 
 const participantColumns = Object.freeze([
-  { label: 'Tên/Chức danh', key: 'name' },
-  { label: 'Họp khai mạc', key: 'opening' },
-  { label: 'Họp bế mạc', key: 'closing' },
+  { label: 'Tên/Chức danh', key: 'name', width: '56%', align: 'left' },
+  { label: 'Họp khai mạc', key: 'opening', width: '22%', align: 'center' },
+  { label: 'Họp bế mạc', key: 'closing', width: '22%', align: 'center' },
 ]);
 
 const nonconformityColumns = Object.freeze([
-  { label: 'Điều khoản', key: 'clause' },
-  { label: 'Hạng mục', key: 'category' },
-  { label: 'Điểm', key: 'score' },
-  { label: 'Mô tả', key: 'description' },
-  { label: 'Khắc phục', key: 'corrective_action' },
-  { label: 'Hạn', key: 'due_date' },
-  { label: 'Trạng thái', key: 'status' },
+  { label: 'Điều khoản', key: 'clause', width: '11%', align: 'center' },
+  { label: 'Hạng mục', key: 'category', width: '15%' },
+  { label: 'Điểm', key: 'score', width: '8%', align: 'center' },
+  { label: 'Mô tả', key: 'description', width: '26%' },
+  { label: 'Khắc phục', key: 'corrective_action', width: '25%' },
+  { label: 'Hạn', key: 'due_date', width: '15%', align: 'center', format: 'date_ddmmyyyy' },
+]);
+
+const reportStyles = Object.freeze({
+  page_orientation: 'portrait',
+  font_scale: 1,
+  report_profile: 'wincommerce_supplier_assessment',
+});
+
+const signatureFields = Object.freeze([
+  { label: 'ĐÁNH GIÁ VIÊN', binding: 'doc4.signatures.evaluator' },
+  { label: 'ĐẠI DIỆN NCC', binding: 'doc4.signatures.supplier_representative' },
 ]);
 
 const resultComponents = (title) => ({
   schema_version: 1,
   components: [
-    { id: 'header', type: 'header', title, subtitle_binding: 'doc4.related_information.report_no' },
-    { id: 'metadata', type: 'metadata_grid', title: 'Thông tin báo cáo', fields: metadataFields },
-    { id: 'scope', type: 'scope_summary', title: 'Phạm vi đánh giá', fields: scopeFields },
+    { id: 'header', type: 'header', title, meta_fields: headerMetaFields },
+    { id: 'metadata', type: 'metadata_grid', title: 'Thông tin nhà cung cấp', fields: metadataFields, layout: 'stacked' },
+    { id: 'scope', type: 'scope_summary', title: 'Phạm vi đánh giá', fields: scopeFields, layout: 'stacked' },
     { id: 'participants', type: 'participants_table', title: 'Thành phần tham dự', binding: 'doc4.participants.rows', columns: participantColumns },
     { id: 'supplier-introduction', type: 'supplier_introduction', title: 'Giới thiệu nhà cung cấp', binding: 'doc4.supplier_introduction.content' },
     { id: 'compliance', type: 'compliance_overview', title: 'Tổng hợp tuân thủ', binding: 'doc4.compliance_summary', columns: [
@@ -87,25 +100,15 @@ const resultComponents = (title) => ({
       { label: 'D', key: 'counts.D' }, { label: 'NA', key: 'counts.NA' },
       { label: '%', key: 'percentage' },
     ] },
-    { id: 'result', type: 'metadata_grid', title: 'Kết quả', fields: [
+    { id: 'result', type: 'metadata_grid', title: 'Kết quả', layout: 'stacked', fields: [
       { label: 'Điểm cuối', binding: 'doc4.result_summary.final_score_percent' },
       { label: 'Kết quả', binding: 'doc4.result_summary.final_result_label' },
       { label: 'Kết luận', binding: 'doc4.result_summary.final_conclusion' },
     ] },
     { id: 'nonconformities', type: 'nonconformity_table', title: 'Điểm không phù hợp', binding: 'doc4.nonconformity_summary', columns: nonconformityColumns },
-    { id: 'corrective-actions', type: 'corrective_action_table', title: 'Hành động khắc phục', binding: 'corrective_action_rows', columns: [
-      { label: 'Vấn đề', key: 'issue_description' }, { label: 'Hành động', key: 'required_action' },
-      { label: 'Trạng thái', key: 'status' },
-    ] },
-    { id: 'approval-history', type: 'approval_history', title: 'Lịch sử phê duyệt', binding: 'approval_history_rows', columns: [
-      { label: 'Thời gian', key: 'created_at' }, { label: 'Vai trò', key: 'actor_role' }, { label: 'Hành động', key: 'action' },
-    ] },
-    { id: 'signatures', type: 'signature_block', title: 'Chữ ký', fields: [
-      { label: 'Đánh giá viên', binding: 'doc4.signatures.evaluator' },
-      { label: 'Đại diện NCC', binding: 'doc4.signatures.supplier_representative' },
-      { label: 'Người duyệt', binding: 'doc4.signatures.approved_by' },
-    ] },
+    { id: 'signatures', type: 'signature_block', title: '', fields: signatureFields, display_mode: 'manual_blank', show_title: false },
   ],
+  styles: reportStyles,
 });
 
 const definitions = Object.freeze({
@@ -119,17 +122,15 @@ const definitions = Object.freeze({
     componentTree: Object.freeze({
       schema_version: 1,
       components: Object.freeze([
-        { id: 'header', type: 'header', title: 'BIÊN BẢN LÀM VIỆC VỚI NHÀ CUNG CẤP', subtitle_binding: 'doc4.related_information.report_no' },
-        { id: 'metadata', type: 'metadata_grid', title: 'Thông tin báo cáo', fields: metadataFields },
-        { id: 'scope', type: 'scope_summary', title: 'Phạm vi đánh giá', fields: scopeFields },
+        { id: 'header', type: 'header', title: 'BIÊN BẢN LÀM VIỆC VỚI NHÀ CUNG CẤP', meta_fields: headerMetaFields },
+        { id: 'metadata', type: 'metadata_grid', title: 'Thông tin nhà cung cấp', fields: metadataFields, layout: 'stacked' },
+        { id: 'scope', type: 'scope_summary', title: 'Phạm vi đánh giá', fields: scopeFields, layout: 'stacked' },
         { id: 'participants', type: 'participants_table', title: 'Thành phần tham dự', binding: 'doc4.participants.rows', columns: participantColumns },
         { id: 'supplier-introduction', type: 'supplier_introduction', title: 'Giới thiệu nhà cung cấp', binding: 'doc4.supplier_introduction.content' },
         { id: 'nonconformities', type: 'nonconformity_table', title: 'Nội dung không phù hợp', binding: 'doc4.nonconformity_summary', columns: nonconformityColumns },
-        { id: 'signatures', type: 'signature_block', title: 'Chữ ký', fields: [
-          { label: 'Đánh giá viên', binding: 'doc4.signatures.evaluator' },
-          { label: 'Đại diện NCC', binding: 'doc4.signatures.supplier_representative' },
-        ] },
+        { id: 'signatures', type: 'signature_block', title: '', fields: signatureFields, display_mode: 'manual_blank', show_title: false },
       ]),
+      styles: reportStyles,
     }),
   }),
   ROUND1_RESULT: Object.freeze({

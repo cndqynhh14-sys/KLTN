@@ -14,6 +14,7 @@ function parseIdentityList(value) {
 function normalizedAttendee(value) {
   return {
     name: String(value?.name || value?.title || '').trim(),
+    identity: String(value?.principal_id || value?.user_id || value?.identity || '').trim(),
     opening: !!(value?.opening || value?.opening_meeting),
     closing: !!(value?.closing || value?.closing_meeting),
   };
@@ -25,6 +26,11 @@ class EvaluationParticipantRepository {
     this.statements = {
       ticket: db.prepare('SELECT id, created_at, created_by, updated_by FROM evaluation_tickets WHERE id = ?'),
       round: db.prepare('SELECT id, started_at, locked_by FROM evaluation_rounds WHERE id = ?'),
+      roundOwnership: db.prepare(`SELECT r.id, r.started_at, r.completed_at, r.locked_at,
+          r.status, t.source_kind, t.assigned_specialist_user_id, t.assigned_specialist_id
+        FROM evaluation_rounds r
+        JOIN evaluation_tickets t ON t.id = r.ticket_id
+        WHERE r.id = ?`),
       ticketParticipants: db.prepare(`SELECT * FROM evaluation_participants
         WHERE ticket_id = ? AND active = 1
         ORDER BY participant_role, id`),
@@ -46,6 +52,17 @@ class EvaluationParticipantRepository {
         @ticket_id, @round_id, @user_id, @principal_id, @display_name, @participant_role,
         @opening_meeting, @closing_meeting, @assigned_at, @assigned_by, @assigned_by_user_id
       )`),
+      roundOwnerAttendee: db.prepare(`SELECT * FROM evaluation_participants
+        WHERE round_id = @round_id AND participant_role = 'ATTENDEE' AND active = 1
+          AND (
+            principal_id = @principal_id
+            OR lower(COALESCE(user_id, '')) = lower(@user_id)
+            OR lower(trim(display_name)) = lower(trim(@display_name))
+          )
+        ORDER BY id LIMIT 1`),
+      canonicalizeRoundAttendee: db.prepare(`UPDATE evaluation_participants
+        SET user_id = @user_id, principal_id = @principal_id
+        WHERE id = @id AND active = 1`),
     };
   }
 
@@ -165,6 +182,40 @@ class EvaluationParticipantRepository {
     });
   }
 
+  ensureRoundOwnerAttendee(roundId, actor = null) {
+    const round = this.statements.roundOwnership.get(roundId);
+    if (!round || round.source_kind !== 'NATIVE' || round.completed_at || round.locked_at || round.status === 'Hoàn thành') return null;
+    const owner = this.user(round.assigned_specialist_user_id || round.assigned_specialist_id);
+    if (!owner) return null;
+    const lookup = {
+      round_id: round.id,
+      principal_id: owner.user_id,
+      user_id: owner.email,
+      display_name: owner.display_name || owner.email,
+    };
+    const existing = this.statements.roundOwnerAttendee.get(lookup);
+    if (existing) {
+      if (!existing.principal_id || !existing.user_id) {
+        this.statements.canonicalizeRoundAttendee.run({
+          id: existing.id,
+          principal_id: owner.user_id,
+          user_id: owner.email,
+        });
+      }
+      return existing.id;
+    }
+    this.insertParticipant({
+      roundId: round.id,
+      identity: owner.user_id,
+      role: 'ATTENDEE',
+      opening: true,
+      closing: true,
+      assignedAt: round.started_at,
+      assignedBy: actor || owner.user_id,
+    });
+    return this.statements.roundOwnerAttendee.get(lookup)?.id || null;
+  }
+
   setRoundAttendees(roundId, attendees, actor = null) {
     const round = this.statements.round.get(roundId);
     if (!round) return;
@@ -173,7 +224,9 @@ class EvaluationParticipantRepository {
     for (const raw of Array.isArray(attendees) ? attendees : []) {
       const attendee = normalizedAttendee(raw);
       if (!attendee.name) continue;
-      const key = attendee.name.toLocaleLowerCase('en-US');
+      const key = attendee.identity
+        ? `identity:${attendee.identity.toLocaleLowerCase('en-US')}`
+        : `name:${attendee.name.toLocaleLowerCase('en-US')}`;
       const existing = normalized.get(key) || { ...attendee, opening: false, closing: false };
       existing.opening = existing.opening || attendee.opening;
       existing.closing = existing.closing || attendee.closing;
@@ -182,7 +235,7 @@ class EvaluationParticipantRepository {
     for (const attendee of normalized.values()) {
       this.insertParticipant({
         roundId: round.id,
-        identity: attendee.name,
+        identity: attendee.identity || attendee.name,
         displayName: attendee.name,
         role: 'ATTENDEE',
         opening: attendee.opening,

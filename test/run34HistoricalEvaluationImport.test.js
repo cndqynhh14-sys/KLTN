@@ -253,6 +253,10 @@ test('RUN-34 historical tickets are immutable and remain visible in aggregate da
     assert.equal(dashboard.kpis.evaluation_ticket_count.current_value, 2);
     const corrected = dashboard.top_suppliers.find((row) => row.supplier_code === 'NCC-002');
     assert.equal(corrected.average_final_score, 65);
+    assert.equal(dashboard.details.industry_performance.length, 1);
+    assert.equal(dashboard.details.industry_performance[0].mch3, 'Rau củ', 'the real repository returns evaluation_tickets.mch3');
+    assert.equal(dashboard.details.industry_performance[0].total_suppliers, 2);
+    assert.equal(dashboard.meta.industry_dimension, 'mch3');
     assert.equal(dashboard.details.violation_distribution.total_violations, 2);
     assert.equal(db.prepare('SELECT COUNT(*) FROM evaluation_answers').pluck().get(), 0);
   } finally {

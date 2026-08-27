@@ -316,11 +316,15 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
     assert.equal(saveJson.ticket.workflow_status, processingStatus);
     assert.equal(saveJson.answers[String(question.id)].score, 'A');
     assert.equal(saveJson.canonical_answers[String(question.question_item_id)].score, 'A');
-    assert.deepEqual(saveJson.round.attendees, [
+    assert.deepEqual(saveJson.round.attendees.slice(0, 2), [
       { name: 'Nguyen Van A - QA Lead', opening: true, closing: true },
       { name: 'Tran Thi B - NCC', opening: true, closing: false },
     ]);
-    assert.equal(saveJson.round.participants.filter((item) => item.participant_role === 'ATTENDEE').length, 2);
+    const ownerAttendee = saveJson.round.attendees.find((item) => item.user_id === 'admin@masangroup.com');
+    assert.ok(ownerAttendee);
+    assert.equal(ownerAttendee.opening, true);
+    assert.equal(ownerAttendee.closing, true);
+    assert.equal(saveJson.round.participants.filter((item) => item.participant_role === 'ATTENDEE').length, 3);
     assert.equal(saveJson.ticket.supplier_introduction, REQUIRED_SUPPLIER_INTRODUCTION);
     assert.equal(
       db.prepare('SELECT supplier_introduction FROM evaluation_tickets WHERE id = ?').get(ticketInfo.lastInsertRowid).supplier_introduction,
@@ -329,7 +333,7 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
     assert.ok(!db.pragma("table_info('evaluation_rounds')").some((column) => column.name === 'attendees_json'));
     assert.equal(db.prepare(`SELECT COUNT(*) FROM evaluation_participants
       WHERE round_id=(SELECT id FROM evaluation_rounds WHERE ticket_id=? AND round_no=1)
-        AND participant_role='ATTENDEE'`).pluck().get(ticketInfo.lastInsertRowid), 2);
+        AND participant_role='ATTENDEE'`).pluck().get(ticketInfo.lastInsertRowid), 3);
     assert.equal(db.prepare('SELECT current_status FROM evaluation_tickets WHERE ticket_code = ?').get('TICKET-DRAFT').current_status, processingStatus);
     assert.equal(db.prepare('SELECT status FROM evaluation_rounds WHERE ticket_id = ? AND round_no = 1').get(ticketInfo.lastInsertRowid).status, processingStatus);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM workflow_history WHERE ticket_id = ? AND action = ?').get(ticketInfo.lastInsertRowid, 'SCORING_DRAFT_SAVE').count, 1);
@@ -623,6 +627,34 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     assert.equal(canonicalCreated.nonconformity_content, 'Label evidence is incomplete');
 
     const ncId = createJson.nonconformities[0].id;
+    const catalogRes = await fetch(`${appInfo.baseUrl}/evaluations/corrective-requirements`, {
+      headers: { Cookie: `qlcl_token=${token}` },
+    });
+    const catalogJson = await catalogRes.json();
+    assert.equal(catalogRes.status, 200, JSON.stringify(catalogJson));
+    const seededRequirement = catalogJson.items.find((item) => item.name === 'Bổ sung hồ sơ');
+    assert.ok(seededRequirement?.id);
+
+    const createRequirementRes = await fetch(`${appInfo.baseUrl}/evaluations/corrective-requirements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
+      body: JSON.stringify({ name: '  Cập nhật   quy trình vệ sinh  ' }),
+    });
+    const createRequirementJson = await createRequirementRes.json();
+    assert.equal(createRequirementRes.status, 201, JSON.stringify(createRequirementJson));
+    assert.equal(createRequirementJson.item.name, 'Cập nhật quy trình vệ sinh');
+    assert.equal(createRequirementJson.created, true);
+
+    const duplicateRequirementRes = await fetch(`${appInfo.baseUrl}/evaluations/corrective-requirements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
+      body: JSON.stringify({ name: 'cập nhật quy trình vệ sinh' }),
+    });
+    const duplicateRequirementJson = await duplicateRequirementRes.json();
+    assert.equal(duplicateRequirementRes.status, 200, JSON.stringify(duplicateRequirementJson));
+    assert.equal(duplicateRequirementJson.duplicate, true);
+    assert.equal(duplicateRequirementJson.item.id, createRequirementJson.item.id);
+
     const invalidUpdateRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC/nonconformities/${ncId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
@@ -641,6 +673,7 @@ test('nonconformities are generated from B/C/D answers and keep correction field
       headers: { 'Content-Type': 'application/json', Cookie: `qlcl_token=${token}` },
       body: JSON.stringify({
         remediation: 'Bổ sung hồ sơ',
+        corrective_requirement_id: seededRequirement.id,
         due_date: '2026-08-01',
         status: 'IN_PROGRESS',
       }),
@@ -651,8 +684,10 @@ test('nonconformities are generated from B/C/D answers and keep correction field
     assert.equal(updateJson.item.due_date, '2026-08-01');
     assert.equal(updateJson.item.status, 'IN_PROGRESS');
     assert.equal(updateJson.item.remediation_content, updateJson.item.remediation);
-    assert.equal(db.prepare(`SELECT remediation_content FROM evaluation_nonconformities WHERE id=?`)
-      .pluck().get(ncId), 'Bổ sung hồ sơ');
+    const canonicalRequirement = db.prepare(`SELECT remediation_content, corrective_requirement_id
+      FROM evaluation_nonconformities WHERE id=?`).get(ncId);
+    assert.equal(canonicalRequirement.remediation_content, 'Bổ sung hồ sơ');
+    assert.equal(canonicalRequirement.corrective_requirement_id, seededRequirement.id);
 
     const resaveRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC/rounds/1/answers`, {
       method: 'PUT',
@@ -783,7 +818,7 @@ test('round completion requires remediation and due date for nonconformities', a
     });
     const missingAttendeesJson = await missingAttendeesRes.json();
     assert.equal(missingAttendeesRes.status, 400, JSON.stringify(missingAttendeesJson));
-    assert.equal(missingAttendeesJson.error, 'attendees_required');
+    assert.equal(missingAttendeesJson.error, 'supplier_introduction_required');
     assert.equal(db.prepare('SELECT locked_at FROM evaluation_rounds WHERE id = ?').get(round.id).locked_at, null);
 
     const missingSupplierIntroRes = await fetch(`${appInfo.baseUrl}/evaluations/TICKET-NC-REQ/rounds/1/complete`, {

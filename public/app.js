@@ -7,6 +7,7 @@ import { $, el } from './js/dom.js';
 import { UI_TEXT, apiErrorMessage, reportTypeText, statusText } from './js/i18n.js';
 import { state } from './js/state.js';
 import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, summarizeQuestionScopes } from './js/question-item-groups.mjs';
+import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, filterEvaluationsByStatus, getEvaluationWorkflowSteps } from './js/evaluation-status.mjs';
 
 (function () {
   'use strict';
@@ -46,7 +47,12 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
   const EVAL_PAGE_SIZE = 15;
   const SUPPLIER_PAGE_SIZE = 15;
   const LEGAL_FILE_EXTENSIONS = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
-  const CORRECTIVE_REQUIREMENT_OPTIONS = ['Bổ sung hồ sơ', 'Gửi hình ảnh khắc phục'];
+  let correctiveRequirementItems = [
+    { id: null, name: 'Bổ sung hồ sơ', normalized_name: 'bổ sung hồ sơ' },
+    { id: null, name: 'Gửi hình ảnh khắc phục', normalized_name: 'gửi hình ảnh khắc phục' },
+  ];
+  let activeCorrectiveRequirementInput = null;
+  let correctiveRequirementCreateTarget = null;
   const REGION_OPTIONS = ['MB', 'MN'];
   const PROVINCES_BY_REGION = {
     MB: [
@@ -604,9 +610,10 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     state.workflowLoading = true;
     state.workflowError = '';
     loadWorkflowTab();
-    const [r] = await Promise.all([
+    const [r, , correctiveRequirements] = await Promise.all([
       api('/evaluations/bootstrap'),
       loadCriteriaVariants().catch(() => null),
+      api('/evaluations/corrective-requirements').catch(() => null),
     ]);
     state.workflowLoading = false;
     if (!r.ok) {
@@ -615,6 +622,9 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       return;
     }
     applyWorkflowPayload(r.data || {});
+    if (correctiveRequirements?.ok && Array.isArray(correctiveRequirements.data?.items)) {
+      correctiveRequirementItems = correctiveRequirements.data.items;
+    }
     state.workflowLoaded = true;
     loadWorkflowTab();
     loadNotifications();
@@ -655,8 +665,19 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const roundNo = ticket.current_round_no || ticket.completed_round || 1;
     const key = ticket.code + ':' + roundNo;
     if (state.roundLoaded[key] && !force) return answersByTicket[ticket.code] || {};
-    const r = await api('/evaluations/' + encodeURIComponent(ticket.code) + '/rounds/' + roundNo);
+    const detailRequest = force || !Array.isArray(ticket.workflow_history)
+      ? api('/evaluations/' + encodeURIComponent(ticket.code))
+      : Promise.resolve(null);
+    const [r, detail] = await Promise.all([
+      api('/evaluations/' + encodeURIComponent(ticket.code) + '/rounds/' + roundNo),
+      detailRequest,
+    ]);
     if (!r.ok) throw new Error((r.data && r.data.error) || 'round_load_failed');
+    if (detail?.ok) {
+      Object.assign(ticket, mapTicketFromApi(detail.data.ticket));
+      ticket.workflow_history = detail.data.workflow_history || [];
+      ticket.approval_tasks = detail.data.approval_tasks || [];
+    }
     state.roundQuestions[key] = (r.data.questions || []).map(mapQuestionFromApi);
     answersByTicket[ticket.code] = r.data.canonical_answers || r.data.answers || {};
     if (r.data.round) {
@@ -1958,14 +1979,11 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     return new Intl.NumberFormat('vi-VN').format(n);
   }
   function statusClass(status) {
-    if (status === 'Khởi tạo') return 'draft';
-    if ((status || '').startsWith('Đang xử lý')) return 'processing';
-    if ((status || '').startsWith('Chờ duyệt') || status === 'Chờ khắc phục') return 'waiting';
-    if (status === 'Hoàn thành') return 'done';
-    return 'failed';
+    return evaluationStatusMeta(status).badgeClass;
   }
   function statusBadge(status) {
-    const span = el('span', { className: 'status-badge admin-status-badge ' + statusClass(status), text: status || '—' });
+    const meta = evaluationStatusMeta(status);
+    const span = el('span', { className: 'status-badge admin-status-badge ' + statusClass(status), text: meta.label });
     return span;
   }
   function labeledTd(label, opts) {
@@ -2001,6 +2019,8 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       send: [['path', { d: 'M22 2 11 13' }], ['path', { d: 'm22 2-7 20-4-9-9-4Z' }]],
       return: [['path', { d: 'm9 14-5-5 5-5' }], ['path', { d: 'M20 20v-7a4 4 0 0 0-4-4H4' }]],
       more: [['circle', { cx: '5', cy: '12', r: '1.5' }], ['circle', { cx: '12', cy: '12', r: '1.5' }], ['circle', { cx: '19', cy: '12', r: '1.5' }]],
+      lock: [['rect', { x: '5', y: '11', width: '14', height: '10', rx: '2' }],['path', { d: 'M8 11V7a4 4 0 0 1 8 0v4' }],],
+      copy: [['rect', { x: '8', y: '8', width: '12', height: '12', rx: '2' }],['path', { d: 'M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2' }],],
       download: [['path', { d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }], ['path', { d: 'M7 10l5 5 5-5' }], ['path', { d: 'M12 15V3' }]],
     };
     (paths[name] || paths.eye).forEach(([tag, attrs]) => add(tag, attrs));
@@ -2458,6 +2478,8 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     if (!Array.isArray(rows)) return [];
     return rows.map((row) => ({
       name: String(row && (row.name || row.title) || '').trim(),
+      principal_id: String(row && row.principal_id || '').trim() || null,
+      user_id: String(row && row.user_id || '').trim() || null,
       opening: !!(row && (row.opening || row.opening_meeting)),
       closing: !!(row && (row.closing || row.closing_meeting)),
     })).filter((row) => row.name || row.opening || row.closing);
@@ -2489,6 +2511,9 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const hasComment = !['B', 'C', 'D', 'NA'].includes(answer.score) || !!String(answer.note || answer.comment || '').trim();
     const hasAttachment = !(question && question.requiresAttachment) || !!answer.attachment_id || !!answer.attachmentName || (Array.isArray(answer.attachments) && answer.attachments.length > 0);
     return hasComment && hasAttachment;
+  }
+  function scoringChoicesForQuestion(question) {
+    return question?.clause === 'exclusion' ? ['A', 'D', 'NA'] : ['A', 'B', 'C', 'D', 'NA'];
   }
   function collectScoringValidationIssues(answers, questions) {
     const issues = [];
@@ -2751,6 +2776,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
   }
 
   function openReassessmentList(kind) {
+    state.evalStatusTab = '';
     state.evalFilters = {
       ...(state.evalFilters || {}),
       status: 'Chờ khắc phục',
@@ -2796,6 +2822,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
 
   function filteredEvaluations() {
     let rows = demoEvaluations.filter(ownsWorkflowRecord);
+    rows = filterEvaluationsByStatus(rows, state.evalStatusTab);
     const q = (state.evalSearch || '').trim().toLowerCase();
     const f = state.evalFilters || {};
     if (q) {
@@ -2838,6 +2865,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const f = state.evalFilters || {};
     return filterSummary([
       state.evalSearch && '"' + state.evalSearch + '"',
+      state.evalStatusTab,
       f.type,
       f.status,
       f.mch2,
@@ -2932,6 +2960,36 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     if ($('eval-count-draft')) $('eval-count-draft').textContent = fmtInt(draft);
     if ($('eval-count-processing')) $('eval-count-processing').textContent = fmtInt(processing);
     if ($('eval-count-waiting')) $('eval-count-waiting').textContent = fmtInt(waiting);
+  }
+
+  function renderEvaluationStatusTabs() {
+    const container = $('eval-status-tabs');
+    if (!container) return;
+    const counts = evaluationStatusCounts(demoEvaluations.filter(ownsWorkflowRecord));
+    container.textContent = '';
+    EVALUATION_STATUS_TABS.forEach((tab) => {
+      const active = (state.evalStatusTab || '') === tab.value;
+      const button = el('button', {
+        className: 'evaluation-status-tab' + (active ? ' active' : ''),
+        attrs: {
+          type: 'button',
+          role: 'tab',
+          'aria-selected': active ? 'true' : 'false',
+          'data-evaluation-status': tab.value,
+        },
+      });
+      button.appendChild(el('span', { text: tab.label }));
+      button.appendChild(el('span', { className: 'evaluation-status-tab-count', text: fmtInt(counts[tab.value] || 0) }));
+      button.addEventListener('click', () => {
+        state.evalStatusTab = tab.value;
+        state.evalFilters = { ...(state.evalFilters || {}), status: '' };
+        if ($('eval-status-filter')) $('eval-status-filter').value = '';
+        state.evalPage = 1;
+        resetMobileLimit('eval');
+        renderEvaluations();
+      });
+      container.appendChild(button);
+    });
   }
 
   function renderEvaluationMobileCards(rows) {
@@ -3352,6 +3410,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const tbody = $('eval-tbody');
     if (!tbody) return;
     tbody.textContent = '';
+    renderEvaluationStatusTabs();
     syncCollapsibleFilterIndicators();
     if (state.workflowLoading || state.workflowError) {
       const tr = el('tr');
@@ -4091,20 +4150,30 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const ticket = selectedTicket();
     if (!ticket || !resourceCan(ticket, 'score') || ticket.scoringLocked) return;
     const key = roundStateKey(ticket.code, ticket.current_round_no || ticket.completed_round || 1);
+    const existingRows = state.roundAttendees[key] || [];
     const rows = [];
     Array.from(document.querySelectorAll('[data-attendee-index]')).forEach((input) => {
       const index = parseInt(input.getAttribute('data-attendee-index'), 10);
-      rows[index] = rows[index] || {};
+      rows[index] = rows[index] || {
+        principal_id: existingRows[index]?.principal_id || null,
+        user_id: existingRows[index]?.user_id || null,
+      };
       rows[index].name = input.value;
     });
     Array.from(document.querySelectorAll('[data-attendee-opening]')).forEach((input) => {
       const index = parseInt(input.getAttribute('data-attendee-opening'), 10);
-      rows[index] = rows[index] || {};
+      rows[index] = rows[index] || {
+        principal_id: existingRows[index]?.principal_id || null,
+        user_id: existingRows[index]?.user_id || null,
+      };
       rows[index].opening = input.checked;
     });
     Array.from(document.querySelectorAll('[data-attendee-closing]')).forEach((input) => {
       const index = parseInt(input.getAttribute('data-attendee-closing'), 10);
-      rows[index] = rows[index] || {};
+      rows[index] = rows[index] || {
+        principal_id: existingRows[index]?.principal_id || null,
+        user_id: existingRows[index]?.user_id || null,
+      };
       rows[index].closing = input.checked;
     });
     state.roundAttendees[key] = normalizeAttendees(rows);
@@ -4219,6 +4288,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       renderSupplierIntroduction(null);
       renderNonconformities([], null);
       renderScoringSummary(null, null);
+      renderEvaluationWorkflowStepper(null);
       return;
     }
     const routeTicket = scoringTicketFromRoute();
@@ -4250,6 +4320,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       loadScoringRoundAndRender(selectedTicket);
       return;
     }
+    renderEvaluationWorkflowStepper(selectedTicket);
     const ticketQuestions = questionsForTicket(selectedTicket);
     const sectionSelect = $('scoring-section-filter');
     const currentSection = sectionSelect.value;
@@ -4306,7 +4377,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       tr.appendChild(labeledTd('Điều khoản', { className: 'mono muted', text: r.question_code || '' }));
       const qTd = labeledTd('Câu hỏi');
       qTd.appendChild(el('div', { text: r.question }));
-      if (answerReadonly) qTd.appendChild(el('div', { className: 'muted mono', text: 'Kế thừa từ lần 1 - chỉ đọc' }));
+      if (answerReadonly) qTd.appendChild(el('div', { className: 'muted mono', text: 'Kế thừa từ lần 1' }));
       if (r.requiresAttachment) qTd.appendChild(el('div', { className: 'muted mono', text: 'Yêu cầu bằng chứng' }));
       if (rowIssue) qTd.appendChild(el('div', { className: 'field-error validation-inline', text: rowIssue.message }));
       tr.appendChild(qTd);
@@ -4317,15 +4388,40 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       if (r.requiresAttachment) typeTd.appendChild(el('span', { className: 'tag sev-blue', text: UI_TEXT.common.evidence }));
       tr.appendChild(typeTd);
       const scoreTd = labeledTd('Điểm');
-      const score = el('select', {
-        className: 'input score-select' + (issueMatchesQuestion(scoringValidationTarget, r.id, 'score') ? ' invalid' : ''),
-        attrs: { 'data-question-id': r.id },
+      const scoreInvalid = issueMatchesQuestion(scoringValidationTarget, r.id, 'score');
+      const scoreChoices = scoringChoicesForQuestion(r);
+      const scoreGroup = el('div', {
+        className: 'score-segmented' + (r.clause === 'exclusion' ? ' exclusion' : '') + (scoreInvalid ? ' invalid' : ''),
+        attrs: {
+          role: 'radiogroup',
+          tabindex: '-1',
+          'aria-label': `Điểm cho điều khoản ${r.question_code || r.id}`,
+          'aria-invalid': scoreInvalid ? 'true' : 'false',
+          'data-question-id': r.id,
+        },
       });
-      const options = ['', ...(r.allowedScores && r.allowedScores.length ? r.allowedScores : (r.clause === 'exclusion' ? ['A', 'D', 'NA'] : ['A', 'B', 'C', 'D', 'NA']))];
-      options.forEach((v) => score.appendChild(el('option', { attrs: { value: v }, text: v || 'Chọn' })));
-      score.value = answer.score || '';
-      score.disabled = !editableRound || answerReadonly;
-      scoreTd.appendChild(score); tr.appendChild(scoreTd);
+      const scoreValue = el('input', {
+        attrs: { type: 'hidden', 'data-score-value': r.id, value: answer.score || '' },
+      });
+      scoreValue.value = answer.score || '';
+      scoreGroup.appendChild(scoreValue);
+      scoreChoices.forEach((value, index) => {
+        const selected = answer.score === value;
+        const choice = el('button', {
+          className: 'score-segment' + (selected ? ' selected' : ''),
+          text: value,
+          attrs: {
+            type: 'button',
+            role: 'radio',
+            'aria-checked': selected ? 'true' : 'false',
+            tabindex: selected || (!answer.score && index === 0) ? '0' : '-1',
+            'data-score-choice': value,
+          },
+        });
+        choice.disabled = !editableRound || answerReadonly;
+        scoreGroup.appendChild(choice);
+      });
+      scoreTd.appendChild(scoreGroup); tr.appendChild(scoreTd);
       const noteTd = labeledTd('Ghi chú');
       const note = el('input', {
         className: 'input note-input' + (issueMatchesQuestion(scoringValidationTarget, r.id, 'note') ? ' invalid' : ''),
@@ -4341,6 +4437,30 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     });
     renderScoringSummary(chosen ? answers : null, selectedTicket, ticketQuestions);
     $('scoring-empty').classList.toggle('hidden', chosen);
+  }
+
+  function renderEvaluationWorkflowStepper(ticket) {
+    const container = $('scoring-workflow-stepper');
+    if (!container) return;
+    container.textContent = '';
+    const steps = getEvaluationWorkflowSteps(ticket);
+    container.classList.toggle('hidden', steps.length === 0);
+    steps.forEach((step) => {
+      const item = el('div', { className: `evaluation-workflow-step ${step.state}` });
+      const marker = step.state === 'complete' ? '✓' : step.state === 'current' ? '●' : '○';
+      item.appendChild(el('span', { className: 'evaluation-workflow-marker', text: marker, attrs: { 'aria-hidden': 'true' } }));
+      const content = el('span', { className: 'evaluation-workflow-content' });
+      content.appendChild(el('span', { className: 'evaluation-workflow-label', text: step.label }));
+      if (step.occurredAt) {
+        content.appendChild(el('time', {
+          className: 'evaluation-workflow-date',
+          text: isoToVNDate(String(step.occurredAt).slice(0, 10)),
+          attrs: { datetime: step.occurredAt },
+        }));
+      }
+      item.appendChild(content);
+      container.appendChild(item);
+    });
   }
 
   function renderScoringSummary(answers, ticket, questions) {
@@ -4427,7 +4547,10 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
   }
 
   function evaluationDateForNonconformities(ticket) {
-    return ticket?.actual_evaluation_date_iso || '';
+    const roundNo = Number(ticket?.current_round_no || ticket?.completed_round || 1);
+  if (roundNo !== 1) return '';
+
+  return ticket?.actual_evaluation_date_iso || localTodayISODate();
   }
 
   function defaultCorrectionDueDateForTicket(ticket) {
@@ -4475,8 +4598,9 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const draftKey = persisted ? '' : draftCorrectiveRequirementKey(ticket, row);
     const draft = draftKey ? (draftCorrectiveRequirementStore()[draftKey] || {}) : {};
     const hasDraftDueDate = Object.prototype.hasOwnProperty.call(draft, 'due_date');
+    const hasDraftRequirementId = Object.prototype.hasOwnProperty.call(draft, 'corrective_requirement_id');
     const savedDueDate = row?.due_date || (hasDraftDueDate ? draft.due_date : '');
-    const defaultDueDate = !persisted && !hasDraftDueDate && !savedDueDate
+    const defaultDueDate = !hasDraftDueDate && !savedDueDate
       ? defaultCorrectionDueDateForTicket(ticket)
       : '';
     return {
@@ -4485,6 +4609,9 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       remediation_content: row?.remediation_content || row?.remediation || draft.remediation || '',
       nonconformity: row?.nonconformity_content || row?.nonconformity || row?.note || '',
       remediation: row?.remediation_content || row?.remediation || draft.remediation || '',
+      corrective_requirement_id: hasDraftRequirementId
+        ? draft.corrective_requirement_id
+        : (row?.corrective_requirement_id || null),
       due_date: savedDueDate || defaultDueDate,
       _due_date_is_default: !!defaultDueDate,
       _validation_id: persisted ? String(row.id) : draftKey,
@@ -4502,7 +4629,15 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     if (!isRemediation
       && input.hasAttribute('data-nc-default-due-date')
       && input.getAttribute('data-nc-due-date-dirty') !== 'true') return;
-    store[key][isRemediation ? 'remediation' : 'due_date'] = input.value || '';
+    if (isRemediation) {
+      const selected = input.getAttribute('data-corrective-requirement-selected') === 'true';
+      store[key].remediation = selected ? displayCorrectiveRequirementName(input.value) : '';
+      store[key].corrective_requirement_id = selected
+        ? (Number(input.getAttribute('data-corrective-requirement-id')) || null)
+        : null;
+      return;
+    }
+    store[key].due_date = input.value || '';
   }
 
   function saveDraftNonconformityRequirementInputs() {
@@ -4559,20 +4694,38 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       const canEditNc = resourceCan(ticket, 'score') && !lockedCorrection && (!!r.id || !!r._draft_key);
       const remediationTd = labeledTd('Yêu cầu');
       if (canEditNc) {
-        const selectAttrs = r._draft_key
+        const inputAttrs = r._draft_key
           ? { 'data-nc-remediation': validationId, 'data-nc-draft-remediation': r._draft_key }
           : { 'data-nc-remediation': validationId };
-        const select = el('select', {
-          className: 'input' + (issueMatchesNonconformity(scoringValidationTarget, r, 'remediation') ? ' invalid' : ''),
-          attrs: selectAttrs,
+        inputAttrs.role = 'combobox';
+        inputAttrs.type = 'search';
+        inputAttrs.placeholder = 'Chọn yêu cầu khắc phục...';
+        inputAttrs.autocomplete = 'off';
+        inputAttrs.maxlength = '120';
+        inputAttrs['aria-autocomplete'] = 'list';
+        inputAttrs['aria-haspopup'] = 'listbox';
+        inputAttrs['aria-controls'] = 'corrective-requirement-options';
+        inputAttrs['aria-expanded'] = 'false';
+        inputAttrs['data-corrective-requirement-combobox'] = 'true';
+        inputAttrs['data-corrective-requirement-selected'] = r.remediation ? 'true' : 'false';
+        if (r.corrective_requirement_id) inputAttrs['data-corrective-requirement-id'] = r.corrective_requirement_id;
+        const wrapper = el('div', { className: 'corrective-requirement-combobox' });
+        const input = el('input', {
+          className: 'input corrective-requirement-input' + (issueMatchesNonconformity(scoringValidationTarget, r, 'remediation') ? ' invalid' : ''),
+          attrs: inputAttrs,
         });
-        select.appendChild(el('option', { attrs: { value: '' }, text: 'Chọn yêu cầu' }));
-        CORRECTIVE_REQUIREMENT_OPTIONS.forEach((option) => select.appendChild(el('option', { attrs: { value: option }, text: option })));
-        if (r.remediation && !CORRECTIVE_REQUIREMENT_OPTIONS.includes(r.remediation)) {
-          select.appendChild(el('option', { attrs: { value: r.remediation }, text: r.remediation + ' (dữ liệu cũ)' }));
-        }
-        select.value = r.remediation || '';
-        remediationTd.appendChild(select);
+        input.value = r.remediation || '';
+        wrapper.appendChild(input);
+        wrapper.appendChild(el('button', {
+          className: 'corrective-requirement-toggle',
+          text: '▾',
+          attrs: {
+            type: 'button',
+            'aria-label': 'Mở danh mục yêu cầu khắc phục',
+            'data-corrective-requirement-toggle': 'true',
+          },
+        }));
+        remediationTd.appendChild(wrapper);
         if (issueMatchesNonconformity(scoringValidationTarget, r, 'remediation')) remediationTd.appendChild(el('span', { className: 'field-error validation-inline', text: rowIssue.message }));
       } else {
         remediationTd.appendChild(el('span', { className: 'muted', text: r.remediation || (r.id ? '-' : 'Lưu tạm để nhập yêu cầu') }));
@@ -4615,13 +4768,16 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
 
   function missingCorrectiveRequirements(ticket) {
     const rows = (ticket && ticket.nonconformities) || [];
-    return rows.filter((row) => ['B', 'C', 'D'].includes(row.severity || row.score) && (!String(row.remediation || '').trim() || !String(row.due_date || '').trim()));
+    return rows.map((row) => nonconformityDisplayRow(row, ticket)).filter((row) => ['B', 'C', 'D'].includes(row.severity || row.score) && (!String(row.remediation || '').trim() || !String(row.due_date || '').trim()));
   }
 
   async function updateNonconformityRequirement(ticket, row, fields) {
     if (!ticket || !row || !row.id) return null;
     const body = {
       remediation: Object.prototype.hasOwnProperty.call(fields || {}, 'remediation') ? fields.remediation : row.remediation,
+      corrective_requirement_id: Object.prototype.hasOwnProperty.call(fields || {}, 'corrective_requirement_id')
+        ? fields.corrective_requirement_id
+        : (row.corrective_requirement_id || null),
       due_date: Object.prototype.hasOwnProperty.call(fields || {}, 'due_date') ? fields.due_date : row.due_date,
       status: row.status || 'OPEN',
     };
@@ -4646,13 +4802,17 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       const draft = key ? store[key] : null;
       if (!draft) continue;
       const hasRemediation = Object.prototype.hasOwnProperty.call(draft, 'remediation');
+      const hasRequirementId = Object.prototype.hasOwnProperty.call(draft, 'corrective_requirement_id');
       const hasDueDate = Object.prototype.hasOwnProperty.call(draft, 'due_date');
-      if (!hasRemediation && !hasDueDate) continue;
+      if (!hasRemediation && !hasRequirementId && !hasDueDate) continue;
       const next = {
         remediation: hasRemediation ? draft.remediation : row.remediation,
+        corrective_requirement_id: hasRequirementId ? draft.corrective_requirement_id : row.corrective_requirement_id,
         due_date: hasDueDate ? draft.due_date : row.due_date,
       };
-      if (String(next.remediation || '') !== String(row.remediation || '') || String(next.due_date || '') !== String(row.due_date || '')) {
+      if (String(next.remediation || '') !== String(row.remediation || '')
+        || String(next.corrective_requirement_id || '') !== String(row.corrective_requirement_id || '')
+        || String(next.due_date || '') !== String(row.due_date || '')) {
         await updateNonconformityRequirement(ticket, row, next);
       }
       delete store[key];
@@ -4668,6 +4828,9 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     if (!row) return;
     await updateNonconformityRequirement(ticket, row, {
       remediation: input.hasAttribute('data-nc-remediation') ? input.value : row.remediation,
+      corrective_requirement_id: input.hasAttribute('data-nc-remediation')
+        ? (Number(input.getAttribute('data-corrective-requirement-id')) || null)
+        : row.corrective_requirement_id,
       due_date: input.hasAttribute('data-nc-due-date') ? input.value : row.due_date,
     });
   }
@@ -4794,7 +4957,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       q: state.evalSearch || '',
       dateType: filters.dateType || 'created_at',
       type: filters.type || '',
-      status: filters.status || '',
+      status: filters.status || state.evalStatusTab || '',
       mch2: filters.mch2 || '',
       mch3: filters.mch3 || '',
       from: filters.from || '',
@@ -5571,8 +5734,8 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const ticket = selectedTicket();
     if (!ticket || !resourceCan(ticket, 'score') || ticket.scoringLocked) return;
     const answers = ensureAnswers(state.scoringTicket, questionsForTicket(ticket));
-    Array.from(document.querySelectorAll('[data-question-id]')).forEach((sel) => {
-      const id = sel.getAttribute('data-question-id');
+    Array.from(document.querySelectorAll('[data-score-value]')).forEach((sel) => {
+      const id = sel.getAttribute('data-score-value');
       answers[id] = answers[id] || { score: '', note: '' };
       answers[id].score = sel.value;
     });
@@ -5957,6 +6120,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       from: $('eval-date-from').value.trim(),
       to: $('eval-date-to').value.trim(),
     };
+    if (state.evalFilters.status) state.evalStatusTab = '';
     state.evalPage = 1;
     resetMobileLimit('eval');
     renderEvaluations();
@@ -5966,6 +6130,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     ['eval-search', 'eval-type-filter', 'eval-status-filter', 'eval-mch2-filter', 'eval-mch3-filter', 'eval-date-from', 'eval-date-to'].forEach((id) => { if ($(id)) $(id).value = ''; });
     $('eval-date-type').value = 'created_at';
     state.evalSearch = '';
+    state.evalStatusTab = '';
     state.evalFilters = {};
     state.evalPage = 1;
     resetMobileLimit('eval');
@@ -6323,9 +6488,39 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
   if ($('attendees-tbody')) $('attendees-tbody').addEventListener('input', saveAttendeeInputs);
   if ($('attendees-tbody')) $('attendees-tbody').addEventListener('change', saveAttendeeInputs);
   if ($('supplier-introduction-input')) $('supplier-introduction-input').addEventListener('input', saveSupplierIntroductionInput);
+  if ($('scoring-tbody')) $('scoring-tbody').addEventListener('click', (event) => {
+    const choice = event.target.closest('[data-score-choice]');
+    if (!choice || choice.disabled) return;
+    const group = choice.closest('.score-segmented');
+    const scoreValue = group?.querySelector('[data-score-value]');
+    if (!group || !scoreValue) return;
+    scoreValue.value = choice.getAttribute('data-score-choice') || '';
+    group.querySelectorAll('[data-score-choice]').forEach((button) => {
+      const selected = button === choice;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-checked', selected ? 'true' : 'false');
+      button.setAttribute('tabindex', selected ? '0' : '-1');
+    });
+    scoreValue.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  if ($('scoring-tbody')) $('scoring-tbody').addEventListener('keydown', (event) => {
+    const choice = event.target.closest('[data-score-choice]');
+    if (!choice || choice.disabled || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const choices = Array.from(choice.closest('.score-segmented')?.querySelectorAll('[data-score-choice]:not(:disabled)') || []);
+    if (!choices.length) return;
+    event.preventDefault();
+    const currentIndex = Math.max(0, choices.indexOf(choice));
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? choices.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + choices.length) % choices.length;
+    choices[nextIndex].focus();
+    choices[nextIndex].click();
+  });
   if ($('scoring-tbody')) $('scoring-tbody').addEventListener('change', (e) => {
-    if (e.target.matches('[data-question-id]')) {
-      if (issueMatchesQuestion(scoringValidationTarget, e.target.getAttribute('data-question-id'), 'score')) clearScoringValidationIssue();
+    if (e.target.matches('[data-score-value]')) {
+      if (issueMatchesQuestion(scoringValidationTarget, e.target.getAttribute('data-score-value'), 'score')) clearScoringValidationIssue();
       saveCurrentScoringInputs();
       renderScoring();
     }
@@ -6353,7 +6548,100 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       saveCurrentScoringInputs();
     }
   });
+  if ($('nonconformity-tbody')) $('nonconformity-tbody').addEventListener('focusin', (event) => {
+    if (event.target.matches('[data-corrective-requirement-combobox]')) renderCorrectiveRequirementOptions(event.target);
+  });
+  if ($('nonconformity-tbody')) $('nonconformity-tbody').addEventListener('click', (event) => {
+    const toggle = event.target.closest('[data-corrective-requirement-toggle]');
+    const input = toggle
+      ? toggle.closest('.corrective-requirement-combobox')?.querySelector('[data-corrective-requirement-combobox]')
+      : (event.target.matches('[data-corrective-requirement-combobox]') ? event.target : null);
+    if (!input) return;
+    event.preventDefault();
+    input.focus();
+    renderCorrectiveRequirementOptions(input);
+  });
+  if ($('nonconformity-tbody')) $('nonconformity-tbody').addEventListener('input', (event) => {
+    const input = event.target;
+    if (!input.matches('[data-corrective-requirement-combobox]')) return;
+    input.setAttribute('data-corrective-requirement-selected', 'false');
+    input.removeAttribute('data-corrective-requirement-id');
+    if (input.hasAttribute('data-nc-draft-remediation')) saveDraftNonconformityRequirementInput(input);
+    renderCorrectiveRequirementOptions(input);
+  });
+  if ($('nonconformity-tbody')) $('nonconformity-tbody').addEventListener('keydown', (event) => {
+    const input = event.target;
+    if (!input.matches('[data-corrective-requirement-combobox]')) return;
+    if (event.key === 'Escape') {
+      closeCorrectiveRequirementOptions();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      $('corrective-requirement-options')?.querySelector('button')?.focus();
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    const exact = correctiveRequirementItems.find((item) => normalizedCorrectiveRequirementName(item.name) === normalizedCorrectiveRequirementName(input.value));
+    if (exact) {
+      event.preventDefault();
+      applyCorrectiveRequirementSelection(input, exact);
+    }
+  });
+  $('corrective-requirement-options')?.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    const input = activeCorrectiveRequirementInput;
+    if (!button || !input) return;
+    if (button.hasAttribute('data-corrective-requirement-create')) {
+      openCorrectiveRequirementCreateModal(input);
+      return;
+    }
+    if (!button.hasAttribute('data-corrective-requirement-option-id')) return;
+    const id = Number(button.getAttribute('data-corrective-requirement-option-id')) || null;
+    const name = button.getAttribute('data-corrective-requirement-option-name') || '';
+    const item = correctiveRequirementItems.find((entry) => (id && Number(entry.id) === id)
+      || normalizedCorrectiveRequirementName(entry.name) === normalizedCorrectiveRequirementName(name));
+    if (item) applyCorrectiveRequirementSelection(input, item);
+  });
+  $('corrective-requirement-cancel')?.addEventListener('click', () => closeCorrectiveRequirementCreateModal(true));
+  $('corrective-requirement-modal')?.addEventListener('click', (event) => {
+    if (event.target === $('corrective-requirement-modal')) closeCorrectiveRequirementCreateModal(true);
+  });
+  $('corrective-requirement-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = correctiveRequirementCreateTarget;
+    const name = displayCorrectiveRequirementName($('corrective-requirement-name')?.value);
+    if (!input || !name || name.length > 120) {
+      $('corrective-requirement-error').textContent = 'Tên yêu cầu không hợp lệ.';
+      return;
+    }
+    const finish = setButtonLoading($('corrective-requirement-submit'), 'Đang thêm...');
+    $('corrective-requirement-error').textContent = '';
+    try {
+      const response = await api('/evaluations/corrective-requirements', { method: 'POST', body: { name } });
+      if (!response.ok || !response.data?.item) throw new Error(response.data?.error || 'corrective_requirement_create_failed');
+      const target = input;
+      const item = rememberCorrectiveRequirement(response.data.item);
+      closeCorrectiveRequirementCreateModal(false);
+      await applyCorrectiveRequirementSelection(target, item);
+      showToast(response.data.created ? 'Đã thêm yêu cầu khắc phục mới.' : 'Yêu cầu đã tồn tại, hệ thống đã dùng mục hiện có.', 'ok');
+    } catch (error) {
+      $('corrective-requirement-error').textContent = apiErrorMessage(error?.message, 'Không thể thêm yêu cầu khắc phục.');
+    } finally {
+      finish();
+    }
+  });
+  document.addEventListener('click', (event) => {
+    const options = $('corrective-requirement-options');
+    if (!options || options.classList.contains('hidden')) return;
+    const activeCombobox = activeCorrectiveRequirementInput?.closest('.corrective-requirement-combobox');
+    if (options.contains(event.target) || activeCombobox?.contains(event.target)) return;
+    closeCorrectiveRequirementOptions();
+  });
+  window.addEventListener('resize', closeCorrectiveRequirementOptions);
+  window.addEventListener('scroll', closeCorrectiveRequirementOptions, true);
   if ($('nonconformity-tbody')) $('nonconformity-tbody').addEventListener('change', (e) => {
+    if (e.target.matches('[data-corrective-requirement-combobox]')) return;
     if (e.target.matches('[data-nc-draft-remediation], [data-nc-draft-due-date]')) {
       const isRemediation = e.target.matches('[data-nc-draft-remediation]');
       if (!isRemediation) e.target.setAttribute('data-nc-due-date-dirty', 'true');
@@ -6926,9 +7214,9 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
 
   let statisticalDashboardPayload = null;
   const DASHBOARD_STATUS_COLORS = Object.freeze({
-    DRAFT: '#6E0012', IN_PROGRESS: '#930019', WAITING_APPROVAL: '#BC0A25',
-    WAITING_CORRECTION: '#DA1E38', ROUND_2: '#F02D48',
-    COMPLETED: '#E53945', CANCELLED: '#FFA0A8',
+    DRAFT: '#F3C7CB', IN_PROGRESS: '#E98D95', WAITING_APPROVAL: '#E45C68',
+    WAITING_CORRECTION: '#DC3545', ROUND_2: '#F02D48',
+    COMPLETED: '#A30D22', CANCELLED: '#540812',
   });
   const DASHBOARD_RATING_COLORS = Object.freeze({
     FAILED: '#220006', BASIC: '#73000E', GOOD: '#BA001D', HIGH: '#E53945',
@@ -6970,7 +7258,10 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     $('status-donut-empty').classList.add('hidden');
     $('statistics-ranking-empty').classList.add('hidden');
     $('quality-trend-empty').classList.add('hidden');
+    $('rating-distribution-total').textContent = '';
+    $('rating-distribution-bar').textContent = '';
     $('rating-distribution-legend').textContent = '';
+    $('industry-performance-chart').textContent = '';
     $('industry-performance-empty').classList.add('hidden');
     $('rating-distribution-empty').classList.add('hidden');
     $('violation-distribution-empty').classList.add('hidden');
@@ -7080,9 +7371,11 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
     const tooltip = $('statistics-tooltip');
     tooltip.textContent = '';
     lines.forEach((line, index) => tooltip.appendChild(el(index ? 'div' : 'strong', { text: line })));
-    tooltip.style.left = `${Math.min(window.innerWidth - 280, event.clientX + 14)}px`;
-    tooltip.style.top = `${Math.min(window.innerHeight - 130, event.clientY + 14)}px`;
     tooltip.classList.remove('hidden');
+    const tooltipWidth = tooltip.offsetWidth || 280;
+    const tooltipHeight = tooltip.offsetHeight || 130;
+    tooltip.style.left = `${Math.max(8, Math.min(window.innerWidth - tooltipWidth - 8, event.clientX + 14))}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(window.innerHeight - tooltipHeight - 8, event.clientY + 14))}px`;
   }
 
   function hideStatisticsTooltip() {
@@ -7186,55 +7479,139 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
   function drawQualityTrend(payload = statisticalDashboardPayload) {
     const canvas = $('quality-trend-canvas');
     const empty = $('quality-trend-empty');
-    const rows = Array.isArray(payload?.trend) ? payload.trend : [];
-    const hasData = rows.some((row) => row.evaluated_supplier_count > 0);
+    const rows = (Array.isArray(payload?.trend) ? payload.trend : []).map((row) => {
+      const passed = Math.max(0, Number(row.passed_ticket_count || 0));
+      const failed = Math.max(0, Number(row.failed_ticket_count || 0));
+      const calculatedTotal = passed + failed;
+      const apiTotal = Number(row.evaluation_ticket_count);
+      const total = Number.isFinite(apiTotal) && apiTotal === calculatedTotal ? apiTotal : calculatedTotal;
+      return {
+        ...row,
+        passed_ticket_count: passed,
+        failed_ticket_count: failed,
+        evaluation_ticket_count: total,
+        failed_rate: total ? failed / total : 0,
+      };
+    });
+    const hasData = rows.some((row) => row.evaluation_ticket_count > 0);
     empty.classList.toggle('hidden', hasData);
     const context = canvas.getContext('2d');
     const width = Math.max(280, Math.round(canvas.parentElement?.clientWidth || 760));
-    const height = 285;
+    const height = 300;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = width * ratio; canvas.height = height * ratio; canvas.style.width = `${width}px`;
+    canvas.width = width * ratio; canvas.height = height * ratio; canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
     context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height);
+    canvas._dashboardTrendHitTargets = [];
     if (!rows.length || !hasData) return;
     const styles = getComputedStyle(document.documentElement);
     const grid = styles.getPropertyValue('--border').trim() || '#e5e7eb';
     const textColor = styles.getPropertyValue('--muted').trim() || '#6b7280';
+    const inkColor = styles.getPropertyValue('--text').trim() || '#1a2232';
     const surface = styles.getPropertyValue('--surface').trim() || '#fff';
-    const plot = { left: 48, right: width - 48, top: 18, bottom: height - 42 };
+    const passedColor = styles.getPropertyValue('--green').trim() || '#16a34a';
+    const failedColor = styles.getPropertyValue('--red').trim() || '#e03040';
+    const accentColor = styles.getPropertyValue('--accent').trim() || '#2563eb';
+    const lineColor = '#9AA4B2';
+    const sideMargin = width < 520 ? 42 : 56;
+    const plot = { left: sideMargin, right: width - sideMargin, top: 38, bottom: height - 48 };
     const chartHeight = plot.bottom - plot.top;
     const step = (plot.right - plot.left) / rows.length;
-    const maxCount = Math.max(5, Math.ceil(Math.max(...rows.map((row) => row.evaluated_supplier_count)) / 5) * 5);
+    const maxTotal = Math.max(...rows.map((row) => row.evaluation_ticket_count));
+    const rawCountStep = Math.max(1, maxTotal / 5);
+    const countMagnitude = 10 ** Math.floor(Math.log10(rawCountStep));
+    const normalizedCountStep = rawCountStep / countMagnitude;
+    const countStep = (normalizedCountStep <= 1 ? 1 : normalizedCountStep <= 2 ? 2 : normalizedCountStep <= 5 ? 5 : 10) * countMagnitude;
+    const maxCount = Math.max(countStep, Math.ceil(maxTotal / countStep) * countStep);
+    const maxFailedRate = Math.max(...rows.map((row) => row.failed_rate));
+    const maxRate = Math.min(1, Math.max(.5, Math.ceil(maxFailedRate / .25) * .25));
     const xAt = (index) => plot.left + step * index + step / 2;
     const yCount = (value) => plot.bottom - chartHeight * value / maxCount;
-    const yRate = (value) => plot.bottom - chartHeight * Math.max(0, Math.min(1, value));
+    const yRate = (value) => plot.bottom - chartHeight * Math.max(0, Math.min(maxRate, value)) / maxRate;
+    const formatRate = (value) => `${(value * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`;
+    const periodLabel = (row) => {
+      const month = String(row.period_value || '').match(/^(\d{4})-(\d{2})$/);
+      if (month) return `${month[2]}/${month[1]}`;
+      const quarter = String(row.period_value || '').match(/^(\d{4})-Q([1-4])$/);
+      if (quarter) return `Q${quarter[2]}/${quarter[1]}`;
+      return String(row.period_value || row.label || '');
+    };
     context.font = '10px Be Vietnam Pro, system-ui'; context.textBaseline = 'middle';
-    for (let index = 0; index <= 4; index += 1) {
-      const ratioValue = index / 4; const y = plot.bottom - chartHeight * ratioValue;
+    context.fillStyle = textColor; context.textAlign = 'left'; context.fillText('Số phiếu đánh giá', plot.left, 13);
+    context.textAlign = 'right'; context.fillText('Tỷ lệ (%)', plot.right, 13);
+    rows.forEach((row, index) => {
+      if (!row.is_selected) return;
+      const bandWidth = Math.min(112, step * .82);
+      const bandX = xAt(index) - bandWidth / 2;
+      context.beginPath(); context.roundRect(bandX, plot.top - 17, bandWidth, height - plot.top + 7, 9);
+      context.fillStyle = 'rgba(37,99,235,.045)'; context.fill();
+      context.strokeStyle = 'rgba(37,99,235,.12)'; context.lineWidth = 1; context.stroke();
+    });
+    for (let index = 0; index <= 5; index += 1) {
+      const ratioValue = index / 5; const y = plot.bottom - chartHeight * ratioValue;
       context.beginPath(); context.strokeStyle = grid; context.lineWidth = 1; context.moveTo(plot.left, y); context.lineTo(plot.right, y); context.stroke();
       context.fillStyle = textColor; context.textAlign = 'right'; context.fillText(String(Math.round(maxCount * ratioValue)), plot.left - 8, y);
-      context.textAlign = 'left'; context.fillText(`${Math.round(ratioValue * 100)}%`, plot.right + 8, y);
+      context.textAlign = 'left'; context.fillText(`${Math.round(maxRate * ratioValue * 100)}%`, plot.right + 8, y);
     }
+    const hitTargets = [];
+    const drawSegment = (row, kind, x, y, segmentWidth, segmentHeight, color, radii) => {
+      if (segmentHeight <= 0) return;
+      context.beginPath(); context.roundRect(x, y, segmentWidth, segmentHeight, radii); context.fillStyle = color; context.fill();
+      hitTargets.push({ kind, row, x, y, width: segmentWidth, height: segmentHeight });
+    };
     rows.forEach((row, index) => {
-      const selected = row.is_selected;
-      const columnWidth = Math.min(92, step * .92);
-      const x = xAt(index) - columnWidth / 2; const y = yCount(row.evaluated_supplier_count);
-      context.beginPath(); context.roundRect(x, y, columnWidth, plot.bottom - y, [7, 7, 0, 0]); context.fillStyle = selected ? '#D84646' : '#444444'; context.globalAlpha = selected ? 1 : .86; context.fill(); context.globalAlpha = 1;
-      context.fillStyle = selected ? '#D84646' : textColor; context.font = `${selected ? 700 : 500} 10px Be Vietnam Pro, system-ui`; context.textAlign = 'center'; context.fillText(row.period_value.replace(/^\d{4}-/, ''), xAt(index), height - 17);
+      const columnWidth = Math.max(16, Math.min(78, step * .54));
+      const x = xAt(index) - columnWidth / 2;
+      const totalY = yCount(row.evaluation_ticket_count);
+      const passedY = yCount(row.passed_ticket_count);
+      drawSegment(row, 'passed', x, passedY, columnWidth, plot.bottom - passedY, passedColor, row.failed_ticket_count ? 0 : [6, 6, 0, 0]);
+      drawSegment(row, 'failed', x, totalY, columnWidth, passedY - totalY, failedColor, [6, 6, 0, 0]);
+      if (row.passed_ticket_count && row.failed_ticket_count) {
+        context.beginPath(); context.strokeStyle = 'rgba(255,255,255,.55)'; context.lineWidth = 1; context.moveTo(x, passedY); context.lineTo(x + columnWidth, passedY); context.stroke();
+      }
+      const totalLabelY = row.evaluation_ticket_count ? Math.max(plot.top - 8, totalY - 11) : plot.bottom - 10;
+      context.fillStyle = inkColor; context.font = '700 11px Be Vietnam Pro, system-ui'; context.textAlign = 'center'; context.fillText(fmtInt(row.evaluation_ticket_count), xAt(index), totalLabelY);
+      const label = periodLabel(row);
+      context.fillStyle = row.is_selected ? accentColor : textColor;
+      context.textAlign = 'center';
+      if (width < 520 && label.includes('/')) {
+        const [periodPart, yearPart] = label.split('/');
+        context.font = `${row.is_selected ? 750 : 600} 9px Be Vietnam Pro, system-ui`; context.fillText(periodPart, xAt(index), height - 25);
+        context.font = `${row.is_selected ? 700 : 500} 7.5px Be Vietnam Pro, system-ui`; context.fillText(yearPart, xAt(index), height - 13);
+      } else {
+        context.font = `${row.is_selected ? 750 : 500} 10px Be Vietnam Pro, system-ui`; context.fillText(label, xAt(index), height - 18);
+      }
     });
     context.beginPath();
     rows.forEach((row, index) => { const x = xAt(index); const y = yRate(row.failed_rate); if (index) context.lineTo(x, y); else context.moveTo(x, y); });
-    context.strokeStyle = '#B3B3B3'; context.lineWidth = 2.75; context.lineJoin = 'round'; context.lineCap = 'round'; context.stroke();
+    context.strokeStyle = lineColor; context.lineWidth = 2.5; context.lineJoin = 'round'; context.lineCap = 'round'; context.stroke();
     rows.forEach((row, index) => {
-      const radius = row.is_selected ? 5 : 3;
-      context.beginPath(); context.arc(xAt(index), yRate(row.failed_rate), radius + (row.is_selected ? 3 : 0), 0, Math.PI * 2); context.fillStyle = row.is_selected ? 'rgba(216,70,70,.18)' : 'transparent'; context.fill();
-      context.beginPath(); context.arc(xAt(index), yRate(row.failed_rate), radius, 0, Math.PI * 2); context.fillStyle = '#B3B3B3'; context.fill();
-      if (row.is_selected) { context.beginPath(); context.arc(xAt(index), yRate(row.failed_rate), 2.5, 0, Math.PI * 2); context.fillStyle = surface; context.fill(); }
+      const x = xAt(index); const y = yRate(row.failed_rate); const radius = row.is_selected ? 4.5 : 3.5;
+      context.beginPath(); context.arc(x, y, radius + 2.5, 0, Math.PI * 2); context.fillStyle = surface; context.fill();
+      context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.fillStyle = lineColor; context.fill();
+      context.beginPath(); context.arc(x, y, Math.max(1.5, radius - 2), 0, Math.PI * 2); context.fillStyle = surface; context.fill();
+      hitTargets.push({ kind: 'rate', row, x, y, radius: 10 });
+      const totalLabelY = row.evaluation_ticket_count ? Math.max(plot.top - 8, yCount(row.evaluation_ticket_count) - 11) : plot.bottom - 10;
+      let rateLabelY = y - 12;
+      if (Math.abs(rateLabelY - totalLabelY) < 14) rateLabelY = y + 13;
+      if (rateLabelY > plot.bottom - 8) rateLabelY = y - 12;
+      if (width >= 560 || row.is_selected) {
+        context.fillStyle = inkColor; context.font = `${row.is_selected ? 750 : 600} 9.5px Be Vietnam Pro, system-ui`; context.textAlign = 'center'; context.fillText(formatRate(row.failed_rate), x, rateLabelY);
+      }
     });
+    canvas._dashboardTrendHitTargets = hitTargets;
     canvas._dashboardTrendMove = (event) => {
-      const rect = canvas.getBoundingClientRect(); const x = (event.clientX - rect.left) * width / rect.width;
-      const index = Math.max(0, Math.min(rows.length - 1, Math.floor((x - plot.left) / step)));
-      const row = rows[index];
-      showStatisticsTooltip(event, [row.label, `NCC được đánh giá: ${fmtInt(row.evaluated_supplier_count)}`, `Đạt: ${fmtInt(row.passed_ticket_count)}`, `Không đạt: ${fmtInt(row.failed_ticket_count)}`, `Tỷ lệ không đạt: ${(row.failed_rate * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`]);
+      const rect = canvas.getBoundingClientRect();
+      const pointer = { x: (event.clientX - rect.left) * width / rect.width, y: (event.clientY - rect.top) * height / rect.height };
+      const rateTarget = hitTargets.find((target) => target.kind === 'rate' && Math.hypot(pointer.x - target.x, pointer.y - target.y) <= target.radius);
+      const segmentTarget = hitTargets.find((target) => target.kind !== 'rate' && pointer.x >= target.x && pointer.x <= target.x + target.width && pointer.y >= target.y && pointer.y <= target.y + target.height);
+      const target = rateTarget || segmentTarget;
+      if (!target) { hideStatisticsTooltip(); return; }
+      if (target.kind === 'rate') {
+        showStatisticsTooltip(event, [target.row.label, 'Tỷ lệ không đạt', formatRate(target.row.failed_rate)]);
+        return;
+      }
+      const passed = target.kind === 'passed';
+      showStatisticsTooltip(event, [target.row.label, passed ? 'Phiếu đạt' : 'Phiếu không đạt', `${fmtInt(passed ? target.row.passed_ticket_count : target.row.failed_ticket_count)} phiếu`]);
     };
     if (!canvas.dataset.dashboardEventsBound) {
       canvas.addEventListener('mousemove', (event) => canvas._dashboardTrendMove?.(event));
@@ -7267,114 +7644,283 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
   function clearDashboardCanvas(id) {
     const canvas = $(id);
     if (!canvas) return;
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    if (typeof canvas.getContext === 'function') {
+      canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    canvas.textContent = '';
+  }
+
+  function displayCorrectiveRequirementName(value) {
+    return String(value || '').normalize('NFC').trim().replace(/\s+/gu, ' ');
+  }
+
+  function normalizedCorrectiveRequirementName(value) {
+    return displayCorrectiveRequirementName(value).normalize('NFKC').toLocaleLowerCase('vi-VN');
+  }
+
+  function correctiveRequirementTokens(value) {
+    return normalizedCorrectiveRequirementName(value).split(/[^\p{L}\p{N}]+/gu).filter(Boolean);
+  }
+
+  function correctiveRequirementSimilarity(name, query) {
+    const candidate = normalizedCorrectiveRequirementName(name);
+    const searched = normalizedCorrectiveRequirementName(query);
+    if (!searched) return 1;
+    if (candidate === searched) return 100;
+    if (candidate.startsWith(searched) || searched.startsWith(candidate)) return 85;
+    if (candidate.includes(searched) || searched.includes(candidate)) return 70;
+    const queryTokens = correctiveRequirementTokens(searched);
+    const candidateTokens = new Set(correctiveRequirementTokens(candidate));
+    if (!queryTokens.length) return 0;
+    const overlap = queryTokens.filter((token) => candidateTokens.has(token)).length;
+    return overlap ? 35 + Math.round((overlap / Math.max(queryTokens.length, candidateTokens.size)) * 30) : 0;
+  }
+
+  function matchingCorrectiveRequirements(query, includeWeak) {
+    const searched = normalizedCorrectiveRequirementName(query);
+    return correctiveRequirementItems
+      .map((item) => ({ item, score: correctiveRequirementSimilarity(item.name, searched) }))
+      .filter((entry) => !searched || entry.score >= (includeWeak ? 35 : 70))
+      .sort((a, b) => b.score - a.score || String(a.item.name).localeCompare(String(b.item.name), 'vi'));
+  }
+
+  function closeCorrectiveRequirementOptions() {
+    const options = $('corrective-requirement-options');
+    if (options) options.classList.add('hidden');
+    if (activeCorrectiveRequirementInput) activeCorrectiveRequirementInput.setAttribute('aria-expanded', 'false');
+    activeCorrectiveRequirementInput = null;
+  }
+
+  function positionCorrectiveRequirementOptions(input) {
+    const options = $('corrective-requirement-options');
+    if (!options || !input || typeof input.getBoundingClientRect !== 'function') return;
+    const anchor = input.closest('.corrective-requirement-combobox') || input;
+    const rect = anchor.getBoundingClientRect();
+    const viewportWidth = Math.max(280, window.innerWidth || document.documentElement.clientWidth || 280);
+    const viewportHeight = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 320);
+    const width = Math.min(Math.max(240, rect.width), viewportWidth - 16);
+    const left = Math.max(8, Math.min(rect.left, viewportWidth - width - 8));
+    const dropdownHeight = Math.min(280, options.scrollHeight || 280);
+    const spaceBelow = viewportHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    const openAbove = spaceBelow < Math.min(180, dropdownHeight) && spaceAbove > spaceBelow;
+    const top = openAbove
+      ? Math.max(8, rect.top - dropdownHeight - 4)
+      : Math.min(viewportHeight - dropdownHeight - 8, rect.bottom + 4);
+    options.style.left = `${left}px`;
+    options.style.top = `${Math.max(8, top)}px`;
+    options.style.width = `${width}px`;
+  }
+
+  function renderCorrectiveRequirementOptions(input) {
+    const options = $('corrective-requirement-options');
+    if (!options || !input) return;
+    const query = displayCorrectiveRequirementName(input.value);
+    const matches = matchingCorrectiveRequirements(query, false);
+    const exact = correctiveRequirementItems.some((item) => normalizedCorrectiveRequirementName(item.name) === normalizedCorrectiveRequirementName(query));
+    options.textContent = '';
+    options.appendChild(el('div', {
+      className: 'corrective-requirement-options-label',
+      text: query ? (matches.length ? 'Có thể bạn đang tìm' : 'Không có kết quả trùng') : 'Danh mục yêu cầu',
+    }));
+    matches.forEach(({ item }) => {
+      options.appendChild(el('button', {
+        className: 'corrective-requirement-option',
+        text: item.name,
+        attrs: { 'data-corrective-requirement-option-id': String(item.id || ''), 'data-corrective-requirement-option-name': item.name },
+      }));
+    });
+    if (!matches.length && !query) options.appendChild(el('div', { className: 'corrective-requirement-options-empty', text: 'Chưa có yêu cầu đang hoạt động.' }));
+    if (query && !exact && query.length <= 120) {
+      options.appendChild(el('div', { className: 'corrective-requirement-options-separator' }));
+      options.appendChild(el('button', {
+        className: 'corrective-requirement-option create',
+        text: `+ Thêm “${query}”`,
+        attrs: { 'data-corrective-requirement-create': 'true' },
+      }));
+    }
+    activeCorrectiveRequirementInput = input;
+    input.setAttribute('aria-expanded', 'true');
+    options.classList.remove('hidden');
+    positionCorrectiveRequirementOptions(input);
+  }
+
+  function rememberCorrectiveRequirement(item) {
+    if (!item?.name) return item;
+    const normalized = item.normalized_name || normalizedCorrectiveRequirementName(item.name);
+    const index = correctiveRequirementItems.findIndex((entry) => normalizedCorrectiveRequirementName(entry.name) === normalized);
+    const canonical = { ...item, normalized_name: normalized };
+    if (index >= 0) correctiveRequirementItems[index] = canonical;
+    else correctiveRequirementItems.push(canonical);
+    return canonical;
+  }
+
+  async function applyCorrectiveRequirementSelection(input, item) {
+    if (!input || !item) return;
+    const canonical = rememberCorrectiveRequirement(item);
+    input.value = canonical.name;
+    input.setAttribute('data-corrective-requirement-selected', 'true');
+    if (canonical.id) input.setAttribute('data-corrective-requirement-id', String(canonical.id));
+    else input.removeAttribute('data-corrective-requirement-id');
+    closeCorrectiveRequirementOptions();
+    const validationId = input.getAttribute('data-nc-remediation');
+    if (input.hasAttribute('data-nc-draft-remediation')) {
+      saveDraftNonconformityRequirementInput(input);
+      if (issueMatchesNonconformity(scoringValidationTarget, { _validation_id: validationId }, 'remediation')) {
+        clearScoringValidationIssue();
+        clearValidationDecorationsNear(input);
+      }
+      $('scoring-msg').textContent = 'Đã ghi nhận yêu cầu khắc phục.';
+      return;
+    }
+    const ticket = selectedTicket();
+    const row = (ticket?.nonconformities || []).find((entry) => String(entry.id) === String(validationId));
+    if (!ticket || !row) return;
+    try {
+      await updateNonconformityRequirement(ticket, row, {
+        remediation: canonical.name,
+        corrective_requirement_id: canonical.id || null,
+      });
+      if (issueMatchesNonconformity(scoringValidationTarget, { id: validationId }, 'remediation')) clearScoringValidationIssue();
+      $('scoring-msg').textContent = 'Đã lưu yêu cầu khắc phục.';
+      renderScoring();
+    } catch (error) {
+      $('scoring-msg').textContent = apiErrorMessage(error?.message, 'Không lưu được yêu cầu khắc phục.');
+      renderScoring();
+    }
+  }
+
+  function openCorrectiveRequirementCreateModal(input) {
+    const name = displayCorrectiveRequirementName(input?.value);
+    if (!input || !name || name.length > 120) return;
+    correctiveRequirementCreateTarget = input;
+    closeCorrectiveRequirementOptions();
+    const similar = matchingCorrectiveRequirements(name, true)
+      .filter(({ item }) => normalizedCorrectiveRequirementName(item.name) !== normalizedCorrectiveRequirementName(name))
+      .slice(0, 3);
+    $('corrective-requirement-name').value = name;
+    $('corrective-requirement-error').textContent = '';
+    const warning = $('corrective-requirement-similar-warning');
+    warning.textContent = similar.length
+      ? `Đã có mục gần giống: ${similar.map(({ item }) => item.name).join('; ')}. Hãy kiểm tra trước khi tạo mục mới.`
+      : '';
+    warning.classList.toggle('hidden', similar.length === 0);
+    $('corrective-requirement-cancel').textContent = similar.length ? 'Quay lại chọn' : 'Hủy';
+    $('corrective-requirement-submit').textContent = similar.length ? 'Vẫn thêm mới' : 'Thêm và sử dụng';
+    $('corrective-requirement-modal').classList.remove('hidden');
+    $('corrective-requirement-submit').focus();
+  }
+
+  function closeCorrectiveRequirementCreateModal(returnFocus) {
+    $('corrective-requirement-modal')?.classList.add('hidden');
+    if (returnFocus && correctiveRequirementCreateTarget?.isConnected) {
+      correctiveRequirementCreateTarget.focus();
+      renderCorrectiveRequirementOptions(correctiveRequirementCreateTarget);
+    }
+    if (!returnFocus) correctiveRequirementCreateTarget = null;
+  }
+
+  function fitDashboardSegmentLabels(container, selector, minimumWidth = 44) {
+    window.requestAnimationFrame(() => {
+      container.querySelectorAll(selector).forEach((segment) => {
+        segment.classList.toggle('has-label', segment.getBoundingClientRect().width >= minimumWidth);
+      });
+    });
   }
 
   function drawRatingDistribution(distribution) {
-    const canvas = $('rating-distribution-canvas');
     const content = $('rating-distribution-content');
     const empty = $('rating-distribution-empty');
+    const totalLabel = $('rating-distribution-total');
+    const bar = $('rating-distribution-bar');
     const legend = $('rating-distribution-legend');
-    const items = (distribution?.items || []).filter((item) => Number(item.count || 0) > 0);
+    const items = distribution?.items || [];
     const total = Number(distribution?.total_suppliers || items.reduce((sum, item) => sum + Number(item.count || 0), 0));
     content.classList.toggle('hidden', total === 0);
     empty.classList.toggle('hidden', total > 0);
+    totalLabel.textContent = `Tổng số ${fmtInt(total)} NCC`;
+    bar.textContent = '';
     legend.textContent = '';
     items.forEach((item) => {
+      const percentageValue = Number(item.percentage || 0);
+      const percentageLabel = `${percentageValue.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`;
+      if (Number(item.count || 0) > 0) {
+        const segment = el('div', {
+          className: 'statistics-composition-segment',
+          attrs: {
+            style: `width:${percentageValue}%;background:${DASHBOARD_RATING_COLORS[item.code]}`,
+            'aria-label': `${item.label}: ${fmtInt(item.count)} NCC, ${percentageLabel}`,
+          },
+        });
+        segment.appendChild(el('span', { text: percentageLabel }));
+        segment.addEventListener('mousemove', (event) => showStatisticsTooltip(event, [item.label, `${fmtInt(item.count)} NCC · ${percentageLabel}`]));
+        segment.addEventListener('mouseleave', hideStatisticsTooltip);
+        bar.appendChild(segment);
+      }
       const row = el('div', { className: 'statistics-rating-item' });
       row.appendChild(el('i', { attrs: { style: `background:${DASHBOARD_RATING_COLORS[item.code]}` } }));
-      const copy = el('span', { text: item.label });
-      copy.appendChild(el('small', { text: `${fmtInt(item.count)} NCC · ${Number(item.percentage || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%` }));
+      const copy = el('span', { text: `${item.label} · `, attrs: { title: item.label } });
+      copy.appendChild(el('small', { text: `${fmtInt(item.count)} NCC · ${percentageLabel}` }));
       row.appendChild(copy);
       legend.appendChild(row);
     });
-    const size = 250;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = size * ratio; canvas.height = size * ratio;
-    canvas.style.width = `${size}px`; canvas.style.height = `${size}px`;
-    const context = canvas.getContext('2d');
-    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, size, size);
-    if (!total) return;
-    let angle = -Math.PI / 2;
-    const arcs = [];
-    items.forEach((item) => {
-      const next = angle + Math.PI * 2 * Number(item.count || 0) / total;
-      context.beginPath(); context.moveTo(125, 125); context.arc(125, 125, 105, angle, next); context.closePath();
-      context.fillStyle = DASHBOARD_RATING_COLORS[item.code]; context.fill();
-      context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#fff'; context.lineWidth = 2; context.stroke();
-      arcs.push({ start: angle, end: next, item });
-      angle = next;
-    });
-    const arcAt = (event) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = (event.clientX - rect.left) * size / rect.width - 125;
-      const y = (event.clientY - rect.top) * size / rect.height - 125;
-      if (Math.hypot(x, y) > 105) return null;
-      let target = Math.atan2(y, x);
-      if (target < -Math.PI / 2) target += Math.PI * 2;
-      return arcs.find((arc) => target >= arc.start && target <= arc.end) || null;
-    };
-    canvas._dashboardRatingMove = (event) => {
-      const arc = arcAt(event);
-      if (!arc) return hideStatisticsTooltip();
-      showStatisticsTooltip(event, [arc.item.label, `Số NCC: ${fmtInt(arc.item.count)}`, `Tỷ lệ: ${Number(arc.item.percentage || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`]);
-    };
-    if (!canvas.dataset.dashboardEventsBound) {
-      canvas.addEventListener('mousemove', (event) => canvas._dashboardRatingMove?.(event));
-      canvas.addEventListener('mouseleave', hideStatisticsTooltip);
-      canvas.dataset.dashboardEventsBound = 'true';
-    }
+    bar.setAttribute('aria-label', `Cơ cấu 100% của ${fmtInt(total)} NCC theo bốn mức xếp loại`);
+    fitDashboardSegmentLabels(bar, '.statistics-composition-segment');
   }
 
   function drawIndustryPerformance(rows) {
-    const canvas = $('industry-performance-canvas');
+    const chart = $('industry-performance-chart');
     const empty = $('industry-performance-empty');
     const data = Array.isArray(rows) ? rows : [];
     empty.classList.toggle('hidden', data.length > 0);
-    canvas.classList.toggle('hidden', data.length === 0);
-    const height = Math.max(320, data.length * 46 + 54);
-    const { context, width } = setupDashboardCanvas(canvas, height);
+    chart.classList.toggle('hidden', data.length === 0);
+    chart.textContent = '';
     if (!data.length) return;
-    const styles = getComputedStyle(document.documentElement);
-    const grid = styles.getPropertyValue('--border').trim() || '#e5e7eb';
-    const textColor = styles.getPropertyValue('--muted').trim() || '#6b7280';
-    const left = width < 520 ? 128 : 190;
-    const plot = { left, right: width - 28, top: 24, bottom: height - 26 };
-    const chartWidth = Math.max(80, plot.right - plot.left);
-    const step = (plot.bottom - plot.top) / data.length;
-    const hits = [];
-    context.font = '10px Be Vietnam Pro, system-ui'; context.textBaseline = 'middle';
-    [0, 25, 50, 75, 100].forEach((tick) => {
-      const x = plot.left + chartWidth * tick / 100;
-      context.beginPath(); context.moveTo(x, plot.top - 9); context.lineTo(x, plot.bottom); context.strokeStyle = grid; context.lineWidth = 1; context.stroke();
-      context.fillStyle = textColor; context.textAlign = 'center'; context.fillText(`${tick}%`, x, 10);
-    });
+    const header = el('div', { className: 'statistics-industry-header', attrs: { role: 'row' } });
+    header.appendChild(el('span', { text: 'Ngành hàng MCH3', attrs: { role: 'columnheader' } }));
+    const legend = el('div', { className: 'statistics-industry-legend', attrs: { role: 'columnheader' } });
+    const passedLegend = el('span', { text: 'Đạt (%)' });
+    passedLegend.prepend(el('i', { attrs: { style: `background:${DASHBOARD_DETAIL_COLORS.passed}` } }));
+    const failedLegend = el('span', { text: 'Không đạt (%)' });
+    failedLegend.prepend(el('i', { attrs: { style: `background:${DASHBOARD_DETAIL_COLORS.failed}` } }));
+    legend.append(passedLegend, failedLegend);
+    header.appendChild(legend);
+    header.appendChild(el('span', { text: 'Tổng NCC', attrs: { role: 'columnheader' } }));
+    header.appendChild(el('span', { text: 'Điểm TB', attrs: { role: 'columnheader' } }));
+    chart.appendChild(header);
+    const body = el('div', { className: 'statistics-industry-rows', attrs: { role: 'rowgroup' } });
     data.forEach((row, index) => {
-      const y = plot.top + step * index + step / 2;
-      const barHeight = Math.min(24, step * .56);
-      const passedWidth = chartWidth * Number(row.passed_percentage || 0) / 100;
-      const failedWidth = chartWidth - passedWidth;
-      context.fillStyle = textColor; context.textAlign = 'right';
-      context.fillText(clippedCanvasText(context, row.industry, left - 18), plot.left - 10, y);
-      context.fillStyle = DASHBOARD_DETAIL_COLORS.passed; context.fillRect(plot.left, y - barHeight / 2, passedWidth, barHeight);
-      context.fillStyle = DASHBOARD_DETAIL_COLORS.failed; context.fillRect(plot.left + passedWidth, y - barHeight / 2, failedWidth, barHeight);
-      if (passedWidth > 42) { context.fillStyle = '#fff'; context.textAlign = 'center'; context.fillText(`${Number(row.passed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`, plot.left + passedWidth / 2, y); }
-      if (failedWidth > 42) { context.fillStyle = '#fff'; context.textAlign = 'center'; context.fillText(`${Number(row.failed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`, plot.left + passedWidth + failedWidth / 2, y); }
-      hits.push({ top: y - step / 2, bottom: y + step / 2, row });
+      const industry = row.mch3 || row.industry || 'Chưa xác định';
+      const passedPercentage = Number(row.passed_percentage || 0);
+      const failedPercentage = Number(row.failed_percentage || 0);
+      const passedLabel = `${passedPercentage.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`;
+      const failedLabel = `${failedPercentage.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`;
+      const line = el('div', { className: 'statistics-industry-row', attrs: { role: 'row' } });
+      line.appendChild(el('div', { className: 'statistics-industry-name', text: industry, attrs: { title: industry, role: 'rowheader' } }));
+      const bar = el('div', { className: 'statistics-industry-bar', attrs: { role: 'cell', 'aria-label': `${industry}: đạt ${passedLabel}, không đạt ${failedLabel}` } });
+      [
+        ['Đạt', row.passed_suppliers, passedPercentage, passedLabel, DASHBOARD_DETAIL_COLORS.passed],
+        ['Không đạt', row.failed_suppliers, failedPercentage, failedLabel, DASHBOARD_DETAIL_COLORS.failed],
+      ].forEach(([label, count, percentageValue, percentageLabel, color]) => {
+        if (percentageValue <= 0) return;
+        const segment = el('div', { className: 'statistics-industry-segment', attrs: { style: `width:${percentageValue}%;background:${color}`, 'aria-label': `${label}: ${fmtInt(count)} NCC, ${percentageLabel}` } });
+        segment.appendChild(el('span', { text: percentageLabel }));
+        segment.addEventListener('mousemove', (event) => showStatisticsTooltip(event, [industry, `${label}: ${fmtInt(count)} NCC · ${percentageLabel}`]));
+        segment.addEventListener('mouseleave', hideStatisticsTooltip);
+        bar.appendChild(segment);
+      });
+      line.appendChild(bar);
+      const totalMetric = el('div', { className: 'statistics-industry-metric statistics-industry-total', attrs: { role: 'cell' } });
+      totalMetric.append(el('small', { text: 'Tổng NCC:' }), document.createTextNode(fmtInt(row.total_suppliers)));
+      line.appendChild(totalMetric);
+      const scoreMetric = el('div', { className: 'statistics-industry-metric statistics-industry-score', attrs: { role: 'cell' } });
+      scoreMetric.append(el('small', { text: 'Điểm TB:' }), document.createTextNode(`${Number(row.average_score).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`));
+      line.appendChild(scoreMetric);
+      body.appendChild(line);
     });
-    canvas._dashboardIndustryMove = (event) => {
-      const rect = canvas.getBoundingClientRect();
-      const y = (event.clientY - rect.top) * height / rect.height;
-      const hit = hits.find((item) => y >= item.top && y <= item.bottom);
-      if (!hit) return hideStatisticsTooltip();
-      const row = hit.row;
-      showStatisticsTooltip(event, [row.industry, `Tổng NCC: ${fmtInt(row.total_suppliers)}`, `Đạt: ${fmtInt(row.passed_suppliers)} (${Number(row.passed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%)`, `Không đạt: ${fmtInt(row.failed_suppliers)} (${Number(row.failed_percentage).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%)`, `Điểm trung bình: ${Number(row.average_score).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`]);
-    };
-    if (!canvas.dataset.dashboardEventsBound) {
-      canvas.addEventListener('mousemove', (event) => canvas._dashboardIndustryMove?.(event));
-      canvas.addEventListener('mouseleave', hideStatisticsTooltip);
-      canvas.dataset.dashboardEventsBound = 'true';
-    }
+    chart.appendChild(body);
+    fitDashboardSegmentLabels(chart, '.statistics-industry-segment');
   }
 
   function drawViolationDistribution(distribution) {
@@ -7450,8 +7996,8 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       });
       return;
     }
-    clearDashboardCanvas('industry-performance-canvas');
-    clearDashboardCanvas('rating-distribution-canvas');
+    clearDashboardCanvas('industry-performance-chart');
+    clearDashboardCanvas('rating-distribution-bar');
     clearDashboardCanvas('violation-distribution-canvas');
     drawStatusDonut(statisticalDashboardPayload.status_distribution);
     renderRanking(statisticalDashboardPayload.top_suppliers);
@@ -8921,11 +9467,11 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       const people = el('span', { className: 'authz-role-people', text: `${role.userCount} người` });
       const statusNode = el('span', { className: `tag sev-${role.active ? 'green' : 'gray'}`, text: role.active ? 'Hoạt động' : 'Tạm ngưng' });
       const menu = RowActionGroup([], [
-        actionDescriptor('authorization.role_select', () => openAuthzRoleEditor(role.roleCode, label), null, { label: 'Chỉnh sửa', announceSuccess: false }),
+        actionDescriptor('authorization.role_select', () => openAuthzRoleEditor(role.roleCode, label), null, { label: 'Chỉnh sửa', icon: 'pen', announceSuccess: false }),
         actionDescriptor('authorization.role_clone', async () => {
           const loaded = await loadAuthzRole(role.roleCode);
           if (loaded) beginNewRole(role.roleCode, authzRoleDetail, label);
-        }, null, { label: 'Nhân bản', announceSuccess: false }),
+        }, null, { label: 'Nhân bản', icon: 'copy', announceSuccess: false }),
       ]);
       setRegisteredButtonAction(label, 'authorization.role_select', () => openAuthzRoleEditor(role.roleCode, label), { announceSuccess: false });
       card.append(label, permissions, people, statusNode, menu);
@@ -12421,7 +12967,7 @@ import { buildSharedQuestionUpdates, filterQuestionGroups, groupQuestionItems, s
       tr.appendChild(tdStatus);
       const tdAct = el('td', { className: 'table-action-cell text-right' });
       const rowMenu = RowActionGroup([
-        actionDescriptor('authorization.tab_open', () => openAuthzUserEditor(userId, tr), null, { label: 'Điều chỉnh', announceSuccess: false }),
+        actionDescriptor('authorization.tab_open', () => openAuthzUserEditor(userId, tr), null, { label: 'Điều chỉnh', icon: 'pen', announceSuccess: false }),
       ], u.is_active
         ? (userId !== state.userId ? [actionDescriptor('authorization.user_deactivate', () => deactivateUser(userId, u.email), null, { confirm: false, objectIdentity: u.email })] : [])
         : [actionDescriptor('authorization.user_reactivate', () => reactivateUser(userId, u.email), null, { confirm: false, objectIdentity: u.email })]);

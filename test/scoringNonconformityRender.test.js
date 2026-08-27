@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
 
 function extractFunction(name) {
   const pattern = new RegExp(`(?:async\\s+)?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}`);
@@ -99,7 +100,10 @@ function createHarness(overrides = {}) {
   const context = {
     state,
     scoringValidationTarget: null,
-    CORRECTIVE_REQUIREMENT_OPTIONS: ['Bổ sung hồ sơ', 'Khắc phục tại cơ sở'],
+    correctiveRequirementItems: [
+      { id: 1, name: 'Bổ sung hồ sơ' },
+      { id: 2, name: 'Khắc phục tại cơ sở' },
+    ],
     $: (id) => elements[id],
     el,
     labeledTd,
@@ -199,12 +203,20 @@ test('RUN-05 renders one temporary D finding with editable corrective fields and
   assert.match(harness.elements['nonconformity-tbody'].textContent, /D/);
   assert.match(harness.elements['nonconformity-tbody'].textContent, /Thiếu hồ sơ kiểm soát/);
 
-  const selects = descendants(harness.elements['nonconformity-tbody'], 'select');
   const inputs = descendants(harness.elements['nonconformity-tbody'], 'input');
-  assert.equal(selects.length, 1, 'Yêu cầu khắc phục phải nhập được trước khi lưu');
-  assert.equal(inputs.length, 1, 'Thời hạn khắc phục phải nhập được trước khi lưu');
-  assert.equal(inputs[0].value, '2026-08-10');
-  assert.equal(inputs[0].getAttribute('min'), '2026-08-03');
+  const buttons = descendants(harness.elements['nonconformity-tbody'], 'button');
+  const requirement = inputs.find((input) => input.hasAttribute('data-corrective-requirement-combobox'));
+  const dueDate = inputs.find((input) => input.getAttribute('type') === 'date');
+  assert.ok(requirement, 'Yêu cầu khắc phục phải là combobox tìm kiếm');
+  assert.equal(requirement.getAttribute('role'), 'combobox');
+  assert.equal(requirement.getAttribute('aria-autocomplete'), 'list');
+  assert.equal(requirement.getAttribute('placeholder'), 'Chọn yêu cầu khắc phục...');
+  assert.equal(buttons.length, 1);
+  assert.equal(buttons[0].getAttribute('data-corrective-requirement-toggle'), 'true');
+  assert.equal(buttons[0].getAttribute('aria-label'), 'Mở danh mục yêu cầu khắc phục');
+  assert.ok(dueDate, 'Thời hạn khắc phục phải nhập được trước khi lưu');
+  assert.equal(dueDate.value, '2026-08-10');
+  assert.equal(dueDate.getAttribute('min'), '2026-08-03');
   assert.deepEqual(harness.consoleErrors, []);
 });
 
@@ -241,6 +253,7 @@ test('RUN-05 saved findings are authoritative after reload without duplicates or
     nonconformity_content: 'Thiếu hồ sơ kiểm soát',
     remediation_content: 'Bổ sung hồ sơ',
     remediation: 'Bổ sung hồ sơ',
+    corrective_requirement_id: 1,
     due_date: '2026-08-15',
     status: 'OPEN',
   };
@@ -253,8 +266,12 @@ test('RUN-05 saved findings are authoritative after reload without duplicates or
   assert.equal(rows[0].due_date, '2026-08-15');
   harness.renderNonconformities(rows, selected);
   assert.equal(harness.elements['nonconformity-tbody'].children.length, 1);
-  assert.equal(descendants(harness.elements['nonconformity-tbody'], 'select')[0].value, 'Bổ sung hồ sơ');
-  assert.equal(descendants(harness.elements['nonconformity-tbody'], 'input')[0].value, '2026-08-15');
+  const inputs = descendants(harness.elements['nonconformity-tbody'], 'input');
+  const requirement = inputs.find((input) => input.hasAttribute('data-corrective-requirement-combobox'));
+  const dueDate = inputs.find((input) => input.getAttribute('type') === 'date');
+  assert.equal(requirement.value, 'Bổ sung hồ sơ');
+  assert.equal(requirement.getAttribute('data-corrective-requirement-id'), '1');
+  assert.equal(dueDate.value, '2026-08-15');
 });
 
 test('RUN-05 changing B/C/D to A/NA removes findings and a locked round is read-only', () => {
@@ -303,4 +320,37 @@ test('RUN-05 separates API load failures from render failures and leaves an expl
   assert.notEqual(harness.elements['scoring-msg'].textContent, 'Không tải được dữ liệu chấm điểm.');
   assert.equal(harness.elements['nonconformity-tbody'].children.length, 1);
   assert.match(harness.elements['nonconformity-tbody'].textContent, /Không thể hiển thị bảng điểm không phù hợp/);
+});
+
+test('corrective-requirement combobox normalizes exact matches and warns on similar catalog entries', () => {
+  const correctiveRequirementItems = [
+    { id: 1, name: 'Bổ sung hồ sơ' },
+    { id: 2, name: 'Gửi hình ảnh khắc phục' },
+  ];
+  const functionNames = [
+    'displayCorrectiveRequirementName',
+    'normalizedCorrectiveRequirementName',
+    'correctiveRequirementTokens',
+    'correctiveRequirementSimilarity',
+    'matchingCorrectiveRequirements',
+  ];
+  const factory = new Function(
+    'correctiveRequirementItems',
+    `${functionNames.map(extractFunction).join('\n')}\nreturn { ${functionNames.join(', ')} };`,
+  );
+  const helpers = factory(correctiveRequirementItems);
+  assert.equal(helpers.normalizedCorrectiveRequirementName('  BỔ   SUNG HỒ SƠ '), 'bổ sung hồ sơ');
+  assert.equal(helpers.correctiveRequirementSimilarity('Bổ sung hồ sơ', 'bổ sung hồ sơ'), 100);
+  assert.ok(helpers.correctiveRequirementSimilarity('Gửi hình ảnh khắc phục', 'Gửi ảnh khắc phục') >= 35);
+  assert.equal(helpers.matchingCorrectiveRequirements('', false).length, 2, 'click khi chưa gõ phải hiển thị toàn bộ danh mục');
+  assert.equal(helpers.matchingCorrectiveRequirements('bổ sung', false)[0].item.id, 1);
+});
+
+test('corrective-requirement creation is confirmed in a dedicated modal and persisted through the catalog API', () => {
+  assert.match(indexSource, /id="corrective-requirement-modal"/);
+  assert.match(indexSource, /id="corrective-requirement-similar-warning"/);
+  assert.match(appSource, /api\('\/evaluations\/corrective-requirements', \{ method: 'POST'/);
+  assert.match(appSource, /data-corrective-requirement-selected/);
+  assert.match(appSource, /if \(query && !exact && query\.length <= 120\)/);
+  assert.doesNotMatch(appSource, /CORRECTIVE_REQUIREMENT_OPTIONS/);
 });

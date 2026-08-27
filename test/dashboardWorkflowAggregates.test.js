@@ -345,6 +345,9 @@ test('evaluation dashboard routes preserve auth, strict month errors and unmount
     assert.equal(statisticsJson.meta.data_source, 'workflow');
     assert.equal(statisticsJson.status_distribution.total, 0);
     assert.deepEqual(statisticsJson.trend.map((item) => item.period_value), ['2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04']);
+    statisticsJson.trend.forEach((item) => {
+      assert.equal(item.evaluation_ticket_count, item.passed_ticket_count + item.failed_ticket_count);
+    });
     assert.equal(statisticsJson.kpis.evaluated_supplier_count.current_value, 0);
     assert.equal(statisticsJson.kpis.evaluation_ticket_count.current_value, 0);
   } finally {

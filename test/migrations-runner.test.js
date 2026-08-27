@@ -61,7 +61,7 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
     const first = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'test-version' });
     assert.deepEqual(first.results.map((row) => row.id), projectMigrationIds);
     assert.ok(first.results.every((row) => row.state === 'applied' && row.executionMode === 'applied'));
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 63);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().count, 64);
     for (const table of RETIRED_SCOPE_TABLES) {
       assert.equal(
         db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),
@@ -74,6 +74,7 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='report_legacy_template_links'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='report_legacy_migration_review'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='personnel_import_batches'").get());
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='corrective_requirements'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='personnel_import_batches_append_only_update'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='personnel_import_batches_append_only_delete'").get());
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);

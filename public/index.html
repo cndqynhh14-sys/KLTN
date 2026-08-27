@@ -1672,12 +1672,52 @@
   .status-badge.waiting { background: var(--amber-bg); border-color: rgba(217,119,6,.25); color: var(--amber); }
   .status-badge.done { background: var(--green-bg); border-color: rgba(22,163,74,.2); color: var(--green); }
   .status-badge.failed { background: var(--red-bg); border-color: rgba(224,48,64,.2); color: var(--red); }
+  .evaluation-status-tabs { display: flex; align-items: flex-end; gap: 22px; overflow-x: auto; padding: 0 14px; border-bottom: 1px solid var(--border); scrollbar-width: thin; }
+  .evaluation-status-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 11px 0 9px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+  .evaluation-status-tab:hover { color: var(--ink); }
+  .evaluation-status-tab.active { border-bottom-color: var(--red); color: var(--red); }
+  .evaluation-status-tab-count { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: inherit; font-size: 10px; line-height: 18px; text-align: center; }
+  .evaluation-status-tab.active .evaluation-status-tab-count { background: var(--red-bg); }
+  .evaluation-workflow-stepper { display: flex; align-items: flex-start; overflow-x: auto; padding: 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); scrollbar-width: thin; }
+  .evaluation-workflow-step { position: relative; display: flex; flex: 1 0 132px; gap: 8px; min-width: 132px; color: var(--muted); }
+  .evaluation-workflow-step:not(:last-child)::after { content: ''; position: absolute; top: 10px; left: 25px; right: 8px; height: 1px; background: var(--border-2); }
+  .evaluation-workflow-marker { position: relative; z-index: 1; display: grid; flex: 0 0 21px; width: 21px; height: 21px; place-items: center; border: 1px solid var(--border-2); border-radius: 50%; background: var(--surface); font-size: 11px; line-height: 1; }
+  .evaluation-workflow-step.complete { color: var(--green); }
+  .evaluation-workflow-step.current { color: var(--red); }
+  .evaluation-workflow-step.complete .evaluation-workflow-marker { border-color: var(--green); background: var(--green); color: white; }
+  .evaluation-workflow-step.current .evaluation-workflow-marker { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-bg); }
+  .evaluation-workflow-content { position: relative; z-index: 1; display: flex; min-width: 0; flex-direction: column; padding-right: 8px; background: var(--surface-2); }
+  .evaluation-workflow-label { color: var(--ink); font-size: 11px; font-weight: 700; line-height: 1.35; }
+  .evaluation-workflow-step.current .evaluation-workflow-label { color: var(--red); }
+  .evaluation-workflow-date { margin-top: 2px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
   .pagination { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface); }
   .pagination .meta { color: var(--muted); font-size: 12px; }
   .pagination .controls { display: flex; align-items: center; justify-content: center; gap: 8px; grid-column: 2; }
   .filter-grid { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(130px, .7fr)) auto; gap: 10px; padding: 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
   .field-full { grid-column: 1 / -1; }
-  .score-select { min-width: 82px; }
+  .scoring-assessment-scroll { overflow-x: visible; }
+  #scoring-assessment-table { width: 100%; min-width: 0; table-layout: fixed; }
+  #scoring-assessment-table .scoring-col-clause { width: 7%; }
+  #scoring-assessment-table .scoring-col-question { width: 31%; }
+  #scoring-assessment-table .scoring-col-type { width: 11%; }
+  #scoring-assessment-table .scoring-col-score { width: 24%; }
+  #scoring-assessment-table .scoring-col-note { width: 16%; }
+  #scoring-assessment-table .scoring-col-status { width: 11%; }
+  #scoring-assessment-table th,
+  #scoring-assessment-table td { padding-inline: 9px; }
+  #scoring-assessment-table th { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+  #scoring-assessment-table td:nth-child(2) { white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+  #scoring-assessment-table td:nth-child(3) .tag,
+  #scoring-assessment-table td:nth-child(6) .status-badge { max-width: 100%; justify-content: center; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+  #scoring-assessment-table .note-input { width: 100%; min-width: 0; }
+  .score-segmented { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.2fr); gap: 5px; width: 100%; max-width: 232px; overflow: visible; padding: 2px; border-radius: 8px; }
+  .score-segmented.exclusion { grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.2fr); max-width: 142px; }
+  .score-segmented.invalid { outline: 2px solid var(--red); outline-offset: 1px; }
+  .score-segment { width: 100%; min-width: 0; min-height: 34px; height: 34px; padding: 0 4px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; font-weight: 750; line-height: 32px; text-align: center; white-space: nowrap; cursor: pointer; transition: border-color .15s ease, background .15s ease, color .15s ease, box-shadow .15s ease; }
+  .score-segment:hover:not(:disabled) { border-color: var(--muted); color: var(--text); }
+  .score-segment.selected { border-color: var(--red); background: var(--red-bg); color: var(--red); box-shadow: inset 0 0 0 1px rgba(224,48,64,.08); }
+  .score-segment:focus-visible { outline: 2px solid rgba(224,48,64,.28); outline-offset: 2px; }
+  .score-segment:disabled { cursor: not-allowed; opacity: .52; }
   .note-input { min-width: 220px; }
   .result-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
   .result-chip { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: #fff; }
@@ -1920,6 +1960,22 @@
   .confirm-card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 800; color: var(--text); }
   .confirm-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
   .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .corrective-requirement-combobox { position: relative; min-width: 190px; }
+  .corrective-requirement-input { width: 100%; padding-right: 36px; cursor: text; }
+  .corrective-requirement-toggle { position: absolute; top: 1px; right: 1px; bottom: 1px; width: 34px; display: grid; place-items: center; border: 0; border-left: 1px solid transparent; border-radius: 0 7px 7px 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+  .corrective-requirement-toggle:hover, .corrective-requirement-toggle:focus-visible { background: var(--surface-2); color: var(--text); outline: none; }
+  .corrective-requirement-combobox:focus-within .corrective-requirement-toggle { color: var(--text); }
+  .corrective-requirement-options { position: fixed; z-index: 280; max-width: calc(100vw - 16px); max-height: 280px; overflow: auto; padding: 7px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-lg); }
+  .corrective-requirement-option { width: 100%; display: block; padding: 8px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+  .corrective-requirement-option:hover, .corrective-requirement-option:focus-visible { background: var(--surface-2); outline: none; }
+  .corrective-requirement-option.create { color: var(--brand); font-weight: 750; }
+  .corrective-requirement-options-label { padding: 5px 9px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .035em; text-transform: uppercase; }
+  .corrective-requirement-options-separator { height: 1px; margin: 6px 4px; background: var(--border); }
+  .corrective-requirement-options-empty { padding: 8px 9px; color: var(--muted); font-size: 11px; }
+  .corrective-requirement-modal-card { width: min(440px, calc(100vw - 32px)); padding: 20px; border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-lg); }
+  .corrective-requirement-modal-card h3 { margin: 0 0 15px; font-size: 18px; }
+  .corrective-requirement-modal-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .corrective-requirement-similar-warning { margin-top: 12px; padding: 10px 12px; border: 1px solid #f0c36d; border-radius: 9px; background: #fff8e7; color: #72510d; font-size: 12px; line-height: 1.5; }
   .top-user-chip .mini-avatar {
     width: 30px;
     height: 30px;
@@ -2376,7 +2432,7 @@
   .statistics-kpi-comparison.positive { color: var(--green); }
   .statistics-kpi-comparison.negative { color: var(--red); }
   .statistics-main-grid { display: grid; grid-template-columns: minmax(390px, .9fr) minmax(520px, 1.25fr); gap: 14px; align-items: stretch; }
-  .statistics-card { min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .statistics-card { min-width: 0; height: 100%; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
   .statistics-card-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 18px; border-bottom: 1px solid var(--border); }
   .statistics-card-head h2 { margin: 0; color: var(--text); font-size: 18px; font-weight: 800; }
   .statistics-donut-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; align-items: center; padding: 16px; }
@@ -2390,7 +2446,8 @@
   .statistics-status-item:hover, .statistics-status-item.active { background: var(--surface-2); }
   .statistics-status-item.muted { opacity: .35; }
   .statistics-status-dot { width: 9px; height: 9px; border-radius: 3px; }
-  .statistics-ranking-wrap { overflow-x: auto; }
+  .statistics-ranking-wrap { max-height: 320px; overflow-x: auto; overflow-y: auto; scrollbar-gutter: stable; }
+  .statistics-ranking-table thead th { position: sticky; top: 0; z-index: 2; }
   .statistics-ranking-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11.5px; }
   .statistics-ranking-col-rank { width: 10%; }
   .statistics-ranking-col-supplier { width: 50%; }
@@ -2414,25 +2471,53 @@
   .statistics-trend-head h2 { margin: 0; color: var(--text); font-size: 18px; font-weight: 800; }
   .statistics-trend-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 14px; color: var(--muted); font-size: 10.5px; }
   .statistics-trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .statistics-trend-legend i { width: 15px; height: 9px; border-radius: 3px; background: #444; }
-  .statistics-trend-legend .failed i { width: 18px; height: 2px; border-radius: 99px; background: #b3b3b3; }
-  .statistics-chart-wrap { position: relative; width: 100%; min-width: 0; min-height: 320px; padding: 14px 16px 9px; }
+  .statistics-trend-legend i { width: 15px; height: 9px; border-radius: 3px; background: var(--muted); }
+  .statistics-trend-legend .passed i { background: var(--green); }
+  .statistics-trend-legend .failed i { background: var(--red); }
+  .statistics-trend-legend .rate i { position: relative; width: 18px; height: 2px; border-radius: 99px; background: #9aa4b2; }
+  .statistics-trend-legend .rate i::after { content: ''; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border: 2px solid #9aa4b2; border-radius: 50%; background: var(--surface); transform: translate(-50%, -50%); }
+  .statistics-chart-wrap { position: relative; width: 100%; min-width: 0; min-height: 335px; padding: 14px 16px 4px; }
   .statistics-chart-scroll { max-width: 100%; overflow-x: hidden; }
-  #quality-trend-canvas { display: block; width: 100%; max-width: 100%; height: 285px; }
+  #quality-trend-canvas { display: block; width: 100%; max-width: 100%; height: 300px; }
+  .statistics-trend-note { margin: 3px 2px 0; color: var(--muted); font-size: 10px; font-style: italic; line-height: 1.45; }
   .statistics-chart-empty, .statistics-card-empty { display: grid; place-items: center; min-height: 220px; padding: 28px; color: var(--muted); font-size: 11.5px; text-align: center; }
-  .statistics-detail-top { display: grid; grid-template-columns: minmax(0, 13fr) minmax(320px, 7fr); gap: 14px; align-items: stretch; }
   .statistics-detail-chart { position: relative; min-height: 350px; padding: 16px 18px 12px; }
-  #industry-performance-canvas, #violation-distribution-canvas { display: block; width: 100%; height: 320px; }
-  .statistics-rating-layout { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, .8fr); gap: 12px; align-items: center; padding: 16px; }
-  .statistics-rating-canvas-wrap { position: relative; min-height: 260px; display: grid; place-items: center; }
-  #rating-distribution-canvas { width: 250px; height: 250px; max-width: 100%; }
-  .statistics-rating-center { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
-  .statistics-rating-center span { display: block; color: var(--muted); font-size: 10px; }
-  .statistics-rating-center strong { display: block; margin-top: 4px; color: var(--text); font: 800 25px/1 var(--mono); }
-  .statistics-rating-legend { display: grid; gap: 8px; }
-  .statistics-rating-item { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 8px; align-items: start; color: var(--text); font-size: 11px; line-height: 1.4; }
-  .statistics-rating-item i { width: 9px; height: 9px; margin-top: 3px; border-radius: 3px; }
-  .statistics-rating-item small { display: block; color: var(--muted); font-size: 10px; }
+  #violation-distribution-canvas { display: block; width: 100%; height: 320px; }
+  .statistics-rating-layout { padding: 13px 18px 16px; }
+  .statistics-rating-total { margin-bottom: 11px; color: var(--muted); font-size: 11px; font-weight: 650; }
+  .statistics-composition-bar { width: 100%; height: 24px; display: flex; overflow: hidden; border-radius: 7px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+  .statistics-composition-segment { min-width: 0; display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .statistics-composition-segment + .statistics-composition-segment { box-shadow: -1px 0 rgba(255,255,255,.35); }
+  .statistics-composition-segment span { display: none; }
+  .statistics-composition-segment.has-label span { display: inline; }
+  .statistics-rating-scale { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 6px; color: var(--muted); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+  .statistics-rating-scale span { text-align: center; }
+  .statistics-rating-scale span:first-child { text-align: left; }
+  .statistics-rating-scale span:last-child { text-align: right; }
+  .statistics-rating-legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px 18px; margin-top: 13px; }
+  .statistics-rating-item { min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); gap: 7px; align-items: center; color: var(--text); font-size: 10.5px; line-height: 1.35; }
+  .statistics-rating-item i { width: 9px; height: 9px; border-radius: 3px; }
+  .statistics-rating-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .statistics-rating-item small { color: var(--muted); font-size: 9.5px; white-space: nowrap; }
+  .statistics-industry-layout { padding: 7px 18px 13px; }
+  .statistics-industry-header,
+  .statistics-industry-row { display: grid; grid-template-columns: minmax(145px, 22%) minmax(240px, 1fr) 88px 88px; column-gap: 14px; align-items: center; }
+  .statistics-industry-header { min-height: 38px; color: var(--muted); font-size: 9.5px; font-weight: 750; letter-spacing: .02em; }
+  .statistics-industry-header > span:nth-last-child(-n+2) { text-align: center; }
+  .statistics-industry-legend { display: flex; justify-content: center; gap: 16px; }
+  .statistics-industry-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .statistics-industry-legend i { width: 9px; height: 9px; border-radius: 3px; }
+  .statistics-industry-rows { border-top: 1px solid var(--border); }
+  .statistics-industry-row { min-height: 48px; border-bottom: 1px solid var(--border); }
+  .statistics-industry-row:last-child { border-bottom: 0; }
+  .statistics-industry-name { min-width: 0; overflow: hidden; color: var(--text); font-size: 10.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  .statistics-industry-bar { height: 22px; display: flex; overflow: hidden; border-radius: 5px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+  .statistics-industry-segment { min-width: 0; display: grid; place-items: center; color: #fff; font-size: 9.5px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .statistics-industry-segment + .statistics-industry-segment { box-shadow: -1px 0 rgba(255,255,255,.3); }
+  .statistics-industry-segment span { display: none; }
+  .statistics-industry-segment.has-label span { display: inline; }
+  .statistics-industry-metric { color: var(--text); font-size: 10.5px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+  .statistics-industry-metric small { display: none; }
   .statistics-tooltip { position: fixed; z-index: 400; max-width: 260px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); font-size: 11px; line-height: 1.6; pointer-events: none; }
   .statistics-skeleton { overflow: hidden; background: var(--surface-2); position: relative; }
   .statistics-skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent); animation: dashboard-shimmer 1.3s infinite; }
@@ -2444,14 +2529,13 @@
   @media (max-width: 1080px) {
     .statistics-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .statistics-main-grid { grid-template-columns: 1fr; }
-    .statistics-detail-top { grid-template-columns: 1fr; }
   }
   @media (max-width: 760px) {
     .statistics-dashboard { gap: 14px; }
     .statistics-filterbar { grid-template-columns: 1fr; }
     .dashboard-export { width: 100%; }
     .statistics-donut-layout { grid-template-columns: 1fr; }
-    .statistics-rating-layout { grid-template-columns: 1fr; }
+    .statistics-rating-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .statistics-status-legend { max-height: none; }
     .statistics-trend-head { align-items: flex-start; flex-direction: column; }
     .statistics-trend-legend { justify-content: flex-start; }
@@ -2460,6 +2544,22 @@
     .statistics-kpis { grid-template-columns: 1fr; }
     .dashboard-view-segment { width: 100%; }
     .dashboard-view-segment button { min-width: 0; flex: 1; }
+    .statistics-card-head { padding: 14px; }
+    .statistics-card-head h2 { font-size: 16px; }
+    .statistics-rating-layout { padding: 12px 14px 14px; }
+    .statistics-composition-bar { height: 20px; }
+    .statistics-rating-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+    .statistics-rating-item span { overflow: visible; white-space: normal; }
+    .statistics-rating-item small { display: block; margin-top: 1px; }
+    .statistics-industry-layout { padding: 8px 14px 12px; }
+    .statistics-industry-header { display: none; }
+    .statistics-industry-rows { border-top: 0; }
+    .statistics-industry-row { grid-template-columns: 1fr 1fr; grid-template-areas: 'name name' 'bar bar' 'total score'; gap: 8px 12px; padding: 12px 0; }
+    .statistics-industry-name { grid-area: name; font-size: 11px; }
+    .statistics-industry-bar { grid-area: bar; height: 20px; }
+    .statistics-industry-total { grid-area: total; text-align: left; }
+    .statistics-industry-score { grid-area: score; text-align: right; }
+    .statistics-industry-metric small { display: inline; margin-right: 4px; color: var(--muted); font-size: 9px; font-weight: 600; }
   }
   @media (prefers-color-scheme: dark) {
     #view-overview {
@@ -2821,7 +2921,11 @@
       font-weight: 800;
     }
     #view-scoring .data-table td[colspan]::before { content: ''; display: none; }
-    .note-input, .score-select { min-width: 0; }
+    #scoring-assessment-table { min-width: 0; table-layout: auto; }
+    #scoring-assessment-table colgroup { display: none; }
+    .score-segmented { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.2fr); gap: 4px; max-width: 212px; }
+    .score-segmented.exclusion { grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.2fr); max-width: 132px; }
+    .note-input { min-width: 0; }
     .workflow-actions, .form-actions { display: grid; grid-template-columns: 1fr; }
     .pagination { padding-bottom: 14px; }
     #add-user-modal,
@@ -3233,6 +3337,7 @@
           <button id="eval-export-excel" class="btn-ghost" type="button">Export Excel</button>
         </div>
       </div>
+      <div id="eval-status-tabs" class="evaluation-status-tabs" role="tablist" aria-label="Lọc phiếu theo trạng thái"></div>
       <div class="table-scroll">
         <table class="data-table eval-list-table">
           <thead>
@@ -3509,6 +3614,7 @@
     </div>
     <div class="panel">
       <div class="panel-head"><h3>Chi tiết đánh giá</h3><span class="count">A/B/C/D/NA</span></div>
+      <div id="scoring-workflow-stepper" class="evaluation-workflow-stepper hidden" aria-label="Tiến trình trạng thái phiếu đánh giá"></div>
       <div class="filter-grid">
         <select id="scoring-ticket-select" class="pill-select">
           <option value="">Chọn phiếu đánh giá</option>
@@ -3550,8 +3656,16 @@
         <textarea id="supplier-introduction-input" class="input scoring-introduction-input" rows="5" placeholder="Nhập giới thiệu NCC"></textarea>
         <div id="supplier-introduction-error" class="field-error validation-inline"></div>
       </div>
-      <div class="table-scroll">
-        <table class="data-table">
+      <div class="table-scroll scoring-assessment-scroll">
+        <table id="scoring-assessment-table" class="data-table">
+          <colgroup>
+            <col class="scoring-col-clause">
+            <col class="scoring-col-question">
+            <col class="scoring-col-type">
+            <col class="scoring-col-score">
+            <col class="scoring-col-note">
+            <col class="scoring-col-status">
+          </colgroup>
             <thead><tr><th>Điều khoản</th><th>Câu hỏi</th><th>Loại điều khoản</th><th>Điểm</th><th>Ý kiến / Ghi chú</th><th>Trạng thái</th></tr></thead>
           <tbody id="scoring-tbody"></tbody>
         </table>
@@ -3690,7 +3804,8 @@
       <div class="workspace-filter-bar">
         <input id="workspace-search" class="input" type="search" placeholder="Tìm theo mã hoặc nhà cung cấp" aria-label="Tìm việc cần làm">
         <select id="workspace-status-filter" class="input" aria-label="Lọc theo trạng thái"><option value="">Tất cả trạng thái</option></select>
-        <select id="workspace-due-filter" class="input" aria-label="Lọc theo hạn"><option value="">Tất cả hạn</option><option value="overdue">Đã quá hạn</option><option value="due_soon">Sắp đến hạn</option><option value="no_due">Không có hạn</option></select>
+        <select id="workspace-due-filter" class="input" aria-label="Lọc theo hạn"><option value="">Tất cả hạn</option><option value="overdue">Đã quá hạn</option><option value="due_soon">Sắp đến hạn</option><option value="no_due">Không có hạn</option></select>
+
       </div>
       <div id="workspace-loading" class="workspace-empty hidden">Đang tải công việc...</div>
       <div class="table-scroll">
@@ -3776,40 +3891,38 @@
         <div class="statistics-trend-head">
           <h2 id="quality-trend-title">Xu hướng đánh giá NCC</h2>
           <div class="statistics-trend-legend" aria-label="Chú giải biểu đồ">
-            <span><i></i>Số NCC được đánh giá</span>
-            <span class="failed"><i></i>Tỷ lệ không đạt</span>
+            <span class="passed"><i></i>Phiếu đạt</span>
+            <span class="failed"><i></i>Phiếu không đạt</span>
+            <span class="rate"><i></i>Tỷ lệ không đạt (%)</span>
           </div>
         </div>
         <div class="statistics-chart-scroll">
           <div class="statistics-chart-wrap">
-            <canvas id="quality-trend-canvas" role="img" aria-label="Biểu đồ kết hợp số NCC và tỷ lệ không đạt trong sáu kỳ"></canvas>
+            <canvas id="quality-trend-canvas" role="img" aria-label="Biểu đồ sáu kỳ gồm phiếu đạt, phiếu không đạt và tỷ lệ không đạt"></canvas>
             <div id="quality-trend-empty" class="statistics-chart-empty hidden">Không có dữ liệu phù hợp với bộ lọc hiện tại.</div>
+            <p class="statistics-trend-note">Tỷ lệ không đạt = Phiếu không đạt / Tổng số phiếu đánh giá</p>
           </div>
         </div>
       </section>
       </div>
 
       <div id="statistics-detail-charts" class="statistics-mode-pane hidden" role="tabpanel" aria-labelledby="dashboard-mode-detail">
-        <div class="statistics-detail-top">
-          <section class="statistics-card" aria-labelledby="industry-performance-title">
-            <div class="statistics-card-head"><h2 id="industry-performance-title">Hiệu quả đánh giá theo ngành hàng</h2></div>
-            <div class="statistics-detail-chart">
-              <canvas id="industry-performance-canvas" role="img" aria-label="Biểu đồ 100% stacked bar hiệu quả đánh giá theo ngành hàng"></canvas>
-              <div id="industry-performance-empty" class="statistics-chart-empty hidden">Không có dữ liệu ngành hàng trong phạm vi lọc.</div>
-            </div>
-          </section>
+        <section class="statistics-card" aria-labelledby="rating-distribution-title">
+          <div class="statistics-card-head"><h2 id="rating-distribution-title">Phân bố NCC theo mức xếp loại</h2></div>
+          <div id="rating-distribution-content" class="statistics-rating-layout">
+            <div id="rating-distribution-total" class="statistics-rating-total"></div>
+            <div id="rating-distribution-bar" class="statistics-composition-bar" role="img" aria-label="Cơ cấu 100% NCC theo bốn mức xếp loại"></div>
+            <div class="statistics-rating-scale" aria-hidden="true"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+            <div id="rating-distribution-legend" class="statistics-rating-legend" aria-label="Chú giải mức xếp loại"></div>
+          </div>
+          <div id="rating-distribution-empty" class="statistics-card-empty hidden">Không có NCC đã đánh giá trong phạm vi lọc.</div>
+        </section>
 
-          <section class="statistics-card" aria-labelledby="rating-distribution-title">
-            <div class="statistics-card-head"><h2 id="rating-distribution-title">Phân bố NCC theo mức xếp loại</h2></div>
-            <div id="rating-distribution-content" class="statistics-rating-layout">
-              <div class="statistics-rating-canvas-wrap">
-                <canvas id="rating-distribution-canvas" role="img" aria-label="Biểu đồ tròn phân bố NCC theo mức xếp loại"></canvas>
-              </div>
-              <div id="rating-distribution-legend" class="statistics-rating-legend" aria-label="Chú giải mức xếp loại"></div>
-            </div>
-            <div id="rating-distribution-empty" class="statistics-card-empty hidden">Không có NCC đã đánh giá trong phạm vi lọc.</div>
-          </section>
-        </div>
+        <section class="statistics-card" aria-labelledby="industry-performance-title">
+          <div class="statistics-card-head"><h2 id="industry-performance-title">Hiệu quả đánh giá theo ngành hàng</h2></div>
+          <div id="industry-performance-chart" class="statistics-industry-layout" role="table" aria-label="Hiệu quả đánh giá theo MCH3"></div>
+          <div id="industry-performance-empty" class="statistics-chart-empty hidden">Không có dữ liệu MCH3 trong phạm vi lọc.</div>
+        </section>
 
         <section class="statistics-card" aria-labelledby="violation-distribution-title">
           <div class="statistics-card-head"><h2 id="violation-distribution-title">Tỷ lệ theo nhóm vi phạm</h2></div>
@@ -4658,6 +4771,23 @@
       <button type="button" id="confirm-accept" class="btn-primary">Xác nhận</button>
     </div>
   </div>
+</div>
+
+<div id="corrective-requirement-options" class="corrective-requirement-options hidden" role="listbox" aria-label="Danh mục yêu cầu khắc phục"></div>
+
+<div id="corrective-requirement-modal" class="modal-backdrop hidden fixed inset-0 bg-black/50 z-[320] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="corrective-requirement-modal-title">
+  <form id="corrective-requirement-form" class="corrective-requirement-modal-card" novalidate>
+    <h3 id="corrective-requirement-modal-title">Thêm yêu cầu khắc phục</h3>
+    <label class="auth-label" for="corrective-requirement-name">Tên yêu cầu</label>
+    <input id="corrective-requirement-name" class="input" maxlength="120" readonly>
+    <p class="corrective-requirement-modal-note">Yêu cầu này sẽ được bổ sung vào danh mục dùng chung và có thể được sử dụng cho các lần đánh giá sau.</p>
+    <div id="corrective-requirement-similar-warning" class="corrective-requirement-similar-warning hidden" role="status"></div>
+    <p id="corrective-requirement-error" class="auth-msg" role="alert"></p>
+    <div class="confirm-actions">
+      <button id="corrective-requirement-cancel" type="button" class="btn-ghost" data-action-id="dialog.cancel">Hủy</button>
+      <button id="corrective-requirement-submit" type="submit" class="btn-primary" data-action-id="evaluation.save_scoring">Thêm và sử dụng</button>
+    </div>
+  </form>
 </div>
 
 <!-- ============ MODALS ============ -->

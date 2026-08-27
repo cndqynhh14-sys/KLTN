@@ -10,11 +10,11 @@ const navigation = require('../public/js/navigation-manifest');
 
 function detailFixtureRepository() {
   const tickets = [
-    { id: 1, ticket_code: 'A-OLD', supplier_id: 1, supplier_code: 'NCC-A', supplier_name: 'NCC A', region: 'MB', evaluation_type: 'Định kỳ', mch2: 'Hàng tươi', current_status: 'Hoàn thành', created_at: '2026-06-01 08:00:00', cancelled_at: null },
-    { id: 2, ticket_code: 'A-LATEST', supplier_id: 1, supplier_code: 'NCC-A', supplier_name: 'NCC A', region: 'MB', evaluation_type: 'Định kỳ', mch2: 'Hàng tươi', current_status: 'Hoàn thành', created_at: '2026-06-02 08:00:00', cancelled_at: null },
-    { id: 3, ticket_code: 'B', supplier_id: 2, supplier_code: 'NCC-B', supplier_name: 'NCC B', region: 'MB', evaluation_type: 'Định kỳ', mch2: 'Hàng tươi', current_status: 'Hoàn thành', created_at: '2026-06-03 08:00:00', cancelled_at: null },
-    { id: 4, ticket_code: 'C', supplier_id: 3, supplier_code: 'NCC-C', supplier_name: 'NCC C', region: 'MN', evaluation_type: 'Mở mới', mch2: 'Hàng khô', current_status: 'Hoàn thành', created_at: '2026-06-04 08:00:00', cancelled_at: null },
-    { id: 5, ticket_code: 'D', supplier_id: 4, supplier_code: 'NCC-D', supplier_name: 'NCC D', region: 'MN', evaluation_type: 'Mở mới', mch2: 'Hàng khô', current_status: 'Hoàn thành', created_at: '2026-06-05 08:00:00', cancelled_at: null },
+    { id: 1, ticket_code: 'A-OLD', supplier_id: 1, supplier_code: 'NCC-A', supplier_name: 'NCC A', region: 'MB', evaluation_type: 'Định kỳ', mch2: 'Hàng tươi', mch3: 'Rau củ', current_status: 'Hoàn thành', created_at: '2026-06-01 08:00:00', cancelled_at: null },
+    { id: 2, ticket_code: 'A-LATEST', supplier_id: 1, supplier_code: 'NCC-A', supplier_name: 'NCC A', region: 'MB', evaluation_type: 'Định kỳ', mch2: 'Hàng tươi', mch3: 'Rau củ', current_status: 'Hoàn thành', created_at: '2026-06-02 08:00:00', cancelled_at: null },
+    { id: 3, ticket_code: 'B', supplier_id: 2, supplier_code: 'NCC-B', supplier_name: 'NCC B', region: 'MB', evaluation_type: 'Định kỳ', mch2: 'Hàng tươi', mch3: 'Thịt tươi', current_status: 'Hoàn thành', created_at: '2026-06-03 08:00:00', cancelled_at: null },
+    { id: 4, ticket_code: 'C', supplier_id: 3, supplier_code: 'NCC-C', supplier_name: 'NCC C', region: 'MN', evaluation_type: 'Mở mới', mch2: 'Hàng khô', mch3: 'Đồ uống', current_status: 'Hoàn thành', created_at: '2026-06-04 08:00:00', cancelled_at: null },
+    { id: 5, ticket_code: 'D', supplier_id: 4, supplier_code: 'NCC-D', supplier_name: 'NCC D', region: 'MN', evaluation_type: 'Mở mới', mch2: 'Hàng khô', mch3: 'Đồ uống', current_status: 'Hoàn thành', created_at: '2026-06-05 08:00:00', cancelled_at: null },
   ];
   const rounds = [
     { id: 11, ticket_id: 1, round_no: 1, assessment_date: '2026-07-02', completed_at: '2026-07-02 10:00:00', locked_at: '2026-07-02 10:00:00', total_score: 50, final_result: 'Không đạt', classification: 'D', status: 'Hoàn thành' },
@@ -62,14 +62,19 @@ test('RUN-30 detail analytics use the latest evaluation per supplier and count v
   assert.equal([...rating.values()].reduce((sum, row) => sum + row.percentage, 0), 100);
 
   const industries = new Map(result.details.industry_performance.map((row) => [row.industry, row]));
-  assert.deepEqual(industries.get('Hàng tươi'), {
-    industry: 'Hàng tươi', total_suppliers: 2, passed_suppliers: 1, failed_suppliers: 1,
-    passed_percentage: 50, failed_percentage: 50, average_score: 67.5,
+  assert.deepEqual(industries.get('Rau củ'), {
+    industry: 'Rau củ', mch3: 'Rau củ', total_suppliers: 1, passed_suppliers: 1, failed_suppliers: 0,
+    passed_percentage: 100, failed_percentage: 0, average_score: 80,
   });
-  assert.deepEqual(industries.get('Hàng khô'), {
-    industry: 'Hàng khô', total_suppliers: 2, passed_suppliers: 2, failed_suppliers: 0,
+  assert.deepEqual(industries.get('Thịt tươi'), {
+    industry: 'Thịt tươi', mch3: 'Thịt tươi', total_suppliers: 1, passed_suppliers: 0, failed_suppliers: 1,
+    passed_percentage: 0, failed_percentage: 100, average_score: 55,
+  });
+  assert.deepEqual(industries.get('Đồ uống'), {
+    industry: 'Đồ uống', mch3: 'Đồ uống', total_suppliers: 2, passed_suppliers: 2, failed_suppliers: 0,
     passed_percentage: 100, failed_percentage: 0, average_score: 85,
   });
+  assert.equal(result.meta.industry_dimension, 'mch3');
 
   const violations = new Map(result.details.violation_distribution.items.map((row) => [row.code, row]));
   assert.equal(result.details.violation_distribution.total_violations, 5);
@@ -85,7 +90,7 @@ test('RUN-30 shared filters apply to KPI and all detailed datasets', () => {
   const result = service.get({ periodType: 'MONTH', periodValue: '2026-07', regions: ['MB'] });
   assert.equal(result.kpis.evaluated_supplier_count.current_value, 2);
   assert.equal(result.details.rating_distribution.total_suppliers, 2);
-  assert.deepEqual(result.details.industry_performance.map((row) => row.industry), ['Hàng tươi']);
+  assert.deepEqual(result.details.industry_performance.map((row) => row.industry), ['Rau củ', 'Thịt tươi']);
   assert.equal(result.details.violation_distribution.total_violations, 4);
 });
 
@@ -99,8 +104,9 @@ test('RUN-30 exposes one dashboard route and switches local chart modes below KP
   assert.ok(segmentIndex > html.indexOf('id="statistics-kpi-cards"'));
   assert.ok(segmentIndex < html.indexOf('id="statistics-overview-charts"'));
   assert.match(html, /data-dashboard-mode="overview">Tổng quan<[\s\S]*data-dashboard-mode="detail">Chi tiết</);
-  assert.match(html, /id="industry-performance-canvas"[\s\S]*id="rating-distribution-canvas"[\s\S]*id="violation-distribution-canvas"/);
-  assert.match(html, /statistics-detail-top[^}]*grid-template-columns:\s*minmax\(0,\s*13fr\)\s+minmax\(320px,\s*7fr\)/);
+  assert.match(html, /id="rating-distribution-bar"[\s\S]*id="industry-performance-chart"[\s\S]*id="violation-distribution-canvas"/);
+  assert.match(html, /statistics-composition-bar[^}]*height:\s*24px/);
+  assert.match(html, /statistics-industry-row[^}]*grid-template-columns:\s*minmax\(145px,\s*22%\)\s+minmax\(240px,\s*1fr\)\s+88px\s+88px/);
   assert.doesNotMatch(html, /id="view-ncc-eval"/);
   assert.ok(!navigation.NAVIGATION_MANIFEST.some((item) => item.id === 'ncc-eval'));
   assert.equal(navigation.resolveRoute('/dashboard/ncc-evaluations', ['DASHBOARD.READ']).status, 'not_found');
@@ -119,6 +125,9 @@ test('RUN-30 chart palettes and tooltips implement the approved rules', () => {
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
   assert.match(app, /FAILED:\s*'#220006'[\s\S]*BASIC:\s*'#73000E'[\s\S]*GOOD:\s*'#BA001D'[\s\S]*HIGH:\s*'#E53945'/);
   assert.match(app, /passed:\s*'#E53945'[\s\S]*failed:\s*'#220006'/);
-  assert.match(app, /Tổng NCC:[\s\S]*Điểm trung bình:/);
+  assert.match(app, /industry_dimension|row\.mch3\s*\|\|\s*row\.industry/);
+  const industryRenderer = app.slice(app.indexOf('function drawIndustryPerformance'), app.indexOf('function drawViolationDistribution'));
+  assert.match(industryRenderer, /Tổng NCC[\s\S]*Điểm TB/);
+  assert.doesNotMatch(industryRenderer, /showStatisticsTooltip\([^\n]*Tổng NCC|showStatisticsTooltip\([^\n]*Điểm TB/);
   assert.match(app, /Số lượt:[\s\S]*Tỷ lệ:/);
 });

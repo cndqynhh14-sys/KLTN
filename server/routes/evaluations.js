@@ -37,6 +37,7 @@ const EvaluationAnswerRepository = require('../repositories/EvaluationAnswerRepo
 const EvaluationParticipantRepository = require('../repositories/EvaluationParticipantRepository');
 const AttachmentRepository = require('../repositories/AttachmentRepository');
 const CorrectiveActionRepository = require('../repositories/CorrectiveActionRepository');
+const CorrectiveRequirementRepository = require('../repositories/CorrectiveRequirementRepository');
 const ApprovalTaskRepository = require('../repositories/ApprovalTaskRepository');
 const WorkflowHistoryRepository = require('../repositories/WorkflowHistoryRepository');
 const NotificationRepository = require('../repositories/NotificationRepository');
@@ -57,6 +58,7 @@ const answerRepository = new EvaluationAnswerRepository(db);
 const participantRepository = new EvaluationParticipantRepository(db);
 const attachmentRepository = new AttachmentRepository(db);
 const correctiveActionRepository = new CorrectiveActionRepository(db);
+const correctiveRequirementRepository = new CorrectiveRequirementRepository(db);
 const approvalTaskRepository = new ApprovalTaskRepository(db);
 const workflowHistoryRepository = new WorkflowHistoryRepository(db);
 const notificationService = new NotificationService({
@@ -100,7 +102,6 @@ const ALLOWED_ATTACHMENT_MIME = new Set([
   'image/jpeg',
   'image/png',
 ]);
-const CORRECTIVE_REQUIREMENT_OPTIONS = new Set(['Bổ sung hồ sơ', 'Gửi hình ảnh khắc phục']);
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, ATTACHMENT_DIR),
@@ -118,6 +119,23 @@ const upload = multer({
 });
 
 router.use(requireAuth, requirePermission(PERMISSIONS.EVALUATION_READ));
+
+router.get('/corrective-requirements', (req, res) => {
+  res.json({ items: correctiveRequirementRepository.listActive() });
+});
+
+router.post('/corrective-requirements', canEditEvaluation, (req, res) => {
+  try {
+    const result = correctiveRequirementRepository.createOrGet(req.body?.name);
+    res.status(result.created ? 201 : 200).json({
+      item: result.item,
+      created: result.created,
+      duplicate: !result.created,
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.code || 'corrective_requirement_create_failed' });
+  }
+});
 
 function removeLocalFile(filePath) {
   if (!filePath) return;
@@ -1317,11 +1335,30 @@ router.put('/:ticketId/nonconformities/:nonconformityId', canEditEvaluation, (re
   const remediation = Object.prototype.hasOwnProperty.call(body, 'remediation')
     ? String(body.remediation || '').trim()
     : existing.remediation_content;
-  if (remediation && !CORRECTIVE_REQUIREMENT_OPTIONS.has(remediation)) return res.status(400).json({ error: 'invalid_remediation' });
+  const hasRequestedRequirementId = Object.prototype.hasOwnProperty.call(body, 'corrective_requirement_id');
+  const requestedRequirementId = hasRequestedRequirementId && body.corrective_requirement_id != null && body.corrective_requirement_id !== ''
+    ? Number(body.corrective_requirement_id)
+    : null;
+  if (requestedRequirementId != null && (!Number.isInteger(requestedRequirementId) || requestedRequirementId <= 0)) {
+    return res.status(400).json({ error: 'invalid_corrective_requirement' });
+  }
+  const requirementSelectionProvided = Object.prototype.hasOwnProperty.call(body, 'corrective_requirement_id')
+    || Object.prototype.hasOwnProperty.call(body, 'remediation');
+  let requirement = null;
+  if (requestedRequirementId) {
+    requirement = correctiveRequirementRepository.getActiveById(requestedRequirementId);
+    if (!requirement) return res.status(400).json({ error: 'invalid_corrective_requirement' });
+  } else if (remediation) {
+    requirement = correctiveRequirementRepository.findByName(remediation);
+    const unchangedLegacyValue = String(existing.remediation_content || '').trim() === remediation;
+    if (!requirement && !unchangedLegacyValue) return res.status(400).json({ error: 'invalid_remediation' });
+  }
+  const canonicalRemediation = requirement?.name || remediation || null;
   correctiveActionRepository.updateNonconformityProposal({
     id,
     ticket_id: ticket.id,
-    remediation: remediation || null,
+    remediation: canonicalRemediation,
+    corrective_requirement_id: requirement?.id || (requirementSelectionProvided ? null : existing.corrective_requirement_id) || null,
     due_date: dueDate || null,
     status,
     updated_by: req.user.email,

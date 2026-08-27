@@ -19,7 +19,7 @@ const {
 const { createArtifactStorage } = require('./config');
 const ScoringPolicyRepository = require('../../scoring/ScoringPolicyRepository');
 
-const RENDERER_VERSION = 'REPORT_RENDERER_V1';
+const RENDERER_VERSION = 'REPORT_RENDERER_V2_WINCOMMERCE';
 const DATA_CONTRACT_VERSION = 1;
 const SCORING_RULES_MARKER = 'LEGACY_RULES_V1';
 const SCORING_RULES_CHECKSUM = checksumText('LEGACY_RULES_V1|LEGACY_SCORING_V1_UNVERSIONED');
