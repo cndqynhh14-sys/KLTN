@@ -57,6 +57,7 @@ OTP_HMAC_SECRET=<distinct random secret of at least 32 bytes>
 SCREEN_OTP_ENABLED=true
 SCREEN_OTP_EXPIRES_AT=2026-07-15T10:00:00.000Z
 SCREEN_OTP_OWNER=security-iam-owner@example.com
+SCREEN_OTP_ACCOUNT_SCOPE=allow_list
 SCREEN_OTP_ALLOWED_EMAILS=approved.user@winmart.masangroup.com
 ```
 
@@ -67,14 +68,34 @@ wide entries are rejected. In production, also set the exact acknowledgement:
 SCREEN_OTP_PRODUCTION_ACK=I_ACCEPT_TEMPORARY_SCREEN_OTP_RISK_UNTIL_EXPIRY
 ```
 
-Production requires the mode, enable flag, owner, future deadline, exact
-allow-list, distinct HMAC secret, and acknowledgement together. A boolean alone
+Production requires the mode, enable flag, owner, future deadline, distinct
+HMAC secret, acknowledgement, and one explicit account scope. The default
+`allow_list` scope also requires at least one exact Masan email. A boolean alone
 cannot enable screen delivery. `OTP_DELIVERY_MODE=test` is accepted only when
 `NODE_ENV=test` and never returns a screen code through the API.
 
-Before enabling, record the incident/change reference, owner, allow-list,
-deadline, and rollback contact. Restart the service and require `/readiness` to
-return `ready`. To disable, set `OTP_DELIVERY_MODE=email` and
+When every active internal account in the application database must use the
+temporary screen flow, use the database-backed scope instead of maintaining an
+email list:
+
+```dotenv
+SCREEN_OTP_ACCOUNT_SCOPE=active_database_users
+SCREEN_OTP_ALLOWED_EMAILS=
+SCREEN_OTP_DATABASE_SCOPE_ACK=I_ACCEPT_TEMPORARY_SCREEN_OTP_FOR_ACTIVE_DATABASE_USERS_UNTIL_EXPIRY
+```
+
+This scope reads the `users` table for every OTP request. A newly created,
+active Masan-domain account therefore works immediately without a deployment or
+environment-variable change. Disabled and unknown accounts receive the same
+public challenge shape but the challenge is non-eligible and can never create a
+login session. Supplier-user accounts remain blocked by the internal portal
+policy. Production requires both acknowledgements and all other guarded-screen
+controls above.
+
+Before enabling, record the incident/change reference, owner, account scope,
+deadline, and rollback contact. For `allow_list`, record the exact email list as
+well. Restart the service and require `/readiness` to return `ready`. To disable,
+set `OTP_DELIVERY_MODE=email` and
 `SCREEN_OTP_ENABLED=false`, remove the screen-only values, restart, and verify
 email delivery plus `/readiness`.
 
@@ -97,8 +118,9 @@ email delivery plus `/readiness`.
 Monitor `/readiness`, HTTP 503 `otp_delivery_unavailable`, request/verify rate
 limits, invalid/max-attempt counts, and the audit events
 `auth.otp.request.degraded`, `auth.otp.delivery.unavailable`, and
-`auth.login.degraded`. Alert before the configured deadline and treat any screen
-request outside the exact allow-list as a configuration or access incident.
+`auth.login.degraded`. Alert before the configured deadline. In allow-list scope,
+treat any request outside the exact list as an incident. In database scope,
+monitor disabled/unknown attempts and unexpected degraded-login volume.
 Audit metadata may contain safe delivery mode/reason values, never the code.
 
 ## Incident response

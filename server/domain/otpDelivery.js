@@ -2,6 +2,9 @@
 
 const OTP_DELIVERY_MODES = Object.freeze(['email', 'screen', 'test']);
 const PRODUCTION_SCREEN_ACK = 'I_ACCEPT_TEMPORARY_SCREEN_OTP_RISK_UNTIL_EXPIRY';
+const ACTIVE_DATABASE_USERS_SCOPE = 'active_database_users';
+const DATABASE_SCOPE_ACK = 'I_ACCEPT_TEMPORARY_SCREEN_OTP_FOR_ACTIVE_DATABASE_USERS_UNTIL_EXPIRY';
+const SCREEN_ACCOUNT_SCOPES = Object.freeze(['allow_list', ACTIVE_DATABASE_USERS_SCOPE]);
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const MAX_SCREEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -38,6 +41,7 @@ function unavailable(mode, reason, retryAfterSeconds) {
     mode: OTP_DELIVERY_MODES.includes(mode) ? mode : 'unavailable',
     reason,
     retryAfterSeconds,
+    accountScope: null,
     allowsEmail: () => false,
   });
 }
@@ -79,6 +83,7 @@ function resolveOtpDeliveryConfig(env = process.env, options = {}) {
       expiresAt: null,
       securityProfile: 'guarded',
       productionReady: true,
+      accountScope: null,
       allowsEmail: () => true,
     });
   }
@@ -92,6 +97,7 @@ function resolveOtpDeliveryConfig(env = process.env, options = {}) {
       expiresAt: null,
       securityProfile: 'test_only',
       productionReady: false,
+      accountScope: null,
       allowsEmail: () => true,
     });
   }
@@ -108,6 +114,7 @@ function resolveOtpDeliveryConfig(env = process.env, options = {}) {
       expiresAt: null,
       securityProfile: 'development_relaxed',
       productionReady: false,
+      accountScope: 'masan_domain',
       allowsEmail: isMasanEmail,
     });
   }
@@ -122,10 +129,22 @@ function resolveOtpDeliveryConfig(env = process.env, options = {}) {
 
   const owner = String(env.SCREEN_OTP_OWNER || '').trim();
   if (!owner || owner.length > 320) return unavailable(mode, 'screen_owner_required', retryAfterSeconds);
-  const allowedEmails = exactEmailAllowList(env.SCREEN_OTP_ALLOWED_EMAILS);
-  if (!allowedEmails) return unavailable(mode, 'screen_allow_list_required', retryAfterSeconds);
+  const accountScope = String(env.SCREEN_OTP_ACCOUNT_SCOPE || 'allow_list').trim().toLowerCase();
+  if (!SCREEN_ACCOUNT_SCOPES.includes(accountScope)) {
+    return unavailable(mode, 'screen_account_scope_invalid', retryAfterSeconds);
+  }
+  const rawAllowList = String(env.SCREEN_OTP_ALLOWED_EMAILS || '').trim();
+  const allowedEmails = rawAllowList ? exactEmailAllowList(rawAllowList) : [];
+  if (rawAllowList && !allowedEmails) return unavailable(mode, 'screen_allow_list_invalid', retryAfterSeconds);
+  if (accountScope === 'allow_list' && !allowedEmails.length) {
+    return unavailable(mode, 'screen_allow_list_required', retryAfterSeconds);
+  }
   if (isProductionEnvironment(env) && env.SCREEN_OTP_PRODUCTION_ACK !== PRODUCTION_SCREEN_ACK) {
     return unavailable(mode, 'production_acknowledgement_required', retryAfterSeconds);
+  }
+  if (isProductionEnvironment(env) && accountScope === ACTIVE_DATABASE_USERS_SCOPE
+      && env.SCREEN_OTP_DATABASE_SCOPE_ACK !== DATABASE_SCOPE_ACK) {
+    return unavailable(mode, 'database_scope_acknowledgement_required', retryAfterSeconds);
   }
 
   const allowed = new Set(allowedEmails);
@@ -136,6 +155,7 @@ function resolveOtpDeliveryConfig(env = process.env, options = {}) {
     expiresAt: expiry.toISOString(),
     securityProfile: 'guarded',
     productionReady: true,
+    accountScope,
     allowsEmail: (email) => allowed.has(normalizeEmail(email)),
   });
 }
@@ -156,12 +176,15 @@ function otpReadiness(env = process.env, options = {}) {
     component: 'otp_delivery',
     mode: config.mode,
     expiresAt: config.expiresAt || null,
+    accountScope: config.accountScope || null,
     securityProfile: config.securityProfile || 'guarded',
     productionReady: config.productionReady !== false,
   };
 }
 
 module.exports = {
+  ACTIVE_DATABASE_USERS_SCOPE,
+  DATABASE_SCOPE_ACK,
   OTP_DELIVERY_MODES,
   PRODUCTION_SCREEN_ACK,
   exactEmailAllowList,

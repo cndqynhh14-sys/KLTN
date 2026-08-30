@@ -8,6 +8,8 @@ const path = require('node:path');
 const test = require('node:test');
 const express = require('express');
 const {
+  ACTIVE_DATABASE_USERS_SCOPE,
+  DATABASE_SCOPE_ACK,
   PRODUCTION_SCREEN_ACK,
   otpReadiness,
   resolveOtpDeliveryConfig,
@@ -27,6 +29,7 @@ const NOW = new Date('2026-07-14T10:00:00.000Z');
 const ELIGIBLE_EMAIL = 'run09.user@winmart.masangroup.com';
 const UNKNOWN_EMAIL = 'unknown@winmart.masangroup.com';
 const DISABLED_EMAIL = 'disabled@winmart.masangroup.com';
+const FUTURE_EMAIL = 'future.user@winmart.masangroup.com';
 const HMAC_SECRET = 'synthetic-run09-otp-hmac-secret-32-bytes-minimum';
 
 function screenEnv(overrides = {}) {
@@ -173,6 +176,28 @@ test('screen delivery requires owner, future expiry, exact allow-list and produc
   const legacyBypass = resolveOtpDeliveryConfig(screenEnv({ SHOW_TEST_OTP: 'true' }), { now: NOW });
   assert.equal(legacyBypass.available, false);
   assert.equal(legacyBypass.reason, 'legacy_otp_flag_forbidden');
+});
+
+test('production database account scope requires a separate acknowledgement and no static email list', () => {
+  const missingScopeAcknowledgement = resolveOtpDeliveryConfig(screenEnv({
+    NODE_ENV: 'production',
+    SCREEN_OTP_ACCOUNT_SCOPE: ACTIVE_DATABASE_USERS_SCOPE,
+    SCREEN_OTP_ALLOWED_EMAILS: '',
+    SCREEN_OTP_PRODUCTION_ACK: PRODUCTION_SCREEN_ACK,
+  }), { now: NOW });
+  assert.equal(missingScopeAcknowledgement.available, false);
+  assert.equal(missingScopeAcknowledgement.reason, 'database_scope_acknowledgement_required');
+
+  const configured = resolveOtpDeliveryConfig(screenEnv({
+    NODE_ENV: 'production',
+    SCREEN_OTP_ACCOUNT_SCOPE: ACTIVE_DATABASE_USERS_SCOPE,
+    SCREEN_OTP_ALLOWED_EMAILS: '',
+    SCREEN_OTP_PRODUCTION_ACK: PRODUCTION_SCREEN_ACK,
+    SCREEN_OTP_DATABASE_SCOPE_ACK: DATABASE_SCOPE_ACK,
+  }), { now: NOW });
+  assert.equal(configured.available, true);
+  assert.equal(configured.accountScope, ACTIVE_DATABASE_USERS_SCOPE);
+  assert.equal(configured.allowsEmail(ELIGIBLE_EMAIL), false);
 });
 
 test('explicit relaxed screen profile is development-only and reports that it is not production ready', () => {
@@ -342,6 +367,45 @@ test('request API returns equivalent screen shapes for eligible and unknown user
     assert.equal(knownVerify.response.status, 200, 'unknown-user session must not invalidate another normalized email');
     assert.equal(knownVerify.body.degradedAuth, true);
     assert.equal(hasSensitiveKey(api.audit), false);
+  } finally {
+    await closeApi(api);
+  }
+});
+
+test('database-scoped screen OTP reads active users on every request so newly created accounts work immediately', async () => {
+  const activeUsers = new Set([ELIGIBLE_EMAIL]);
+  const lookup = (email) => activeUsers.has(email) ? {
+    email, is_admin: 0, role: 'Chuyên viên', is_active: 1, display_name: 'Dynamic user',
+  } : null;
+  const api = await startAuthApi({
+    lookup,
+    env: screenEnv({
+      NODE_ENV: 'production',
+      SCREEN_OTP_ACCOUNT_SCOPE: ACTIVE_DATABASE_USERS_SCOPE,
+      SCREEN_OTP_ALLOWED_EMAILS: '',
+      SCREEN_OTP_PRODUCTION_ACK: PRODUCTION_SCREEN_ACK,
+      SCREEN_OTP_DATABASE_SCOPE_ACK: DATABASE_SCOPE_ACK,
+    }),
+  });
+  try {
+    const beforeCreate = await postJson(`${api.url}/request-otp`, { email: FUTURE_EMAIL });
+    assert.equal(beforeCreate.response.status, 200);
+    const denied = await postJson(`${api.url}/verify-otp`, {
+      sessionId: beforeCreate.body.sessionId,
+      code: beforeCreate.body.screenCode,
+    });
+    assert.equal(denied.response.status, 401);
+    assert.equal(denied.body.error, 'invalid');
+
+    activeUsers.add(FUTURE_EMAIL);
+    const afterCreate = await postJson(`${api.url}/request-otp`, { email: FUTURE_EMAIL });
+    assert.equal(afterCreate.response.status, 200);
+    const verified = await postJson(`${api.url}/verify-otp`, {
+      sessionId: afterCreate.body.sessionId,
+      code: afterCreate.body.screenCode,
+    });
+    assert.equal(verified.response.status, 200);
+    assert.equal(verified.body.email, FUTURE_EMAIL);
   } finally {
     await closeApi(api);
   }

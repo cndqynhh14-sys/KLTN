@@ -7,7 +7,11 @@ const authMiddleware = require('../middleware/auth');
 const { ROLE_CODES } = require('../authorization/permissionCatalog');
 const defaultOtpService = require('../services/otp');
 const emailService = require('../services/email');
-const { normalizeEmail, resolveOtpDeliveryConfig } = require('../domain/otpDelivery');
+const {
+  ACTIVE_DATABASE_USERS_SCOPE,
+  normalizeEmail,
+  resolveOtpDeliveryConfig,
+} = require('../domain/otpDelivery');
 const defaultLogger = require('../logger');
 
 const CURRENT_RULES_VERSION = 1;
@@ -140,7 +144,9 @@ function createAuthRouter(options = {}) {
 
     const config = getDeliveryConfig();
     if (!config.available) return unavailable(req, res, config);
-    if (config.mode === 'screen' && !config.allowsEmail(email)) {
+    const databaseAccountScope = config.mode === 'screen'
+      && config.accountScope === ACTIVE_DATABASE_USERS_SCOPE;
+    if (config.mode === 'screen' && !databaseAccountScope && !config.allowsEmail(email)) {
       return unavailable(req, res, config, 'screen_email_not_allowed');
     }
 
