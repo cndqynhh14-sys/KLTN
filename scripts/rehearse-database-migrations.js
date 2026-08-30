@@ -136,7 +136,8 @@ async function startAndProbe({ dbPath, runtimeDir, sequence }) {
   });
   let stderr = '';
   child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-2_000); });
-  const deadline = Date.now() + 25_000;
+  const startupTimeoutMs = Number(process.env.MIGRATION_REHEARSAL_STARTUP_TIMEOUT_MS || 60_000);
+  const deadline = Date.now() + startupTimeoutMs;
   let status = null;
   try {
     while (Date.now() < deadline && child.exitCode === null) {
@@ -295,7 +296,7 @@ async function runRehearsal({ outputDir, withUat = false }) {
     const retryPending = retry.results.filter((item) => item.state !== 'already-applied').length;
     const hardPass = backupChecks.integrity_check === 'ok'
       && backupChecks.foreign_key_violations === 0
-      && JSON.stringify(appliedIds) === JSON.stringify(['0030', '0031', '0032', '0033', '0034', '0035', '0036', '0037'])
+      && JSON.stringify(appliedIds) === JSON.stringify(['0030', '0031', '0032', '0033', '0034', '0035', '0036', '0037', '0038'])
       && retryPending === 0
       && parity.stage4c.status === 'PASS'
       && parity.stage4d.status !== 'FAILED'

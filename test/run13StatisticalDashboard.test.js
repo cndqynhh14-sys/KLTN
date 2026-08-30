@@ -205,13 +205,13 @@ test('RUN-28 donut UI uses the approved palette, 60/40 layout, thicker ring and 
   const donut = app.slice(app.indexOf('function drawStatusDonut'), app.indexOf('function renderRanking'));
 
   const expectedColors = {
-    DRAFT: '#6E0012',
-    IN_PROGRESS: '#930019',
-    WAITING_APPROVAL: '#BC0A25',
-    WAITING_CORRECTION: '#DA1E38',
+    DRAFT: '#F3C7CB',
+    IN_PROGRESS: '#E98D95',
+    WAITING_APPROVAL: '#E45C68',
+    WAITING_CORRECTION: '#DC3545',
     ROUND_2: '#F02D48',
-    COMPLETED: '#E53945',
-    CANCELLED: '#FFA0A8',
+    COMPLETED: '#A30D22',
+    CANCELLED: '#540812',
   };
   Object.entries(expectedColors).forEach(([code, color]) => {
     assert.match(app, new RegExp(`${code}:\\s*['"]${color}['"]`));

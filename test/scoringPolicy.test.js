@@ -156,7 +156,12 @@ test('report component registry makes HTML/PDF source and XLSX consume the same 
   });
   const section = semantic.sections[0];
   assert.equal(section.title, GOLDEN_V1_DEFINITION.compliance_overview.title);
-  assert.deepEqual(section.columns, view.columns);
+  assert.deepEqual(section.columns, view.columns.map((column) => ({
+    label: column.label,
+    key: column.key,
+    width: column.width || null,
+    align: column.align || 'left',
+  })));
   assert.match(renderHtml({ semantic }), /Hồ sơ pháp lý/);
   assert.ok(semanticRows(semantic).some((row) => (
     JSON.stringify(row) === JSON.stringify(view.columns.map((column) => column.label))

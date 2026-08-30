@@ -4550,7 +4550,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     const roundNo = Number(ticket?.current_round_no || ticket?.completed_round || 1);
   if (roundNo !== 1) return '';
 
-  return ticket?.actual_evaluation_date_iso || localTodayISODate();
+  return ticket?.actual_evaluation_date_iso || '';
   }
 
   function defaultCorrectionDueDateForTicket(ticket) {
