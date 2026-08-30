@@ -1229,12 +1229,31 @@
   }
   .guided-sentence-form > .guided-disclosure { grid-column: 1 / -1; }
 
+  .authz-tabbar-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.authz-tabbar-row .authz-ia-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  border-bottom: 0;
+}
+
+.authz-tabbar-row .context-help-link {
+  flex: 0 0 auto;
+  margin-bottom: 0.35rem;
+  white-space: nowrap;
+}
   .authorization-admin.guided-workspace .authz-ia-tabs {
     display: flex;
     gap: 1.1rem;
     margin: 0 0 .75rem;
     padding: 0;
-    border-bottom: 1px solid var(--admin-border);
+    border-bottom: 0;
     box-shadow: none;
   }
   .guided-authorization-panel {
