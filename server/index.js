@@ -5,7 +5,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 
-const authRouter = require('./routes/auth');
+const { createAuthRouter } = require('./routes/auth');
 const dashboardRouter = require('./routes/dashboard');
 const adminRouter = require('./routes/admin');
 const authorizationAdminRouter = require('./routes/authorizationAdmin');
@@ -27,6 +27,10 @@ const { otpReadiness } = require('./domain/otpDelivery');
 const { reportArtifactRuntimeReadiness } = require('./reporting/artifacts/config');
 
 const app = express();
+// Construct rate limiters during application initialization. Creating the
+// default auth router lazily inside the first request triggers
+// ERR_ERL_CREATED_IN_REQUEST_HANDLER in express-rate-limit.
+const authRouter = createAuthRouter();
 const PORT = parseInt(process.env.PORT || '3005', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const BASE = '/qlcl';

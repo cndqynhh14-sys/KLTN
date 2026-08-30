@@ -123,7 +123,11 @@ function auditMutations(auditEventService, options = {}) {
       if (auditAttempted) return closedByAudit;
       auditAttempted = true;
       const context = getContext();
-      if (context.audit_mutation_recorded) return false;
+      // Some multipart handlers (notably database restore) can complete after
+      // the AsyncLocalStorage request context has been lost. Those handlers
+      // mark the response explicitly after persisting their own audit event so
+      // the middleware does not attempt a duplicate write against a closed DB.
+      if (context.audit_mutation_recorded || res.locals.audit_mutation_recorded) return false;
       const route = normalizedRoute(req);
       context.route = route;
       const classified = classifyMutation({ method: req.method, route, statusCode: res.statusCode });

@@ -400,6 +400,35 @@ test('audit middleware fails closed before a successful mutation response when t
   }
 });
 
+test('audit middleware honors a response-local marker for a mutation audited by its handler', async () => {
+  let recordAttempts = 0;
+  const app = express();
+  app.use(requestContext({ logger: { info() {} } }));
+  app.use(auditMutations({
+    record() {
+      recordAttempts += 1;
+      throw new Error('duplicate audit write must not run');
+    },
+  }, { logger: { error() {} } }));
+  app.post('/qlcl/api/admin/restore-db', (_req, res) => {
+    res.locals.audit_mutation_recorded = true;
+    res.locals.audit_event_id = 42;
+    res.status(200).json({ ok: true, restored: true });
+  });
+  const server = await new Promise((resolve) => {
+    const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
+  });
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const response = await fetch(`${baseUrl}/qlcl/api/admin/restore-db`, { method: 'POST' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, restored: true });
+    assert.equal(recordAttempts, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('audit middleware fails closed before the first streamed byte of a successful mutation', async () => {
   let recordAttempts = 0;
   const failingService = {

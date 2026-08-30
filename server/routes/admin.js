@@ -316,7 +316,7 @@ router.post('/restore-db', requirePermission(PERMISSIONS.SYSTEM_ADMIN), requireR
   try {
     fs.writeFileSync(incomingPath, req.file.buffer);
     const counts = validateSqliteSnapshot(incomingPath);
-    restoreDatabase({
+    const restored = restoreDatabase({
       activeDb: db,
       activePath: DB_PATH,
       incomingPath,
@@ -331,6 +331,8 @@ router.post('/restore-db', requirePermission(PERMISSIONS.SYSTEM_ADMIN), requireR
         counts,
       },
     });
+    res.locals.audit_mutation_recorded = true;
+    res.locals.audit_event_id = restored.auditEventId;
 
     res.json({ ok: true, restored: true, counts, backup: path.basename(backupPath), restart: 'scheduled' });
     setTimeout(() => process.exit(1), 250);
