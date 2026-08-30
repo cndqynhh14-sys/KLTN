@@ -8042,23 +8042,20 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     renderStatisticalDashboard(r.data);
   }
 
-  async function exportStatisticalDashboard() {
-    const button = $('dashboard-export');
-    const label = button.querySelector('span:last-child');
-    button.disabled = true; label.textContent = 'Đang tạo file...';
-    try {
-      const response = await fetch('/qlcl/api/dashboard/statistics/export?' + dashboardReportQuery(), { credentials: 'same-origin' });
-      if (!response.ok) throw new Error('dashboard_export_failed');
-      const blob = await response.blob();
-      downloadBlob(blob, `dashboard-ncc-${state.dashboardReport.periodValue}.csv`);
-    } catch {
-      renderDashboardState('overview-state', 'error', 'Không thể xuất báo cáo. Vui lòng thử lại.', null);
-    } finally {
-      button.disabled = false; label.textContent = 'Xuất báo cáo';
-    }
+  function refreshStatisticalDashboardFilters() {
+    state.dashboardReport.filters = {
+      ...state.dashboardReport.filters,
+      regions: [],
+      evaluationTypes: [],
+      mch2: [],
+    };
+    state.dashboardReport.selectedStatus = '';
+    statisticalDashboardPayload = null;
+    renderDashboardFilters();
+    loadTab();
   }
 
-  $('dashboard-export')?.addEventListener('click', exportStatisticalDashboard);
+  $('dashboard-refresh')?.addEventListener('click', refreshStatisticalDashboardFilters);
   document.querySelectorAll('[data-dashboard-mode]').forEach((button) => {
     button.addEventListener('click', () => selectDashboardMode(button.dataset.dashboardMode));
     button.addEventListener('keydown', (event) => {
@@ -8281,7 +8278,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
 
   // ============ Admin ============
   $('btn-admin-close').addEventListener('click', () => {
-    navigateToTab('overview');
+    navigateToTab('admin');
   });
 
   function renderBusinessConfigLifecycle(hostId, version, options = {}) {

@@ -44,7 +44,7 @@ Generated from `public/js/action-registry.js` (version 15). Do not edit this fil
 | dashboard.period_current | Về kỳ báo cáo hiện tại | DASHBOARD | control | secondary | DASHBOARD.READ | — | — | — |
 | dashboard.period_type | Đổi loại kỳ báo cáo | DASHBOARD | control | secondary | DASHBOARD.READ | — | — | — |
 | dashboard.mode | Đổi chế độ dashboard | DASHBOARD | control | secondary | DASHBOARD.READ | — | — | — |
-| dashboard.export | Xuất dashboard đánh giá NCC | DASHBOARD | page | secondary | DASHBOARD.READ | — | Idempotency-Key | export.generated |
+| dashboard.refresh | Làm mới bộ lọc dashboard đánh giá NCC | DASHBOARD | page | secondary | DASHBOARD.READ | — | — | — |
 | session.logout | Đăng xuất | AUTH | control | secondary | — | — | Idempotency-Key | auth.logout.succeeded |
 | auth.request_otp | Gửi mã xác thực | AUTH | control | secondary | — | — | Idempotency-Key | auth.otp.request.succeeded |
 | auth.verify_otp | Xác thực mã đăng nhập | AUTH | control | secondary | — | — | Idempotency-Key | auth.login.succeeded |

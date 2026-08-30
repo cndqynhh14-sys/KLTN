@@ -5,7 +5,7 @@ Ngày thực hiện: 2026-08-09
 ## Phạm vi
 
 - Hợp nhất dashboard tại `qlcl/#/dashboard`; loại màn hình độc lập `qlcl/#/dashboard/ncc-evaluations` khỏi navigation manifest và HTML.
-- Giữ nguyên header, kỳ báo cáo, bộ lọc, nút Xuất báo cáo và bốn KPI khi chuyển chế độ.
+- Giữ nguyên header, kỳ báo cáo, bộ lọc, nút Làm mới và bốn KPI khi chuyển chế độ.
 - Giữ backend aggregate cũ để không phá vỡ compatibility; bookmark cũ được thay URL tại chỗ về dashboard hợp nhất.
 
 ## Thay đổi chính

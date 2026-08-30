@@ -2416,7 +2416,7 @@
   .dashboard-filter-option { min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
   .dashboard-filter-option:hover { background: var(--surface-2); }
   .dashboard-filter-option input { width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
-  .dashboard-export { align-self: end; min-width: 148px; justify-content: center; }
+  .dashboard-refresh { align-self: end; min-width: 148px; justify-content: center; }
   .statistics-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
   .dashboard-view-segment { display: inline-flex; width: fit-content; padding: 4px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); }
   .dashboard-view-segment button { min-width: 124px; min-height: 36px; padding: 7px 18px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 800; cursor: pointer; }
@@ -2533,7 +2533,7 @@
   @media (max-width: 760px) {
     .statistics-dashboard { gap: 14px; }
     .statistics-filterbar { grid-template-columns: 1fr; }
-    .dashboard-export { width: 100%; }
+    .dashboard-refresh { width: 100%; }
     .statistics-donut-layout { grid-template-columns: 1fr; }
     .statistics-rating-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .statistics-status-legend { max-height: none; }
@@ -3838,8 +3838,8 @@
         <div id="dashboard-filter-region" class="dashboard-filter" data-filter-key="regions"><label>Khu vực</label></div>
         <div id="dashboard-filter-evaluation-type" class="dashboard-filter" data-filter-key="evaluationTypes"><label>Loại đánh giá</label></div>
         <div id="dashboard-filter-mch2" class="dashboard-filter" data-filter-key="mch2"><label>Ngành hàng - MCH2</label></div>
-        <button id="dashboard-export" class="btn-primary dashboard-export" type="button" data-action-id="dashboard.export" aria-label="Xuất báo cáo dashboard">
-          <span aria-hidden="true">⇩</span><span>Xuất báo cáo</span>
+        <button id="dashboard-refresh" class="btn-primary dashboard-refresh" type="button" data-action-id="dashboard.refresh" aria-label="Làm mới bộ lọc dashboard">
+          <span aria-hidden="true">↻</span><span>Làm mới</span>
         </button>
       </section>
 
@@ -4001,7 +4001,7 @@
       <h2 id="admin-page-title">Quản trị</h2>
       <span class="sub">Nhân sự · phân quyền · cấu hình nghiệp vụ · nhật ký hệ thống</span>
       <div class="line"></div>
-      <button id="btn-admin-close" class="btn-ghost" type="button">← Bảng điều khiển</button>
+      <button id="btn-admin-close" class="btn-ghost" type="button">← Trung tâm quản trị</button>
     </div>
 
     <section id="admin-personnel-import" class="personnel-import-workflow guided-workspace hidden" data-personnel-import-workflow data-guided-workspace="personnel-import" aria-labelledby="personnel-import-title">
@@ -4220,19 +4220,79 @@
         </main>
       </div>
     </section>
+  <div class="panel guided-authorization-panel" data-testid="authorization-admin">
+  <div class="panel-head authz-shell-head" aria-hidden="true">
+    <div>
+      <h3>Nhân sự &amp; phân quyền</h3>
+      <span class="muted">
+        Quản lý ai được đăng nhập, được làm gì và được xem dữ liệu nào
+      </span>
+    </div>
 
-    <div class="panel guided-authorization-panel" data-testid="authorization-admin">
-      <div class="panel-head authz-shell-head" aria-hidden="true">
-        <div><h3>Nhân sự &amp; phân quyền</h3><span class="muted">Quản lý ai được đăng nhập, được làm gì và được xem dữ liệu nào</span></div>
-        <a class="context-help-link" href="/qlcl/help/role-permission-management#quick-start-admin" tabindex="-1">Hướng dẫn phân quyền</a>
-      </div>
-      <div id="authorization-admin" class="authorization-admin guided-workspace">
-        <nav class="authz-ia-tabs" role="tablist" aria-label="Các phần thiết lập tài khoản và phân quyền">
-          <button id="authz-tab-users" type="button" role="tab" aria-selected="true" aria-controls="authz-pane-users" data-authz-tab="users"><span class="authz-tab-step" aria-hidden="true">01</span><span class="authz-tab-copy"><strong>Nhân sự</strong><small>Tài khoản &amp; trạng thái</small></span></button>
-          <button id="authz-tab-roles" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-roles" data-authz-tab="roles"><span class="authz-tab-step" aria-hidden="true">02</span><span class="authz-tab-copy"><strong>Vai trò &amp; quyền</strong><small>Nhóm thao tác theo công việc</small></span></button>
-          <button id="authz-tab-approvals" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-approvals" data-authz-tab="approvals"><span class="authz-tab-step" aria-hidden="true">03</span><span class="authz-tab-copy"><strong>Người phê duyệt</strong><small>Ai duyệt ở từng bước</small></span></button>
-          <button id="authz-tab-history" type="button" role="tab" aria-selected="false" aria-controls="authz-pane-history" data-authz-tab="history"><span class="authz-tab-step" aria-hidden="true">04</span><span class="authz-tab-copy"><strong>Lịch sử thay đổi</strong><small>Ai đổi, trước và sau</small></span></button>
-        </nav>
+    <a class="context-help-link"
+       href="/qlcl/help/role-permission-management#quick-start-admin"
+       tabindex="-1">
+      Hướng dẫn phân quyền
+    </a>
+  </div>
+
+  <div id="authorization-admin" class="authorization-admin guided-workspace">
+    <nav class="authz-ia-tabs"
+         role="tablist"
+         aria-label="Các phần thiết lập tài khoản và phân quyền">
+
+      <button id="authz-tab-users"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="authz-pane-users"
+              data-authz-tab="users">
+        <span class="authz-tab-step" aria-hidden="true">01</span>
+        <span class="authz-tab-copy">
+          <strong>Nhân sự</strong>
+          <small>Tài khoản &amp; trạng thái</small>
+        </span>
+      </button>
+
+      <button id="authz-tab-roles"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="authz-pane-roles"
+              data-authz-tab="roles">
+        <span class="authz-tab-step" aria-hidden="true">02</span>
+        <span class="authz-tab-copy">
+          <strong>Vai trò &amp; quyền</strong>
+          <small>Nhóm thao tác theo công việc</small>
+        </span>
+      </button>
+
+      <button id="authz-tab-approvals"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="authz-pane-approvals"
+              data-authz-tab="approvals">
+        <span class="authz-tab-step" aria-hidden="true">03</span>
+        <span class="authz-tab-copy">
+          <strong>Người phê duyệt</strong>
+          <small>Ai duyệt ở từng bước</small>
+        </span>
+      </button>
+
+      <button id="authz-tab-history"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="authz-pane-history"
+              data-authz-tab="history">
+        <span class="authz-tab-step" aria-hidden="true">04</span>
+        <span class="authz-tab-copy">
+          <strong>Lịch sử thay đổi</strong>
+          <small>Ai đổi, trước và sau</small>
+        </span>
+      </button>
+    </nav>
         <div id="authz-admin-state" class="authz-admin-state admin-state" aria-live="polite" role="status" tabindex="-1">
           <span data-authz-state-icon>○</span><span data-authz-state-message>Đang tải cấu hình phân quyền…</span>
         </div>

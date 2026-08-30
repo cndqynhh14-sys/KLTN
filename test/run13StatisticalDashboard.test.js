@@ -126,11 +126,16 @@ test('frontend exposes the complete supplier evaluation dashboard contract', () 
   assert.match(html, /DASHBOARD ĐÁNH GIÁ NCC/);
   assert.match(html, /data-dashboard-period-type="MONTH"[\s\S]*data-dashboard-period-type="QUARTER"[\s\S]*data-dashboard-period-type="YEAR"/);
   assert.match(html, /id="dashboard-filter-region"[\s\S]*id="dashboard-filter-evaluation-type"[\s\S]*id="dashboard-filter-mch2"/);
+  assert.match(html, /id="dashboard-refresh"[\s\S]*data-action-id="dashboard\.refresh"[\s\S]*Làm mới/);
+  assert.doesNotMatch(html, /id="dashboard-export"|Xuất báo cáo/);
   assert.match(html, /id="status-donut-canvas"/);
   assert.match(html, /id="statistics-ranking-body"/);
   assert.match(html, /id="quality-trend-canvas"/);
   assert.match(app, /\/dashboard\/statistics\?' \+ dashboardReportQuery\(\)/);
-  assert.match(app, /\/dashboard\/statistics\/export\?/);
+  assert.match(app, /function refreshStatisticalDashboardFilters\(\)/);
+  assert.match(app, /regions:\s*\[\][\s\S]*evaluationTypes:\s*\[\][\s\S]*mch2:\s*\[\]/);
+  assert.match(app, /\$\('dashboard-refresh'\)\?\.addEventListener\('click', refreshStatisticalDashboardFilters\)/);
+  assert.doesNotMatch(app, /\/dashboard\/statistics\/export\?/);
   assert.match(app, /DASHBOARD_STATUS_COLORS/);
   assert.match(app, /Không thể tải dữ liệu\. Vui lòng thử lại\./);
 });
