@@ -75,6 +75,8 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='report_legacy_migration_review'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='personnel_import_batches'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='corrective_requirements'").get());
+    assert.equal(db.prepare("SELECT 1 FROM pragma_table_info('question_items') WHERE name='weight'").get(), undefined);
+    assert.equal(db.prepare("SELECT 1 FROM pragma_table_info('pinned_evaluation_questions') WHERE name='weight'").get(), undefined);
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='personnel_import_batches_append_only_update'").get());
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='personnel_import_batches_append_only_delete'").get());
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
@@ -97,6 +99,51 @@ test('fresh install applies baseline transactionally and rerun is idempotent', (
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, projectMigrationIds.length);
   } finally {
     db.close();
+  }
+});
+
+test('0039 removes only question weight, preserves question data, and remains idempotent through the migration ledger', () => {
+  const directory = tempDir('migration-0039');
+  const through0038 = path.join(directory, 'through-0038');
+  fs.mkdirSync(through0038);
+  for (const fileName of fs.readdirSync(projectMigrations)) {
+    if (/^\d{4}_.+\.sql$/.test(fileName) && fileName.slice(0, 4) <= '0038') {
+      fs.copyFileSync(path.join(projectMigrations, fileName), path.join(through0038, fileName));
+    }
+  }
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  try {
+    migrateDatabase(db, { migrationsDir: through0038, appVersion: 'before-weight-removal' });
+    const templateId = Number(db.prepare(`INSERT INTO question_templates
+      (template_code, template_name, active) VALUES ('WEIGHT-REMOVAL', 'Weight removal fixture', 1)`)
+      .run().lastInsertRowid);
+    const versionId = Number(db.prepare(`INSERT INTO question_template_versions
+      (template_id, version_no, status) VALUES (?, 1, 'DRAFT')`).run(templateId).lastInsertRowid);
+    const questionId = Number(db.prepare(`INSERT INTO question_items
+      (question_template_version_id, facility_type, supplier_scale, question_code,
+       question_text, category, allowed_scores, weight, order_index, active)
+      VALUES (?, 'ALL', 'ALL', 'Q-0039', 'Preserved question', 'General',
+        'A/B/C/D/NA', 7.5, 3, 1)`).run(versionId).lastInsertRowid);
+
+    const migration = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'weight-removal' });
+    assert.equal(migration.results.find((row) => row.id === '0039').state, 'applied');
+    assert.equal(db.prepare("SELECT 1 FROM pragma_table_info('question_items') WHERE name='weight'").get(), undefined);
+    assert.equal(db.prepare("SELECT 1 FROM pragma_table_info('pinned_evaluation_questions') WHERE name='weight'").get(), undefined);
+    assert.deepEqual(db.prepare(`SELECT question_code, question_text, allowed_scores, order_index, active
+      FROM question_items WHERE id=?`).get(questionId), {
+      question_code: 'Q-0039', question_text: 'Preserved question',
+      allowed_scores: 'A/B/C/D/NA', order_index: 3, active: 1,
+    });
+    assert.equal(db.pragma('foreign_key_check').length, 0);
+    assert.equal(db.pragma('integrity_check', { simple: true }), 'ok');
+
+    const rerun = migrateDatabase(db, { migrationsDir: projectMigrations, appVersion: 'weight-removal-rerun' });
+    assert.equal(rerun.results.find((row) => row.id === '0039').state, 'already-applied');
+    assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0039'").pluck().get(), 1);
+  } finally {
+    db.close();
+    fs.rmSync(directory, { recursive: true, force: true });
   }
 });
 

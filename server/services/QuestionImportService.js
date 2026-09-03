@@ -25,13 +25,13 @@ const LIMITS = Object.freeze({
 const CANONICAL_HEADERS = Object.freeze([
   'template_code', 'variant_code', 'facility_type', 'supplier_scale',
   'category_code', 'category_name', 'question_code', 'clause_code',
-  'question_text', 'allowed_scores', 'weight', 'order', 'active',
+  'question_text', 'allowed_scores', 'order', 'active',
   'critical', 'elimination', 'requires_evidence',
 ]);
 
 const IMPORT_COMPARE_FIELDS = Object.freeze([
   'variant_code', 'facility_type', 'supplier_scale', 'category_code', 'category',
-  'question_code', 'clause_code', 'question_text', 'allowed_scores', 'weight',
+  'question_code', 'clause_code', 'question_text', 'allowed_scores',
   'order_index', 'active', 'is_critical_clause', 'is_elimination_clause',
   'requires_attachment',
 ]);
@@ -228,7 +228,6 @@ function validateCanonicalRows(workbook, templateCode) {
     const clauseCode = stableCode(value('clause_code'));
     const scale = clean(value('supplier_scale')).toUpperCase();
     const allowedScores = normalizeScores(value('allowed_scores'));
-    const weight = Number(value('weight'));
     const orderIndex = Number(value('order'));
     const active = parseBoolean(value('active'));
     const critical = parseBoolean(value('critical'));
@@ -244,7 +243,6 @@ function validateCanonicalRows(workbook, templateCode) {
     if (!clauseCode) addError('clause_code', 'clause_code_invalid');
     if (!clean(value('question_text'))) addError('question_text', 'question_text_required');
     if (!allowedScores) addError('allowed_scores', 'allowed_scores_invalid');
-    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) addError('weight', 'weight_invalid');
     if (!Number.isInteger(orderIndex) || orderIndex <= 0 || orderIndex > 10000) addError('order', 'order_invalid');
     if (active == null) addError('active', 'active_invalid');
     if (critical == null) addError('critical', 'critical_invalid');
@@ -263,7 +261,6 @@ function validateCanonicalRows(workbook, templateCode) {
       clause_code: clauseCode,
       question_text: clean(value('question_text')),
       allowed_scores: allowedScores,
-      weight,
       order_index: orderIndex,
       active,
       is_critical_clause: critical,
@@ -309,7 +306,6 @@ function validateLegacyRows(buffer, templateCode) {
       if (!stableCode(canonical.clause_code)) addError('clause_code', 'clause_code_invalid');
       if (!clean(canonical.question_text)) addError('question_text', 'question_text_required');
       if (!normalizeScores(canonical.allowed_scores)) addError('allowed_scores', 'allowed_scores_invalid');
-      if (!Number.isFinite(Number(canonical.weight)) || Number(canonical.weight) <= 0 || Number(canonical.weight) > 100) addError('weight', 'weight_invalid');
       if (!Number.isInteger(Number(canonical.order_index)) || Number(canonical.order_index) <= 0 || Number(canonical.order_index) > 10000) addError('order', 'order_invalid');
       return {
         item: canonical,

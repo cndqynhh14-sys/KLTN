@@ -57,13 +57,13 @@ class QuestionTemplateRepository {
           question_template_version_id, facility_type, supplier_scale, question_code, question_text, category,
           category_code, category_label_snapshot,
           is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-          weight, order_index, active
+          order_index, active
         )
         VALUES (
           @question_template_version_id, @facility_type, @supplier_scale, @question_code, @question_text, @category,
           @category_code, @category_label_snapshot,
           @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
-          @weight, @order_index, @active
+          @order_index, @active
         )
       `),
       updateQuestion: db.prepare(`
@@ -73,7 +73,7 @@ class QuestionTemplateRepository {
             category_code=@category_code, category_label_snapshot=@category_label_snapshot,
             is_elimination_clause=@is_elimination_clause, is_critical_clause=@is_critical_clause,
             requires_attachment=@requires_attachment, allowed_scores=@allowed_scores,
-            weight=@weight, order_index=@order_index, active=@active
+            order_index=@order_index, active=@active
         WHERE id=@id AND question_template_version_id=@question_template_version_id
       `),
       getQuestionDetail: db.prepare(`

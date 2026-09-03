@@ -136,7 +136,6 @@ function parseCriteriaWorkbook(input) {
         is_critical_clause: isCritical ? 1 : 0,
         requires_attachment: 0,
         allowed_scores: isElimination ? 'A/D/NA' : 'A/B/C/D/NA',
-        weight: 1,
         order_index: count,
         active: 1,
       });
@@ -215,12 +214,12 @@ function upsertCanonicalCriteria(db, parsed, { seedOnly }) {
       question_template_version_id, variant_code, facility_type, supplier_scale,
       category_code, category_label_snapshot, question_code, clause_code,
       question_text, category, is_elimination_clause, is_critical_clause,
-      requires_attachment, allowed_scores, weight, order_index, active
+      requires_attachment, allowed_scores, order_index, active
     ) VALUES (
       @version_id, @variant_code, @facility_type, @supplier_scale,
       @category_code, @category_label_snapshot, @question_code, @question_code,
       @question_text, @category, @is_elimination_clause, @is_critical_clause,
-      @requires_attachment, @allowed_scores, @weight, @order_index, @active
+      @requires_attachment, @allowed_scores, @order_index, @active
     )
     ON CONFLICT(question_template_version_id, facility_type, supplier_scale, question_code)
     DO UPDATE SET
@@ -233,7 +232,6 @@ function upsertCanonicalCriteria(db, parsed, { seedOnly }) {
       requires_attachment=CASE WHEN excluded.is_elimination_clause=1 THEN 0
         ELSE question_items.requires_attachment END,
       allowed_scores=excluded.allowed_scores,
-      weight=excluded.weight,
       order_index=excluded.order_index,
       active=excluded.active
   `);

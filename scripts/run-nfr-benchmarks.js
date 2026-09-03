@@ -133,7 +133,7 @@ async function main() {
     const workbookRows = Array.from({ length: 1000 }, (_unused, index) => ({
       template_code: 'NFR1000', variant_code: 'ALL_ALL', category_code: 'SYNTHETIC',
       question_code: `NFR-Q-${index + 1}`, question_text: `Synthetic question ${index + 1}`,
-      clause_code: `NFR-C-${index + 1}`, allowed_scores: 'A/B/C/D/NA', weight: 1, order: index + 1, active: 1,
+      clause_code: `NFR-C-${index + 1}`, allowed_scores: 'A/B/C/D/NA', order: index + 1, active: 1,
     }));
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(workbookRows), 'Questions');

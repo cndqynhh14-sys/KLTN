@@ -17,7 +17,6 @@ const definitions = {
   clause_code: 'Stable clause/reference identity.',
   question_text: 'Question display text.',
   allowed_scores: 'Slash-separated subset of A/B/C/D/NA; elimination uses A/D/NA.',
-  weight: 'Number greater than 0 and no greater than 100.',
   order: 'Positive integer no greater than 10000.',
   active: '1 or 0.',
   critical: '1 or 0.',

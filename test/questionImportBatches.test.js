@@ -78,7 +78,7 @@ function workbookBuffer(rows, { headers, formula = false, hyperlink = false } = 
   const canonicalHeaders = headers || [
     'template_code', 'variant_code', 'facility_type', 'supplier_scale',
     'category_code', 'category_name', 'question_code', 'clause_code',
-    'question_text', 'allowed_scores', 'weight', 'order', 'active',
+    'question_text', 'allowed_scores', 'order', 'active',
     'critical', 'elimination', 'requires_evidence',
   ];
   const workbook = XLSX.utils.book_new();
@@ -109,7 +109,6 @@ function canonicalRow(overrides = {}) {
     clause_code: 'CLAUSE-001',
     question_text: 'Synthetic criterion for import tests',
     allowed_scores: 'A/B/C/D/NA',
-    weight: 1,
     order: 1,
     active: 1,
     critical: 0,
@@ -120,7 +119,7 @@ function canonicalRow(overrides = {}) {
   return [
     values.template_code, values.variant_code, values.facility_type, values.supplier_scale,
     values.category_code, values.category_name, values.question_code, values.clause_code,
-    values.question_text, values.allowed_scores, values.weight, values.order, values.active,
+    values.question_text, values.allowed_scores, values.order, values.active,
     values.critical, values.elimination, values.requires_evidence,
   ];
 }
@@ -225,7 +224,7 @@ test('canonical and BM01-BM04 legacy workbooks normalize before validation; inva
     const invalid = workbookBuffer([
       canonicalRow(),
       canonicalRow({ question_code: 'RUN15-Q-001', clause_code: 'CLAUSE-DUP', order: 2 }),
-      canonicalRow({ question_code: 'bad code!', clause_code: 'CLAUSE-003', weight: -1, order: 0 }),
+      canonicalRow({ question_code: 'bad code!', clause_code: 'CLAUSE-003', order: 0 }),
       canonicalRow({ question_code: 'RUN15-Q-004', clause_code: 'CLAUSE-004', allowed_scores: 'A/X', order: 4 }),
     ]);
     const preview = imports.preview({ templateId: template.id, versionId: draft.id, file: upload(invalid), actor: 'synthetic' });
@@ -263,7 +262,7 @@ test('canonical and BM01-BM04 legacy workbooks normalize before validation; inva
     const allInvalid = imports.preview({
       templateId: template.id,
       versionId: thirdDraft.id,
-      file: upload(workbookBuffer([canonicalRow({ question_code: 'invalid code!', weight: -1, order: 0 })])),
+      file: upload(workbookBuffer([canonicalRow({ question_code: 'invalid code!', allowed_scores: 'A/X', order: 0 })])),
       actor: 'synthetic',
     });
     assert.equal(allInvalid.batch.valid_rows, 0);

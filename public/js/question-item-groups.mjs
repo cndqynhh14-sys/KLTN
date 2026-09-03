@@ -1,7 +1,7 @@
 const BUSINESS_FIELDS = Object.freeze([
   'category_code', 'category', 'question_code', 'clause_code', 'question_text',
   'is_elimination_clause', 'is_critical_clause', 'requires_attachment',
-  'allowed_scores', 'weight', 'active',
+  'allowed_scores', 'active',
 ]);
 
 const SCOPE_PLACEMENT_FIELDS = Object.freeze(['question_code', 'clause_code', 'category_code', 'category']);
@@ -16,7 +16,6 @@ function flag(value) { return Number(Boolean(Number(value))); }
 
 function fieldValue(item, field) {
   if (['is_elimination_clause', 'is_critical_clause', 'requires_attachment', 'active'].includes(field)) return flag(item?.[field]);
-  if (field === 'weight') return Number(item?.weight ?? 0);
   if (field === 'question_code') return code(item?.question_code);
   return text(item?.[field]);
 }

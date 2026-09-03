@@ -131,7 +131,6 @@ function mapQuestion(row) {
     requires_attachment: !!row.requires_attachment,
     allowed_scores: row.allowed_scores,
     order_index: row.order_index,
-    weight: row.weight,
     active: !!row.active,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -508,7 +507,6 @@ router.post('/:id/questions', requirePermission(PERMISSIONS.QUESTION_TEMPLATE_MA
       is_critical_clause: boolInt(body.is_critical_clause),
       requires_attachment: requiresAttachmentForQuestion(body),
       allowed_scores: allowedScores,
-      weight: Number(body.weight || 1),
       order_index: parseInt(body.order_index || '0', 10),
       active: body.active === false ? 0 : 1,
     });
@@ -541,7 +539,6 @@ router.put('/:templateId/questions/:questionId', requirePermission(PERMISSIONS.Q
       is_critical_clause: boolInt(body.is_critical_clause),
       requires_attachment: requiresAttachmentForQuestion(body),
       allowed_scores: allowedScores,
-      weight: Number(body.weight || 1),
       order_index: parseInt(body.order_index || '0', 10),
       active: body.active === false ? 0 : 1,
     });

@@ -26,7 +26,7 @@ Vòng đời chuẩn là `DRAFT → IN_REVIEW → PUBLISHED → RETIRED`. Publis
 1. Mở **Quản trị → Bộ câu hỏi**, lọc theo status/version/facility/scale.
 2. Chọn template/version. Published chỉ có CTA **Clone Draft**, không có edit controls.
 3. Tạo mới luôn sinh Draft v1; hoặc Clone version nguồn thành Draft mới.
-4. Ở các tab **Tổng quan, Câu hỏi, Biến thể**, chỉnh mã stable, text, category, score, weight, order và active.
+4. Ở các tab **Tổng quan, Câu hỏi, Biến thể**, chỉnh mã stable, text, category, score, order và active.
 5. Dùng reorder/bulk action chỉ trong Draft. Bấm **Lưu nháp**; đây không phải Review hoặc Publish.
 6. Khi conflict optimistic lock, giữ nguyên form, tải version mới và so diff trước khi áp lại.
 

@@ -3269,7 +3269,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
         const tr = el('tr');
         tr.appendChild(labeledTd('#', { className: 'mono muted', text: String(index + 1).padStart(2, '0') }));
         tr.appendChild(labeledTd('Tiêu chí', { text: q.question }));
-        tr.appendChild(labeledTd('Trọng số', { className: 'mono', text: q.weight || q.order_index || '—' }));
+        tr.appendChild(labeledTd('Thứ tự', { className: 'mono', text: q.order_index || '—' }));
         const scoreTd = labeledTd('Điểm');
         scoreTd.appendChild(scoreChip(answer.score || 'NA'));
         tr.appendChild(scoreTd);
@@ -12485,7 +12485,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     const patchFields = [
       'variant_code', 'facility_type', 'supplier_scale', 'category_code', 'question_code', 'clause_code',
       'question_text', 'category', 'is_elimination_clause', 'is_critical_clause', 'requires_attachment',
-      'allowed_scores', 'weight', 'order_index', 'active',
+      'allowed_scores', 'order_index', 'active',
     ];
     const currentById = new Map((state.questionVersionDetail?.items || []).map((item) => [String(item.id), item]));
     const updates = [];
@@ -12542,7 +12542,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
   function resetQuestionEditor() {
     state.questionEditorItemId = null;
     questionEditorGroup = null;
-    const values = { 'question-editor-facility': 'ALL', 'question-editor-scale': 'ALL', 'question-editor-variant': '', 'question-editor-category-code': '', 'question-editor-category': '', 'question-editor-code': '', 'question-editor-clause': '', 'question-editor-order': String((state.questionVersionDetail?.items?.length || 0) + 1), 'question-editor-text': '', 'question-editor-scores': 'A/B/C/D/NA', 'question-editor-weight': '1' };
+    const values = { 'question-editor-facility': 'ALL', 'question-editor-scale': 'ALL', 'question-editor-variant': '', 'question-editor-category-code': '', 'question-editor-category': '', 'question-editor-code': '', 'question-editor-clause': '', 'question-editor-order': String((state.questionVersionDetail?.items?.length || 0) + 1), 'question-editor-text': '', 'question-editor-scores': 'A/B/C/D/NA' };
     Object.entries(values).forEach(([id, value]) => { if ($(id)) $(id).value = value; });
     for (const id of ['question-editor-facility', 'question-editor-scale', 'question-editor-variant', 'question-editor-order', 'question-editor-code', 'question-editor-category-code', 'question-editor-category']) if ($(id)) $(id).disabled = false;
     for (const id of ['question-editor-elimination', 'question-editor-critical', 'question-editor-evidence']) if ($(id)) $(id).checked = false;
@@ -12553,7 +12553,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
 
   function fillQuestionEditor(item) {
     state.questionEditorItemId = item.id;
-    const values = { 'question-editor-facility': item.facility_type, 'question-editor-scale': item.supplier_scale, 'question-editor-variant': item.variant_code || '', 'question-editor-category-code': item.category_code || '', 'question-editor-category': item.category, 'question-editor-code': item.question_code, 'question-editor-clause': item.clause_code || '', 'question-editor-order': item.order_index, 'question-editor-text': item.question_text, 'question-editor-scores': item.allowed_scores, 'question-editor-weight': item.weight };
+    const values = { 'question-editor-facility': item.facility_type, 'question-editor-scale': item.supplier_scale, 'question-editor-variant': item.variant_code || '', 'question-editor-category-code': item.category_code || '', 'question-editor-category': item.category, 'question-editor-code': item.question_code, 'question-editor-clause': item.clause_code || '', 'question-editor-order': item.order_index, 'question-editor-text': item.question_text, 'question-editor-scores': item.allowed_scores };
     Object.entries(values).forEach(([id, value]) => { if ($(id)) $(id).value = value ?? ''; });
     $('question-editor-elimination').checked = !!item.is_elimination_clause;
     $('question-editor-critical').checked = !!item.is_critical_clause;
@@ -12619,7 +12619,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
       variant_code: $('question-editor-variant').value.trim() || null, category_code: $('question-editor-category-code').value.trim() || null,
       category: $('question-editor-category').value.trim(), question_code: $('question-editor-code').value.trim(), clause_code: $('question-editor-clause').value.trim() || null,
       order_index: Number.parseInt($('question-editor-order').value, 10), question_text: $('question-editor-text').value.trim(),
-      allowed_scores: elimination ? 'A/D/NA' : $('question-editor-scores').value.trim(), weight: Number($('question-editor-weight').value),
+      allowed_scores: elimination ? 'A/D/NA' : $('question-editor-scores').value.trim(),
       is_elimination_clause: elimination ? 1 : 0, is_critical_clause: $('question-editor-critical').checked ? 1 : 0,
       requires_attachment: !elimination && $('question-editor-evidence').checked ? 1 : 0, active: $('question-editor-active').checked ? 1 : 0,
     };
@@ -12629,7 +12629,6 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     if (!item.question_code) errors.push('Mã câu hỏi là bắt buộc.');
     if (!item.question_text) errors.push('Nội dung câu hỏi là bắt buộc.');
     if (!/^(?:A|B|C|D|NA)(?:\/(?:A|B|C|D|NA))*$/.test(item.allowed_scores)) errors.push('Điểm cho phép không hợp lệ.');
-    if (!Number.isFinite(item.weight) || item.weight < 0) errors.push('Trọng số phải là số không âm.');
     if (!Number.isInteger(item.order_index) || item.order_index < 0) errors.push('Thứ tự phải là số nguyên không âm.');
     const duplicate = editingGroup ? null : (state.questionVersionDetail?.items || []).find((candidate) => String(candidate.id) !== String(existing?.id) && candidate.facility_type === item.facility_type && candidate.supplier_scale === item.supplier_scale && candidate.question_code === item.question_code);
     if (duplicate) errors.push('Mã câu hỏi đã tồn tại trong cùng facility/scale.');

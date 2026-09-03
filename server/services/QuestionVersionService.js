@@ -13,7 +13,7 @@ const ITEM_FIELDS = Object.freeze([
   'variant_code', 'facility_type', 'supplier_scale', 'category_code', 'category_label_snapshot',
   'question_code', 'clause_code', 'question_text', 'category',
   'is_elimination_clause', 'is_critical_clause', 'requires_attachment',
-  'allowed_scores', 'weight', 'order_index', 'active',
+  'allowed_scores', 'order_index', 'active',
 ]);
 const DRAFT_ITEM_PATCH_FIELDS = Object.freeze([...ITEM_FIELDS]);
 
@@ -53,7 +53,6 @@ function canonicalItem(item, templateCode = '') {
     is_critical_clause: boolInt(item.is_critical_clause),
     requires_attachment: boolInt(item.is_elimination_clause) ? 0 : boolInt(item.requires_attachment),
     allowed_scores: clean(item.allowed_scores) || (boolInt(item.is_elimination_clause) ? 'A/D/NA' : 'A/B/C/D/NA'),
-    weight: Number(item.weight == null ? 1 : item.weight),
     order_index: Number.parseInt(item.order_index == null ? 0 : item.order_index, 10) || 0,
     active: item.active === false || item.active === 0 ? 0 : 1,
   };
@@ -393,10 +392,10 @@ class QuestionVersionService {
           INSERT INTO question_items (
             question_template_version_id, variant_code, facility_type, supplier_scale,
             category_code, category_label_snapshot, question_code, clause_code, question_text, category, is_elimination_clause, is_critical_clause,
-            requires_attachment, allowed_scores, weight, order_index, active
+            requires_attachment, allowed_scores, order_index, active
           ) VALUES (@version_id, @variant_code, @facility_type, @supplier_scale,
             @category_code, @category, @question_code, @clause_code, @question_text, @category, @is_elimination_clause, @is_critical_clause,
-            @requires_attachment, @allowed_scores, @weight, @order_index, @active)
+            @requires_attachment, @allowed_scores, @order_index, @active)
         `);
         source.items.forEach((item) => insertItem.run({ ...item, version_id: versionId }));
         const insertVariant = this.db.prepare(`
@@ -422,10 +421,10 @@ class QuestionVersionService {
       INSERT INTO question_items (
         question_template_version_id, variant_code, facility_type, supplier_scale,
         category_code, category_label_snapshot, question_code, clause_code, question_text, category, is_elimination_clause, is_critical_clause,
-        requires_attachment, allowed_scores, weight, order_index, active
+        requires_attachment, allowed_scores, order_index, active
       ) VALUES (@version_id, @variant_code, @facility_type, @supplier_scale,
         @category_code, @category, @question_code, @clause_code, @question_text, @category, @is_elimination_clause, @is_critical_clause,
-        @requires_attachment, @allowed_scores, @weight, @order_index, @active)
+        @requires_attachment, @allowed_scores, @order_index, @active)
     `);
     normalized.forEach((item) => insertItem.run({ ...item, version_id: versionId }));
     const variants = new Map();
@@ -516,7 +515,7 @@ class QuestionVersionService {
           question_code=@question_code, clause_code=@clause_code, question_text=@question_text,
           category=@category, is_elimination_clause=@is_elimination_clause,
           is_critical_clause=@is_critical_clause, requires_attachment=@requires_attachment,
-          allowed_scores=@allowed_scores, weight=@weight, order_index=@order_index, active=@active
+          allowed_scores=@allowed_scores, order_index=@order_index, active=@active
         WHERE id=@id AND question_template_version_id=@version_id
       `);
       seen.forEach((id) => {
@@ -530,11 +529,11 @@ class QuestionVersionService {
           question_template_version_id, variant_code, facility_type, supplier_scale,
           category_code, category_label_snapshot, question_code, clause_code, question_text, category,
           is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-          weight, order_index, active
+          order_index, active
         ) VALUES (@version_id, @variant_code, @facility_type, @supplier_scale,
           @category_code, @category, @question_code, @clause_code, @question_text, @category,
           @is_elimination_clause, @is_critical_clause, @requires_attachment, @allowed_scores,
-          @weight, @order_index, @active)
+          @order_index, @active)
       `);
       normalized.slice(indexes.size).forEach((item) => insertItem.run({ ...item, version_id: row.id }));
 
@@ -570,7 +569,7 @@ class QuestionVersionService {
     const items = this.db.prepare(`
       SELECT ?, facility_type, supplier_scale, question_code, question_text, category,
              is_elimination_clause, is_critical_clause, requires_attachment, allowed_scores,
-             weight, order_index, active
+             order_index, active
       FROM question_items WHERE question_template_version_id=?
     `).all(row.template_code, row.id).map((item) => ({ ...item, template_code: row.template_code }));
     return contentHash(items);

@@ -69,6 +69,16 @@ test('golden scoring policy v1 recalculates synthetic fixtures without conclusio
   });
 });
 
+test('question weight metadata does not affect the arithmetic-mean scoring contract', () => {
+  const fixture = answers({ 'quality-1': { score: 'B' }, 'trace-1': { score: 'NA' } });
+  const withoutWeights = calculateWithPolicy(GOLDEN_V1_DEFINITION, questions, fixture);
+  const legacyWeightedQuestions = questions.map((question, index) => ({ ...question, weight: index + 1 }));
+  const withLegacyWeights = calculateWithPolicy(GOLDEN_V1_DEFINITION, legacyWeightedQuestions, fixture);
+  assert.equal(withLegacyWeights.average, withoutWeights.average);
+  assert.equal(withLegacyWeights.finalScore, withoutWeights.finalScore);
+  assert.equal(withLegacyWeights.grade, withoutWeights.grade);
+});
+
 test('overview configuration changes layout without changing formula checksum or score', () => {
   const changed = structuredClone(GOLDEN_V1_DEFINITION);
   changed.compliance_overview.title = 'Synthetic overview title';

@@ -69,13 +69,13 @@ test('logical question grouping preserves physical scopes and scoring identity',
   const base = {
     question_template_version_id: 7, question_code: '1.1', clause_code: null,
     category_code: 'LEGAL', category: 'Pháp lý', question_text: 'Giấy phép kinh doanh',
-    allowed_scores: 'A/D/NA', weight: 1, is_elimination_clause: 1,
+    allowed_scores: 'A/D/NA', is_elimination_clause: 1,
     is_critical_clause: 0, requires_attachment: 0, active: 1, variant_code: 'V1', order_index: 1,
   };
   const grouped = helper.groupQuestionItems([
     { ...base, id: 1, facility_type: 'FACTORY', supplier_scale: 'LARGE' },
     { ...base, id: 2, facility_type: 'FACTORY', supplier_scale: 'SMALL' },
-    { ...base, id: 3, facility_type: 'STORE', supplier_scale: 'LARGE', weight: 2 },
+    { ...base, id: 3, facility_type: 'STORE', supplier_scale: 'LARGE', is_critical_clause: 1 },
   ]);
 
   assert.equal(grouped.length, 2);

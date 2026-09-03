@@ -71,7 +71,7 @@ function canonicalWorkbook(templateCode, rows) {
   const headers = [
     'template_code', 'variant_code', 'facility_type', 'supplier_scale',
     'category_code', 'category_name', 'question_code', 'clause_code',
-    'question_text', 'allowed_scores', 'weight', 'order', 'active',
+    'question_text', 'allowed_scores', 'order', 'active',
     'critical', 'elimination', 'requires_evidence',
   ];
   const workbook = XLSX.utils.book_new();
@@ -80,8 +80,8 @@ function canonicalWorkbook(templateCode, rows) {
     ...rows.map((row, index) => [
       templateCode, 'ALL_ALL', 'ALL', 'ALL', row.category_code || 'GENERAL',
       row.category_name || 'Tổng quan', row.question_code, row.clause_code || `CLAUSE_${index + 1}`,
-      row.question_text, row.allowed_scores || 'A/B/C/D/NA', row.weight ?? 1,
-      row.order ?? index + 1, true, false, false, false,
+      row.question_text, row.allowed_scores || 'A/B/C/D/NA', row.order ?? index + 1,
+      true, false, false, false,
     ]),
   ]), 'Questions');
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
@@ -290,7 +290,7 @@ test('HTTP E2E creates Draft, edits a question, previews and commits import, rev
       facility_type: 'ALL', supplier_scale: 'ALL', variant_code: 'ALL_ALL',
       category_code: 'GENERAL', category: 'Tổng quan', question_code: 'Q001',
       clause_code: 'CLAUSE_1', question_text: 'Câu hỏi được tạo trong Draft',
-      allowed_scores: 'A/B/C/D/NA', weight: 1, order_index: 1, active: 1,
+      allowed_scores: 'A/B/C/D/NA', order_index: 1, active: 1,
       is_elimination_clause: 0, is_critical_clause: 0, requires_attachment: 0,
     }];
     const savedResponse = await fetch(`${app.baseUrl}/question-templates/${created.id}/versions/${draft.id}`, {

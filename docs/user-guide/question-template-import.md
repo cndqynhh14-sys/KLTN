@@ -7,7 +7,7 @@ Import chỉ thay đổi một version `DRAFT` sau khi người dùng đã xem p
 ## Điều kiện trước khi làm
 
 - Chọn đúng stable template và đúng version Draft; Published không nhận import.
-- Chuẩn bị dữ liệu theo stable code cho template, variant, category, question, clause, score, weight, order và active.
+- Chuẩn bị dữ liệu theo stable code cho template, variant, category, question, clause, score, order và active.
 - Xác nhận Draft không đang được người khác chỉnh; ghi lại lock version trước preview.
 
 <a id="permissions"></a>
