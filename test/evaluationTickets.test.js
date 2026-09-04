@@ -10,6 +10,10 @@ const { canonicalTokenFactory } = require('./helpers/canonicalAuth');
 const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 const { addCalendarDaysISO } = require('../server/domain/correctiveActionDueDate');
 
+function userId(db, email) {
+  return db.prepare('SELECT user_id FROM users WHERE email = ? COLLATE NOCASE').get(email)?.user_id;
+}
+
 function freshModules(dbPath) {
   process.env.DB_PATH = dbPath;
   process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
@@ -73,7 +77,7 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
   let server;
 
   try {
-    upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
+    const admin = upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
     const supplierInfo = db.prepare(`
       INSERT INTO supplier_master (
         supplier_code, supplier_name, tax_code, address, region, province, business_type,
@@ -84,9 +88,9 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
         'NCC-AUTO', 'Auto Supplier', 'TAX-1', 'Supplier HQ',
         'MB', 'Thành phố Hà Nội', 'Tự sản xuất',
         'Nguyen Van A', 'supplier@example.com', '0900000000',
-        'ACTIVE', 'MANUAL', 'admin@masangroup.com'
+        'ACTIVE', 'MANUAL', ?
       )
-    `).run();
+    `).run(admin.user_id);
 
     const appInfo = await startApp(evaluationsRouter);
     server = appInfo.server;
@@ -174,7 +178,7 @@ test('ticket creation snapshots selected supplier fields while keeping editable 
     assert.equal(json.ticket.supplier.attp_certificate_type, 'HACCP');
     assert.equal(json.ticket.facility_type, 'CHUNG');
     assert.equal(json.ticket.evaluation_method, 'Online');
-    assert.equal(json.ticket.qa_lead_id, 'admin@masangroup.com');
+    assert.equal(json.ticket.qa_lead_id, admin.user_id);
     assert.equal(json.ticket.participant_source, 'CANONICAL');
     assert.equal(json.ticket.participants.length, 4);
     assert.deepEqual(new Set(json.ticket.participants.map((item) => item.participant_role)),
@@ -281,7 +285,8 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
       VALUES (
         'TICKET-DRAFT', @supplier_id, 'NCC-DRAFT', 'Draft Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', @current_status, 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id, current_status: draftStatus });
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, draftStatus);
@@ -320,7 +325,7 @@ test('scoring draft save promotes a draft ticket to processing once', async () =
       { name: 'Nguyen Van A - QA Lead', opening: true, closing: true },
       { name: 'Tran Thi B - NCC', opening: true, closing: false },
     ]);
-    const ownerAttendee = saveJson.round.attendees.find((item) => item.user_id === 'admin@masangroup.com');
+    const ownerAttendee = saveJson.round.attendees.find((item) => item.user_id === userId(db, 'admin@masangroup.com'));
     assert.ok(ownerAttendee);
     assert.equal(ownerAttendee.opening, true);
     assert.equal(ownerAttendee.closing, true);
@@ -389,10 +394,11 @@ test('round 2 inherits A/NA answers as readonly and rejects bypass changes', asy
       VALUES (
         'TICKET-R2', @supplier_id, 'NCC-R2', 'Round 2 Supplier', 'Đánh giá định kỳ', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Chờ khắc phục', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
-    const round1 = db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 1, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoàn thành', 'admin@masangroup.com');
+    const round1 = db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 1, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoàn thành', userId(db, 'admin@masangroup.com'));
     const questions = db.prepare(`
       SELECT q.id, q.question_code
       FROM question_items q
@@ -404,27 +410,27 @@ test('round 2 inherits A/NA answers as readonly and rejects bypass changes', asy
     `).all(template.id);
     db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, ?, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(round1.lastInsertRowid, questions[0].id, 'A', '', 100);
     const inheritedAnswer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round1.lastInsertRowid, questions[0].id);
     const inheritedAttachment = db.prepare(`
       INSERT INTO evaluation_attachments (answer_id, ticket_id, file_name, file_path, storage_key, mime_type, size_bytes, uploaded_by)
-      VALUES (?, ?, 'round1-evidence.pdf', '/tmp/round1-evidence.pdf', 'ROUND1:A:evidence', 'application/pdf', 321, 'admin@masangroup.com')
+      VALUES (?, ?, 'round1-evidence.pdf', '/tmp/round1-evidence.pdf', 'ROUND1:A:evidence', 'application/pdf', 321, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(inheritedAnswer.id, ticketInfo.lastInsertRowid);
     db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, ?, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(round1.lastInsertRowid, questions[1].id, 'NA', 'Không áp dụng', null);
     db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, ?, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(round1.lastInsertRowid, questions[2].id, 'B', 'Cần cải thiện', 75);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content,
         remediation_content, due_date, severity, status, created_by
       )
-      VALUES (?, ?, ?, 'R2-B', 'Test', 'Cần cải thiện', 'Khắc phục', '2026-07-15', 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, 'R2-B', 'Test', 'Cần cải thiện', 'Khắc phục', '2026-07-15', 'B', 'OPEN', (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid,
       db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
         .pluck().get(round1.lastInsertRowid, questions[2].id));
@@ -477,9 +483,9 @@ test('round 2 inherits A/NA answers as readonly and rejects bypass changes', asy
     assert.equal(afterOpenTicket.current_round_no, 2);
     assert.equal(afterOpenTicket.completed_round, 1);
     const openHistory = db.prepare('SELECT * FROM workflow_history WHERE ticket_id = ? AND action = ?').get(ticketInfo.lastInsertRowid, 'ROUND_2_OPEN');
-    assert.equal(openHistory.actor_user_id, 'admin@masangroup.com');
+    assert.equal(openHistory.actor_user_id, userId(db, 'admin@masangroup.com'));
     const openAudit = JSON.parse(openHistory.comment);
-    assert.equal(openAudit.created_by, 'admin@masangroup.com');
+    assert.equal(openAudit.created_by, userId(db, 'admin@masangroup.com'));
     assert.equal(openAudit.source_assessment_id, round1.lastInsertRowid);
     assert.equal(openAudit.source_assessment_code, 'TICKET-R2-R1');
     assert.equal(openAudit.target_assessment_id, openJson.round.id);
@@ -582,7 +588,8 @@ test('nonconformities are generated from B/C/D answers and keep correction field
       VALUES (
         'TICKET-NC', @supplier_id, 'NCC-NC', 'Nonconformity Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Dang xu ly', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, 'Khoi tao');
@@ -763,7 +770,8 @@ test('round completion requires remediation and due date for nonconformities', a
       VALUES (
         'TICKET-NC-REQ', @supplier_id, 'NCC-NC-REQ', 'Required NC Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Dang xu ly', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, 'Dang xu ly');
@@ -807,7 +815,7 @@ test('round completion requires remediation and due date for nonconformities', a
       const answer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round.id, question.id);
       db.prepare(`
         INSERT INTO evaluation_attachments (answer_id, ticket_id, file_name, uploaded_by)
-        VALUES (?, ?, ?, 'admin@masangroup.com')
+        VALUES (?, ?, ?, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
       `).run(answer.id, ticketInfo.lastInsertRowid, `evidence-${question.id}.pdf`);
     });
 
@@ -963,7 +971,8 @@ test('submit to lead requires locked scoring and rejects clean passing assessmen
       VALUES (
         'TICKET-LEAD', @supplier_id, 'NCC-LEAD', 'Lead Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', @current_status, 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id, current_status: '\u0110ang x\u1eed l\u00fd' });
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 1, ?)').run(ticketInfo.lastInsertRowid, '\u0110ang x\u1eed l\u00fd');
@@ -1007,7 +1016,7 @@ test('submit to lead requires locked scoring and rejects clean passing assessmen
       const answer = db.prepare('SELECT id FROM evaluation_answers WHERE round_id = ? AND question_item_id = ?').get(round.id, question.id);
       db.prepare(`
         INSERT INTO evaluation_attachments (answer_id, ticket_id, file_name, uploaded_by)
-        VALUES (?, ?, ?, 'admin@masangroup.com')
+        VALUES (?, ?, ?, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
       `).run(answer.id, ticketInfo.lastInsertRowid, `evidence-${question.id}.pdf`);
     });
 
@@ -1081,10 +1090,11 @@ test('correction extension records required fields, due-date history, and workfl
         'TICKET-EXT', @supplier_id, 'NCC-EXT', 'Extension Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Đang đánh giá lần 2', 2,
         2, 45, 'D', 'Khong dat', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
-    const round2 = db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 2, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoan thanh', 'admin@masangroup.com');
+    const round2 = db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 2, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoan thanh', userId(db, 'admin@masangroup.com'));
     const question = db.prepare(`
       SELECT q.id, q.question_code, q.category
       FROM question_items q
@@ -1096,14 +1106,14 @@ test('correction extension records required fields, due-date history, and workfl
     `).get(template.id);
     const extensionAnswer = db.prepare(`INSERT INTO evaluation_answers
       (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, 'D', 'Still open', 0, 'admin@masangroup.com')`)
+      VALUES (?, ?, 'D', 'Still open', 0, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`)
       .run(round2.lastInsertRowid, question.id);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content,
         remediation_content, due_date, severity, status, created_by
       )
-      VALUES (?, ?, ?, ?, ?, 'Still open', 'Fix remaining issue', '2026-08-01', 'D', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, ?, 'Still open', 'Fix remaining issue', '2026-08-01', 'D', 'OPEN', (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid, extensionAnswer.lastInsertRowid,
       question.question_code, question.category);
 
@@ -1217,14 +1227,15 @@ test('round 2 can be locked then optionally submitted to lead approval', async (
         'TICKET-R2-LEAD', @supplier_id, 'NCC-R2-LEAD', 'Round 2 Lead Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', @status,
         2, 2, 72, 'C', 'Dat co dieu kien',
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({
       supplier_id: supplierInfo.lastInsertRowid,
       template_id: templateInfo.lastInsertRowid,
       status: '\u0110ang \u0111\u00e1nh gi\u00e1 l\u1ea7n 2',
     });
-    db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 1, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoan thanh', 'admin@masangroup.com');
+    db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by) VALUES (?, 1, ?, datetime(\'now\'), ?)').run(ticketInfo.lastInsertRowid, 'Hoan thanh', userId(db, 'admin@masangroup.com'));
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 2, ?)').run(ticketInfo.lastInsertRowid, '\u0110ang x\u1eed l\u00fd');
 
     const appInfo = await startApp(evaluationsRouter);
@@ -1349,26 +1360,27 @@ test('round 1 approval with nonconformities enters correction state before final
         'TICKET-WF', @supplier_id, 'NCC-WF', 'Workflow Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Chờ duyệt (TBP)', 1,
         1, 72, 'B', 'Dat co dieu kien', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
     const round1 = db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by, total_score, final_result, classification)
-      VALUES (?, 1, 'Hoàn thành', datetime('now'), 'admin@masangroup.com', 72, 'Dat co dieu kien', 'B')
+      VALUES (?, 1, 'Hoàn thành', datetime('now'), (SELECT user_id FROM users WHERE email='admin@masangroup.com'), 72, 'Dat co dieu kien', 'B')
     `).run(ticketInfo.lastInsertRowid);
     db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, 'B', 'Needs correction', 75, 'admin@masangroup.com')
+      VALUES (?, ?, 'B', 'Needs correction', 75, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(round1.lastInsertRowid, questions[0].id);
     db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, 'A', '', 100, 'admin@masangroup.com')
+      VALUES (?, ?, 'A', '', 100, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(round1.lastInsertRowid, questions[1].id);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
-      VALUES (?, ?, ?, ?, ?, 'Needs correction', 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, ?, 'Needs correction', 'B', 'OPEN', (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid, round1.lastInsertRowid,
       db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
         .pluck().get(round1.lastInsertRowid, questions[0].id),
@@ -1423,7 +1435,8 @@ test('round 1 approval with nonconformities enters correction state before final
         'TICKET-WF-FINAL', @supplier_id, 'NCC-WF', 'Workflow Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Chờ duyệt (TBP)', 2,
         2, 82, 'B', 'Dat', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
     db.prepare(`
@@ -1478,7 +1491,8 @@ test('rejection comments are required and persisted to approval task, workflow h
         'TICKET-REJECT', @supplier_id, 'NCC-REJ', 'Rejected Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Chờ duyệt (Lead)', 1,
         1, 84, 'B', 'Dat', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
     db.prepare(`
@@ -1561,7 +1575,8 @@ test('soft delete requires reason, enforces permissions, hides default list, and
       VALUES (
         'TICKET-DELETE', @supplier_id, 'NCC-DEL', 'Delete Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', 'Khởi tạo', 1,
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: template.id });
 
@@ -1599,7 +1614,7 @@ test('soft delete requires reason, enforces permissions, hides default list, and
     const deletedRow = db.prepare('SELECT is_deleted, deleted_reason, deleted_by FROM evaluation_tickets WHERE ticket_code = ?').get('TICKET-DELETE');
     assert.equal(deletedRow.is_deleted, 1);
     assert.equal(deletedRow.deleted_reason, 'Duplicate ticket');
-    assert.equal(deletedRow.deleted_by, 'admin@masangroup.com');
+    assert.equal(deletedRow.deleted_by, userId(db, 'admin@masangroup.com'));
     const history = db.prepare('SELECT * FROM workflow_history WHERE action = ? AND ticket_id = (SELECT id FROM evaluation_tickets WHERE ticket_code = ?)').get('TICKET_SOFT_DELETE', 'TICKET-DELETE');
     assert.equal(history.comment, 'Duplicate ticket');
 
@@ -1673,8 +1688,8 @@ test('specialists only access evaluation tickets they both created and are assig
       supplier_code: 'NCC-OWN',
       supplier_name: 'Owner Supplier',
       template_id: template.id,
-      assigned_specialist_id: 'owner@masangroup.com',
-      created_by: 'owner@masangroup.com',
+      assigned_specialist_id: userId(db, 'owner@masangroup.com'),
+      created_by: userId(db, 'owner@masangroup.com'),
     });
     insertTicket.run({
       ticket_code: 'TICKET-OTHER',
@@ -1682,8 +1697,8 @@ test('specialists only access evaluation tickets they both created and are assig
       supplier_code: 'NCC-OTHER',
       supplier_name: 'Other Supplier',
       template_id: template.id,
-      assigned_specialist_id: 'other@masangroup.com',
-      created_by: 'other@masangroup.com',
+      assigned_specialist_id: userId(db, 'other@masangroup.com'),
+      created_by: userId(db, 'other@masangroup.com'),
     });
     insertTicket.run({
       ticket_code: 'TICKET-REASSIGNED',
@@ -1691,8 +1706,8 @@ test('specialists only access evaluation tickets they both created and are assig
       supplier_code: 'NCC-REASSIGNED',
       supplier_name: 'Reassigned Supplier',
       template_id: template.id,
-      assigned_specialist_id: 'other@masangroup.com',
-      created_by: 'owner@masangroup.com',
+      assigned_specialist_id: userId(db, 'other@masangroup.com'),
+      created_by: userId(db, 'owner@masangroup.com'),
     });
 
     const appInfo = await startApp(evaluationsRouter);
@@ -1852,7 +1867,8 @@ test('approval bootstrap only returns records pending the current approver role'
       VALUES (
         @ticket_code, @supplier_id, @supplier_code, @supplier_name, 'Dinh ky', @template_id, @question_template_version_id,
         'CHUNG', 'LARGE', '2026-08-01', @current_status, 1,
-        'specialist@masangroup.com', 'specialist@masangroup.com'
+        (SELECT user_id FROM users WHERE email='specialist@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='specialist@masangroup.com')
       )
     `);
     const taskRows = [
@@ -1879,17 +1895,17 @@ test('approval bootstrap only returns records pending the current approver role'
         INSERT INTO evaluation_rounds (
           ticket_id, round_no, status, completed_at, locked_at, locked_by,
           total_score, final_result, classification
-        ) VALUES (?, 1, 'Hoàn thành', datetime('now'), datetime('now'), 'specialist@masangroup.com',
+        ) VALUES (?, 1, 'Hoàn thành', datetime('now'), datetime('now'), (SELECT user_id FROM users WHERE email='specialist@masangroup.com'),
           75, 'Đạt có điều kiện', 'C')
       `).run(info.lastInsertRowid);
       const answerInfo = db.prepare(`
         INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-        VALUES (?, ?, 'B', 'Lãnh đạo cần xem được ghi chú này', 75, 'specialist@masangroup.com')
+        VALUES (?, ?, 'B', 'Lãnh đạo cần xem được ghi chú này', 75, (SELECT user_id FROM users WHERE email='specialist@masangroup.com'))
       `).run(roundInfo.lastInsertRowid, approvalQuestions.ids[0]);
       db.prepare(`
         INSERT INTO evaluation_attachments (
           answer_id, ticket_id, file_name, file_path, storage_key, mime_type, size_bytes, uploaded_by
-        ) VALUES (?, ?, 'approval-evidence.pdf', '/tmp/approval-evidence.pdf', ?, 'application/pdf', 128, 'specialist@masangroup.com')
+        ) VALUES (?, ?, 'approval-evidence.pdf', '/tmp/approval-evidence.pdf', ?, 'application/pdf', 128, (SELECT user_id FROM users WHERE email='specialist@masangroup.com'))
       `).run(answerInfo.lastInsertRowid, info.lastInsertRowid, `APPROVAL:${ticketCode}:EVIDENCE`);
     }
 
@@ -2005,12 +2021,13 @@ test('round 2 completion updates corrected result fields and next evaluation pla
         'TICKET-CORR', @supplier_id, 'NCC-CORR', 'Correction Supplier', 'Dinh ky', @template_id,
         'CHUNG', 'LARGE', '2026-07-01', '2026-07-02', 'Đang đánh giá lần 2',
         2, 2, 72, 'C', 'Dat co dieu kien',
-        'admin@masangroup.com', 'admin@masangroup.com'
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: supplierInfo.lastInsertRowid, template_id: templateInfo.lastInsertRowid });
     db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, status, completed_at, locked_at, locked_by, total_score, final_result, classification)
-      VALUES (?, 1, 'Hoàn thành', '2026-07-02', '2026-07-02', 'admin@masangroup.com', 72, 'Đạt mức cơ bản, đánh giá lại sau 6 tháng', 'C')
+      VALUES (?, 1, 'Hoàn thành', '2026-07-02', '2026-07-02', (SELECT user_id FROM users WHERE email='admin@masangroup.com'), 72, 'Đạt mức cơ bản, đánh giá lại sau 6 tháng', 'C')
     `).run(ticketInfo.lastInsertRowid);
     db.prepare('INSERT INTO evaluation_rounds (ticket_id, round_no, status) VALUES (?, 2, ?)').run(ticketInfo.lastInsertRowid, 'Đang xử lý');
 

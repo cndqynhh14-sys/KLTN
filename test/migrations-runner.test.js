@@ -299,9 +299,10 @@ test('backup and restored fixture retain ledger, row counts and foreign-key inte
       (email, is_active, display_name, created_at, created_by)
       VALUES ('backup-001@example.invalid', 1, 'SYNTHETIC BACKUP USER',
       '2026-01-01 00:00:00', NULL)`).run();
+    const backupUserId = db.prepare("SELECT user_id FROM users WHERE email='backup-001@example.invalid'").pluck().get();
     db.prepare(`INSERT INTO user_roles (user_id, role_id, active, source, created_by)
-      SELECT 'backup-001@example.invalid', id, 1, 'MANUAL', NULL
-      FROM roles WHERE role_code='QLCL_SPECIALIST'`).run();
+      SELECT ?, id, 1, 'MANUAL', NULL
+      FROM roles WHERE role_code='QLCL_SPECIALIST'`).run(backupUserId);
     await db.backup(backupPath);
     db.close();
 

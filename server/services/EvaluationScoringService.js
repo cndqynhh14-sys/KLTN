@@ -15,6 +15,7 @@ const { resourceContext } = require('./PolicyService');
 const { WORKFLOW_STATUSES } = require('../domain/workflowHistory');
 const logger = require('../logger');
 const { assertTicketMutable } = require('../domain/historicalEvaluation');
+const { resolveUserId } = require('../domain/userIdentity');
 
 function calculatedScore(score, definition) {
   const value = definition?.score_values?.[score];
@@ -24,7 +25,6 @@ function calculatedScore(score, definition) {
 function normalizeAttendee(value) {
   return {
     name: String(value?.name || value?.title || '').trim(),
-    principal_id: String(value?.principal_id || '').trim() || null,
     user_id: String(value?.user_id || '').trim() || null,
     opening: !!(value?.opening || value?.opening_meeting),
     closing: !!(value?.closing || value?.closing_meeting),
@@ -143,7 +143,6 @@ class EvaluationScoringService {
       .filter((participant) => participant.participant_role === 'ATTENDEE')
       .map((participant) => ({
         name: participant.display_name,
-        ...(participant.principal_id ? { principal_id: participant.principal_id } : {}),
         ...(participant.user_id ? { user_id: participant.user_id } : {}),
         opening: !!participant.opening_meeting,
         closing: !!participant.closing_meeting,
@@ -194,11 +193,13 @@ class EvaluationScoringService {
   }
 
   ensureRound(ticket, roundNo, user) {
-    const userEmail = typeof user === 'string' ? user : user.email;
-    const workflowUser = typeof user === 'string' ? { email: userEmail, role: null } : user;
+    const userEmail = resolveUserId(this.db,
+      typeof user === 'string' ? user : (user?.userId || user?.user_id || user?.email),
+      { required: true });
+    const workflowUser = typeof user === 'string' ? { userId: userEmail, email: null, role: null } : user;
     const existing = this.getRound(ticket.id, roundNo);
     if (existing) {
-      this.participantRepository.ensureRoundOwnerAttendee(existing.id, user?.user_id || userEmail);
+      this.participantRepository.ensureRoundOwnerAttendee(existing.id, userEmail);
       return existing;
     }
     if (roundNo !== 2) return null;
@@ -309,6 +310,7 @@ class EvaluationScoringService {
   }
 
   upsertRoundAnswers(round, answers, userEmail) {
+    const actorUserId = resolveUserId(this.db, userEmail, { required: true });
     const pinned = round.scoring_policy_version_id || this.db.prepare(`
       SELECT scoring_policy_version_id FROM evaluation_tickets WHERE id=?
     `).get(round.ticket_id)?.scoring_policy_version_id;
@@ -326,7 +328,7 @@ class EvaluationScoringService {
         score,
         comment,
         calculated_score: calculatedScore(score, scoringDefinition),
-        answered_by: userEmail,
+        answered_by: actorUserId,
       });
     });
   }
@@ -345,11 +347,12 @@ class EvaluationScoringService {
     this.statements.updateSupplierIntroduction.run({
       ticket_id: ticket.id,
       supplier_introduction: normalized,
-      updated_by: userEmail,
+      updated_by: resolveUserId(this.db, userEmail, { required: true }),
     });
   }
 
   seedRound2AnswersFromRound1(ticket, round, userEmail) {
+    const actorUserId = resolveUserId(this.db, userEmail, { required: true });
     if (round.round_no !== 2) return;
     const previousRound = this.getRound(ticket.id, 1);
     if (!previousRound) return;
@@ -362,7 +365,7 @@ class EvaluationScoringService {
         ? { score: old.score, note: old.note || old.comment || '' }
         : { score: '', note: '' };
     });
-    this.upsertRoundAnswers(round, nextAnswers, userEmail);
+    this.upsertRoundAnswers(round, nextAnswers, actorUserId);
     const seededAnswers = this.answersForRound(round.id);
     Object.entries(previousAnswers).forEach(([questionId, old]) => {
       if (!['A', 'NA'].includes(old.score) || !(old.attachments || []).length) return;
@@ -379,7 +382,7 @@ class EvaluationScoringService {
           storage_key: inheritedKey,
           mime_type: attachment.mime_type || null,
           size_bytes: attachment.size_bytes || null,
-          uploaded_by: userEmail,
+          uploaded_by: actorUserId,
         });
       });
     });
@@ -393,7 +396,6 @@ class EvaluationScoringService {
       .filter((participant) => participant.participant_role === 'ATTENDEE')
       .map((participant) => ({
         name: participant.display_name,
-        ...(participant.principal_id ? { principal_id: participant.principal_id } : {}),
         ...(participant.user_id ? { user_id: participant.user_id } : {}),
         opening: !!participant.opening_meeting,
         closing: !!participant.closing_meeting,
@@ -436,7 +438,8 @@ class EvaluationScoringService {
     if (![1, 2].includes(roundNo)) throw Object.assign(new Error('invalid_round'), { status: 400, payload: { error: 'invalid_round' } });
     const round = this.getRound(ticket.id, roundNo);
     if (!round) throw Object.assign(new Error('round_not_found'), { status: 404, payload: { error: 'round_not_found' } });
-    this.participantRepository.ensureRoundOwnerAttendee(round.id, user?.user_id || user?.email);
+    const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
+    this.participantRepository.ensureRoundOwnerAttendee(round.id, actorUserId);
     return this.roundPayload(this.ticketRepository.getByCode(ticket.ticket_code), round);
   }
 
@@ -462,20 +465,21 @@ class EvaluationScoringService {
         payload: { error: 'inherited_answer_readonly', question_ids: readonlyAttempts },
       });
     }
+    const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
     this.db.transaction(() => {
       if (Array.isArray(attendees)) this.roundRepository.updateAttendees(
-        round.id, normalizeAttendees(attendees), user.user_id || user.email
+        round.id, normalizeAttendees(attendees), actorUserId
       );
-      this.maybeUpdateSupplierIntroduction(ticket, roundNo, supplierIntroduction, user.email);
-      this.upsertRoundAnswers(round, normalizedAnswers, user.email);
-      this.syncRoundNonconformities(ticket, round, this.questionsForTicket(ticket), this.answersForRound(round.id), user.email);
+      this.maybeUpdateSupplierIntroduction(ticket, roundNo, supplierIntroduction, actorUserId);
+      this.upsertRoundAnswers(round, normalizedAnswers, actorUserId);
+      this.syncRoundNonconformities(ticket, round, this.questionsForTicket(ticket), this.answersForRound(round.id), actorUserId);
       this.roundRepository.markProcessingIfDraft({
         roundId: round.id,
         processingStatus: this.statuses.PROCESSING_STATUS,
         draftStatus: this.statuses.DRAFT_STATUS,
       });
       if (ticket.current_status === this.statuses.DRAFT_STATUS) {
-        this.statements.ticketToProcessing.run(this.statuses.PROCESSING_STATUS, user.email, ticket.id);
+        this.statements.ticketToProcessing.run(this.statuses.PROCESSING_STATUS, actorUserId, ticket.id);
         this.logWorkflow(ticket.id, user, 'SCORING_DRAFT_SAVE', this.statuses.DRAFT_STATUS, this.statuses.PROCESSING_STATUS, null);
       }
     })();
@@ -528,11 +532,12 @@ class EvaluationScoringService {
           payload: { error: 'inherited_answer_readonly', question_ids: readonlyAttempts },
         });
       }
-      if (normalizedIncomingAnswers) this.upsertRoundAnswers(round, normalizedIncomingAnswers, user.email);
+      const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
+      if (normalizedIncomingAnswers) this.upsertRoundAnswers(round, normalizedIncomingAnswers, actorUserId);
       if (hasAttendeePayload) this.roundRepository.updateAttendees(
-        round.id, normalizedAttendees, user.user_id || user.email
+        round.id, normalizedAttendees, actorUserId
       );
-      this.maybeUpdateSupplierIntroduction(ticket, roundNo, normalizedSupplierIntroduction, user.email);
+      this.maybeUpdateSupplierIntroduction(ticket, roundNo, normalizedSupplierIntroduction, actorUserId);
       const questions = this.questionsForTicket(ticket);
       const answers = this.answersForRound(round.id);
       const scoringDate = new Date().toISOString().slice(0, 10);
@@ -551,7 +556,7 @@ class EvaluationScoringService {
         roundForCompletion,
         questions,
         answers,
-        user.email,
+        actorUserId,
       );
       if (roundNo !== 2) {
         const missingCorrectiveRequirements = this.missingRequiredNonconformityActions(ticket.id, round.id);
@@ -610,13 +615,13 @@ class EvaluationScoringService {
         total_score: score.finalScore,
         final_result: score.label,
         classification: score.grade,
-        locked_by: user.email,
+        locked_by: actorUserId,
         scoring_policy_version_id: scoringPolicy.version.id,
         scoring_result_snapshot_json: scoringSnapshotJson,
         scoring_result_checksum: definitionChecksum(scoringSnapshot),
       });
-      if (roundNo === 2) this.updateRound2TicketResult(ticket, roundNo, normalizedResult, score, correctionDate, user.email);
-      else this.updateRound1TicketResult(ticket, roundNo, normalizedResult, score, evaluationDate, user.email);
+      if (roundNo === 2) this.updateRound2TicketResult(ticket, roundNo, normalizedResult, score, correctionDate, actorUserId);
+      else this.updateRound1TicketResult(ticket, roundNo, normalizedResult, score, evaluationDate, actorUserId);
 
       // A failed round 2 still has to go through the approval workflow. Keep the
       // ticket in round 2 after locking its score so submit_lead remains available.
@@ -626,7 +631,7 @@ class EvaluationScoringService {
       const workflowAction = roundNo === 1 && finalAction === 'WAITING_CORRECTION'
         ? 'ROUND_1_END'
         : (roundNo === 2 && finalAction !== 'SUBMIT_LEAD' ? 'ROUND_2_END' : `ROUND_${roundNo}_COMPLETE`);
-      this.statements.ticketToProcessing.run(nextStatus, user.email, ticket.id);
+      this.statements.ticketToProcessing.run(nextStatus, actorUserId, ticket.id);
       this.logWorkflow(ticket.id, user, workflowAction, ticket.current_status, nextStatus, JSON.stringify({
         score_percent: score.finalScore,
         result_label: normalizedResult.label,
@@ -671,7 +676,7 @@ class EvaluationScoringService {
   }
 
   openRound2Transaction(ticket, user, answers) {
-    const userEmail = user.email;
+    const userEmail = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
     const sourceRound = this.getRound(ticket.id, 1);
     this.roundRepository.insert({
       ticket_id: ticket.id,

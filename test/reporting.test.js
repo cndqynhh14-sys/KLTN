@@ -52,7 +52,8 @@ test('DOC-4 report context includes input columns, sections, category percentage
     `).run();
     const version = db.prepare(`INSERT INTO question_template_versions
       (template_id, version_no, status, checksum, lock_version, created_by)
-      VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(template.lastInsertRowid, 'a'.repeat(64));
+      VALUES (?, 1, 'DRAFT', ?, 1,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`).run(template.lastInsertRowid, 'a'.repeat(64));
     const insertQuestion = db.prepare(`
       INSERT INTO question_items (
         question_template_version_id, facility_type, supplier_scale, question_code, question_text,
@@ -89,7 +90,9 @@ test('DOC-4 report context includes input columns, sections, category percentage
         '2026-07-10', '2026-07-15', 'Hoàn thành', 2,
         70, 'C', 'Đạt mức cơ bản', 'Supplier corrective action', 91,
         'Đạt mức cao', '2026-08-01', 'Final pass', 'Approve supplier', @supplier_introduction,
-        1, 2, 'admin@masangroup.com', 'admin@masangroup.com'
+        1, 2,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({
       supplier_id: supplier.lastInsertRowid,
@@ -99,23 +102,27 @@ test('DOC-4 report context includes input columns, sections, category percentage
     });
     const round = db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, status, completed_at, total_score, final_result, classification, locked_at, locked_by)
-      VALUES (?, 1, 'TICKET-RPT-R1', '2026-07-10', 'Hoàn thành', '2026-07-15', 70, 'Đạt mức cơ bản', 'C', '2026-07-15', 'admin@masangroup.com')
+      VALUES (?, 1, 'TICKET-RPT-R1', '2026-07-10', 'Hoàn thành', '2026-07-15', 70, 'Đạt mức cơ bản', 'C', '2026-07-15',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid);
     const round2 = db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, assessment_code, assessment_date, status, completed_at, total_score, final_result, classification, locked_at, locked_by)
-      VALUES (?, 2, 'TICKET-RPT-R2', '2026-08-01', 'Hoàn thành', '2026-08-01', 91, 'Đạt mức cao', 'A', '2026-08-01', 'admin@masangroup.com')
+      VALUES (?, 2, 'TICKET-RPT-R2', '2026-08-01', 'Hoàn thành', '2026-08-01', 91, 'Đạt mức cao', 'A', '2026-08-01',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid);
     const insertParticipant = db.prepare(`INSERT INTO evaluation_participants
       (ticket_id, round_id, user_id, display_name, participant_role, assigned_by)
-      VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')`);
-    insertParticipant.run(ticketInfo.lastInsertRowid, null, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
-    insertParticipant.run(ticketInfo.lastInsertRowid, null, 'admin@masangroup.com', 'Nguyen Van Auditor', 'QA_LEAD');
-    insertParticipant.run(ticketInfo.lastInsertRowid, null, 'support@masangroup.com', 'Le Thi QA Support', 'QA_SUPPORT');
-    insertParticipant.run(null, round.lastInsertRowid, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
-    insertParticipant.run(null, round2.lastInsertRowid, 'admin@masangroup.com', 'Nguyen Van Auditor', 'EVALUATOR');
+      VALUES (?, ?, ?, ?, ?, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`);
+    const adminUserId = db.prepare("SELECT user_id FROM users WHERE email='admin@masangroup.com'").pluck().get();
+    const supportUserId = db.prepare("SELECT user_id FROM users WHERE email='support@masangroup.com'").pluck().get();
+    insertParticipant.run(ticketInfo.lastInsertRowid, null, adminUserId, 'Nguyen Van Auditor', 'EVALUATOR');
+    insertParticipant.run(ticketInfo.lastInsertRowid, null, adminUserId, 'Nguyen Van Auditor', 'QA_LEAD');
+    insertParticipant.run(ticketInfo.lastInsertRowid, null, supportUserId, 'Le Thi QA Support', 'QA_SUPPORT');
+    insertParticipant.run(null, round.lastInsertRowid, adminUserId, 'Nguyen Van Auditor', 'EVALUATOR');
+    insertParticipant.run(null, round2.lastInsertRowid, adminUserId, 'Nguyen Van Auditor', 'EVALUATOR');
     const insertAnswer = db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, ?, ?, ?, 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, ?, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `);
     insertAnswer.run(round.lastInsertRowid, q1, 'A', '', 100);
     insertAnswer.run(round.lastInsertRowid, q2, 'B', 'Missing contract evidence', 75);
@@ -131,7 +138,8 @@ test('DOC-4 report context includes input columns, sections, category percentage
         nonconformity_content, remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Canonical missing contract evidence',
-        'Canonical upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
+        'Canonical upload contract', '2026-08-01', 'B', 'OPEN',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid, round.lastInsertRowid,
       db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
         .pluck().get(round.lastInsertRowid, q2));
@@ -141,13 +149,15 @@ test('DOC-4 report context includes input columns, sections, category percentage
         nonconformity_content, remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'LEGAL-02', 'Hồ sơ pháp lý', 'Canonical missing contract evidence',
-        'Canonical upload contract', '2026-08-01', 'B', 'OPEN', 'admin@masangroup.com')
+        'Canonical upload contract', '2026-08-01', 'B', 'OPEN',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid,
       db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
         .pluck().get(round2.lastInsertRowid, q2));
     db.prepare(`
       INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, status, acted_at, acted_by, comment)
-      VALUES (?, 'TBP', 'TBP', 'APPROVED', '2026-08-02', 'admin@masangroup.com', '{}')
+      VALUES (?, 'TBP', 'TBP', 'APPROVED', '2026-08-02',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'), '{}')
     `).run(ticketInfo.lastInsertRowid);
     const blankTicket = db.prepare('SELECT * FROM evaluation_tickets WHERE id = ?').get(ticketInfo.lastInsertRowid);
     assert.equal(buildReportContext(db, blankTicket).participants_table, '');
@@ -161,7 +171,8 @@ test('DOC-4 report context includes input columns, sections, category percentage
     ];
     const insertAttendee = db.prepare(`INSERT INTO evaluation_participants
       (round_id, display_name, participant_role, opening_meeting, closing_meeting, assigned_by)
-      VALUES (?, ?, 'ATTENDEE', ?, ?, 'admin@masangroup.com')`);
+      VALUES (?, ?, 'ATTENDEE', ?, ?,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`);
     round1Attendees.forEach((attendee) => insertAttendee.run(
       round.lastInsertRowid, attendee.name, attendee.opening ? 1 : 0, attendee.closing ? 1 : 0,
     ));
@@ -174,7 +185,8 @@ test('DOC-4 report context includes input columns, sections, category percentage
         remediation_content, due_date, severity, status, created_by
       )
       VALUES (?, ?, ?, 'R2-ONLY', 'Round 2', 'Round 2 issue must not appear',
-        'Round 2 action', '2026-09-01', 'B', 'OPEN', 'admin@masangroup.com')
+        'Round 2 action', '2026-09-01', 'B', 'OPEN',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticketInfo.lastInsertRowid, round2.lastInsertRowid,
       db.prepare('SELECT id FROM evaluation_answers WHERE round_id=? AND question_item_id=?')
         .pluck().get(round2.lastInsertRowid, q3));
@@ -332,7 +344,8 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     `).run();
     const exportVersion = db.prepare(`INSERT INTO question_template_versions
       (template_id, version_no, status, checksum, lock_version, created_by)
-      VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(templateRow.lastInsertRowid, 'b'.repeat(64));
+      VALUES (?, 1, 'DRAFT', ?, 1,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`).run(templateRow.lastInsertRowid, 'b'.repeat(64));
     const exportItems = [];
     const insertExportItem = db.prepare(`INSERT INTO question_items
       (question_template_version_id, facility_type, supplier_scale, question_code,
@@ -354,7 +367,9 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
         'TICKET-EXP', @supplier_id, 'NCC-EXP', 'Export Supplier', 'Định kỳ', @template_id, @version_id,
         'CHUNG', 'LARGE', '2026-07-15', '2026-07-15', 'Hoàn thành',
         1, 1, 92, 'A', 'Đạt mức cao',
-        @supplier_introduction, 'admin@masangroup.com', 'admin@masangroup.com'
+        @supplier_introduction,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({
       supplier_id: supplier.lastInsertRowid,
@@ -378,7 +393,8 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     const insertExportAttendee = db.prepare(`INSERT INTO evaluation_participants
       (round_id, display_name, participant_role, opening_meeting, closing_meeting,
        assigned_by)
-      VALUES (?, ?, 'ATTENDEE', ?, ?, 'admin@masangroup.com')`);
+      VALUES (?, ?, 'ATTENDEE', ?, ?,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`);
     attendees.forEach((attendee) => insertExportAttendee.run(
       roundInfo.lastInsertRowid, attendee.name, attendee.opening ? 1 : 0, attendee.closing ? 1 : 0,
     ));
@@ -387,12 +403,14 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
         ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content,
         remediation_content, due_date, severity, status, created_by
       )
-      VALUES (?, ?, ?, ?, 'Export category', ?, ?, ?, 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, ?, 'Export category', ?, ?, ?, 'B', 'OPEN',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `);
     for (let index = 1; index <= 12; index += 1) {
       const answerId = db.prepare(`INSERT INTO evaluation_answers
         (round_id, question_item_id, score, comment, answered_by)
-        VALUES (?, ?, 'B', ?, 'admin@masangroup.com')`)
+        VALUES (?, ?, 'B', ?,
+          (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`)
         .run(roundInfo.lastInsertRowid, exportItems[index - 1], `Finding ${index}`).lastInsertRowid;
       insertFinding.run(
         ticketInfo.lastInsertRowid,
@@ -498,7 +516,8 @@ test('report exports create streamable XLSX, HTML, and PDF artifacts with metada
     assert.ok(directExportId > 0);
     assert.match(await directRes.text(), /Export Supplier/);
     const directRecord = db.prepare('SELECT * FROM report_exports WHERE id = ?').get(directExportId);
-    assert.equal(directRecord.exported_by, 'admin@masangroup.com');
+    assert.equal(directRecord.exported_by,
+      db.prepare("SELECT user_id FROM users WHERE email='admin@masangroup.com'").pluck().get());
     assert.equal(path.isAbsolute(directRecord.file_path), false);
     assert.equal(fs.existsSync(path.join(require('../server/services/reporting').EXPORT_DIR, directRecord.file_path)), false);
     assert.match(workingText, /Biên bản làm việc với NCC/);

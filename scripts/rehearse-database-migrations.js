@@ -255,7 +255,7 @@ async function runRehearsal({ outputDir, withUat = false }) {
         FROM auth_sessions WHERE session_id=?`).get(item.sessionId));
       const authz = new AuthorizationService(db);
       const canonical = authz.createSession(source.fixture.users.admin, { ttlSeconds: 300 });
-      const identity = authz.resolveSession(canonical.sessionId, source.fixture.users.admin, canonical.authzVersion);
+      const identity = authz.resolveSession(canonical.sessionId, canonical.identity.userId, canonical.authzVersion);
       authentication = {
         pre_cutover_session_revoked: oldSessions.every((row) => row?.revoked_at && row.revoke_reason === 'RBAC_CANONICAL_CUTOVER'),
         canonical_session_resolved: identity.roleCodes.includes('SYS_ADMIN'),
@@ -296,7 +296,7 @@ async function runRehearsal({ outputDir, withUat = false }) {
     const retryPending = retry.results.filter((item) => item.state !== 'already-applied').length;
     const hardPass = backupChecks.integrity_check === 'ok'
       && backupChecks.foreign_key_violations === 0
-      && JSON.stringify(appliedIds) === JSON.stringify(['0030', '0031', '0032', '0033', '0034', '0035', '0036', '0037', '0038', '0039'])
+      && JSON.stringify(appliedIds) === JSON.stringify(['0030', '0031', '0032', '0033', '0034', '0035', '0036', '0037', '0038', '0039', '0040'])
       && retryPending === 0
       && parity.stage4c.status === 'PASS'
       && parity.stage4d.status !== 'FAILED'

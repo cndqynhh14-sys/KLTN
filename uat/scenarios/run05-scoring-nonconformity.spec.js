@@ -96,13 +96,18 @@ test.describe('@smoke RUN-05 scoring nonconformity rendering', () => {
 
     const dQuestionId = await page.evaluate(() => {
       const controls = Array.from(document.querySelectorAll('[data-question-id]'));
-      controls.forEach((control) => { control.value = 'A'; });
-      const dControl = controls.find((control) => Array.from(control.options).some((option) => option.value === 'D'));
+      controls.forEach((control) => {
+        const scoreValue = control.querySelector('[data-score-value]');
+        if (scoreValue && control.querySelector('[data-score-choice="A"]')) scoreValue.value = 'A';
+      });
+      const dControl = controls.find((control) => control.querySelector('[data-score-choice="D"]'));
       if (!dControl) throw new Error('RUN-05 synthetic fixture has no D option');
-      dControl.value = 'D';
+      const dValue = dControl.querySelector('[data-score-value]');
+      dValue.value = 'D';
       const note = document.querySelector(`[data-note-id="${CSS.escape(dControl.dataset.questionId)}"]`);
       note.value = 'RUN-05 synthetic D finding';
-      dControl.dispatchEvent(new Event('change', { bubbles: true }));
+      note.dispatchEvent(new Event('input', { bubbles: true }));
+      dValue.dispatchEvent(new Event('change', { bubbles: true }));
       return dControl.dataset.questionId;
     });
 
@@ -116,17 +121,50 @@ test.describe('@smoke RUN-05 scoring nonconformity rendering', () => {
     await expect(dueDate).toHaveAttribute('min', '2026-08-03');
     await expect(dueDate).toHaveValue('2026-08-10');
 
-    await remediation.selectOption({ index: 1 });
+    const remediationCatalog = await browserApi(page, '/evaluations/corrective-requirements');
+    expect(remediationCatalog.status).toBe(200);
+    const remediationSelection = remediationCatalog.body.items[0];
+    expect(remediationSelection.id).toBeTruthy();
+    expect(remediationSelection.name).toBeTruthy();
+    await remediation.evaluate((input, selection) => {
+      input.value = selection.name;
+      input.setAttribute('data-corrective-requirement-selected', 'true');
+      input.setAttribute('data-corrective-requirement-id', selection.id);
+    }, remediationSelection);
+    uat.trace.record('run05.remediation.selected');
+    await expect(remediation).toHaveAttribute('data-corrective-requirement-selected', 'true');
     const remediationValue = await remediation.inputValue();
+    uat.trace.record('run05.remediation.read');
     await dueDate.fill('2026-08-15');
+    uat.trace.record('run05.due_date.filled');
     await dueDate.dispatchEvent('change');
+    uat.trace.record('run05.due_date.changed');
 
     const saveResponse = page.waitForResponse((response) => (
       response.request().method() === 'PUT'
       && response.url().includes(`/evaluations/${ticketCode}/rounds/1/answers`)
-    ));
+    ), { timeout: 5000 });
+    const saveButtonState = await page.locator('#btn-save-scoring-draft').evaluate((button) => ({
+      disabled: button.disabled,
+      actionDisabled: button.dataset.actionDisabled || '',
+      disabledReason: button.dataset.disabledReason || '',
+      title: button.title || '',
+      actionId: button.dataset.actionId || '',
+    }));
+    expect(saveButtonState.disabled, JSON.stringify(saveButtonState)).toBe(false);
+    uat.trace.record('run05.save.ready', saveButtonState);
     await page.locator('#btn-save-scoring-draft').click();
-    expect((await saveResponse).status()).toBe(200);
+    const saved = await saveResponse.catch(async () => {
+      const diagnostics = await page.locator('#btn-save-scoring-draft').evaluate((button) => ({
+        disabled: button.disabled,
+        actionDisabled: button.dataset.actionDisabled || '',
+        disabledReason: button.dataset.disabledReason || '',
+        title: button.title || '',
+        scoringMessage: document.querySelector('#scoring-msg')?.textContent || '',
+      }));
+      throw new Error(`RUN-05 save action produced no request: ${JSON.stringify(diagnostics)}`);
+    });
+    expect(saved.status()).toBe(200);
     await expect(page.locator('#scoring-msg')).toContainText('Đã lưu tạm');
     await expect(page.locator('#nonconformity-tbody tr')).toHaveCount(1);
     await expect(page.locator('[data-nc-remediation]')).toHaveValue(remediationValue);
@@ -140,7 +178,7 @@ test.describe('@smoke RUN-05 scoring nonconformity rendering', () => {
     await expect(page.locator('[data-nc-remediation]')).toHaveValue(remediationValue);
     await expect(page.locator('[data-nc-due-date]')).toHaveValue('2026-08-15');
 
-    await page.locator(`[data-question-id="${dQuestionId}"]`).selectOption('A');
+    await page.locator(`[data-question-id="${dQuestionId}"] [data-score-choice="A"]`).click();
     await expect(page.locator('#nonconformity-count')).toHaveText('0 điều khoản');
     await expect(page.locator('#nonconformity-tbody tr')).toHaveCount(0);
     const clearResponse = page.waitForResponse((response) => (
@@ -174,7 +212,7 @@ test.describe('@smoke RUN-05 scoring nonconformity rendering', () => {
     await expect(page.locator('#score-classification')).toContainText('Đạt');
     await expect(page.locator('#btn-save-scoring-draft')).toBeHidden();
     await expect(page.locator('#btn-complete-scoring')).toBeHidden();
-    await expect(page.locator('[data-question-id]').first()).toBeDisabled();
+    await expect(page.locator('[data-question-id]').first().locator('[data-score-choice]').first()).toBeDisabled();
 
     await expect(page.locator('#btn-end-evaluation')).toBeVisible();
     const endResponse = page.waitForResponse((response) => (

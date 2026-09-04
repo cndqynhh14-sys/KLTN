@@ -186,6 +186,8 @@ test('version lifecycle enforces four-eyes, Decision ID, pinning, rollback, and 
   const disabled = new ScoringPolicyRepository(db, { env: {} });
   const enabled = new ScoringPolicyRepository(db, { env: { SCORING_POLICY_PUBLISH_ACK: 'SCORE-001:APPROVED' } });
   try {
+    upsertCanonicalUser(db, { email: 'maker@synthetic.invalid', role: 'Admin', isAdmin: true });
+    upsertCanonicalUser(db, { email: 'checker@synthetic.invalid', role: 'Admin', isAdmin: true });
     const v1 = disabled.listVersions('LEGACY_RULES')[0];
     assert.equal(v1.status, 'PUBLISHED');
     assert.equal(v1.checksum, definitionChecksum(GOLDEN_V1_DEFINITION));
@@ -306,7 +308,8 @@ test('scoring policy API denies anonymous/unprivileged access and exposes Draft 
       const email = roleCode === 'PROMPT11_MANAGER'
         ? 'prompt11-manager@synthetic.invalid'
         : 'prompt11-publisher@synthetic.invalid';
-      db.prepare(`INSERT INTO user_roles (user_id, role_id, source) VALUES (?, ?, 'MANUAL')`).run(email, roleId);
+      const userId = db.prepare('SELECT user_id FROM users WHERE email = ?').get(email).user_id;
+      db.prepare(`INSERT INTO user_roles (user_id, role_id, source) VALUES (?, ?, 'MANUAL')`).run(userId, roleId);
     }
     const auth = require('../server/middleware/auth');
     const signToken = canonicalTokenFactory(require('../server/db'), auth);

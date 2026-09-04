@@ -65,25 +65,27 @@ function startApp(router) {
 }
 
 function installSyntheticUsers(db) {
+  const identities = new Map();
   for (const [email, isAdmin, role] of [
     ['run20-admin@synthetic.invalid', 1, 'Admin'],
     ['run20-designer@synthetic.invalid', 0, 'Chuyên viên'],
     ['run20-auditor@synthetic.invalid', 0, 'Chuyên viên'],
   ]) {
-    upsertCanonicalUser(db, { email, role, isAdmin: Boolean(isAdmin), createdBy: 'RUN-20' });
+    identities.set(email, upsertCanonicalUser(db, { email, role, isAdmin: Boolean(isAdmin), createdBy: 'RUN-20' }));
   }
   for (const [code, label] of [['RUN20_DESIGNER', 'RUN-20 Designer'], ['RUN20_AUDITOR', 'RUN-20 Auditor']]) {
     db.prepare(`INSERT INTO roles (role_code, display_label, role_kind, active)
       VALUES (?, ?, 'FUNCTIONAL', 1)`).run(code, label);
   }
   const grant = db.prepare(`INSERT INTO role_permissions (role_id, permission_code, effect, created_by)
-    SELECT id, ?, 'ALLOW', 'run20-admin@synthetic.invalid' FROM roles WHERE role_code=?`);
-  for (const permission of ['REPORT.READ', 'REPORT_TEMPLATE.MANAGE']) grant.run(permission, 'RUN20_DESIGNER');
-  grant.run('REPORT.READ', 'RUN20_AUDITOR');
+    SELECT id, ?, 'ALLOW', ? FROM roles WHERE role_code=?`);
+  const adminId = identities.get('run20-admin@synthetic.invalid').user_id;
+  for (const permission of ['REPORT.READ', 'REPORT_TEMPLATE.MANAGE']) grant.run(permission, adminId, 'RUN20_DESIGNER');
+  grant.run('REPORT.READ', adminId, 'RUN20_AUDITOR');
   const assign = db.prepare(`INSERT INTO user_roles (user_id, role_id, source, created_by)
-    SELECT ?, id, 'MANUAL', 'run20-admin@synthetic.invalid' FROM roles WHERE role_code=?`);
-  assign.run('run20-designer@synthetic.invalid', 'RUN20_DESIGNER');
-  assign.run('run20-auditor@synthetic.invalid', 'RUN20_AUDITOR');
+    SELECT ?, id, 'MANUAL', ? FROM roles WHERE role_code=?`);
+  assign.run(identities.get('run20-designer@synthetic.invalid').user_id, adminId, 'RUN20_DESIGNER');
+  assign.run(identities.get('run20-auditor@synthetic.invalid').user_id, adminId, 'RUN20_AUDITOR');
 }
 
 function cookie(token) {

@@ -51,21 +51,20 @@ function insertTicket(db, owner, suffix, status = 'Đang xử lý') {
   const ticketId = Number(db.prepare(`INSERT INTO evaluation_tickets
     (ticket_code, supplier_id, supplier_code, supplier_name, region, mch2,
      evaluation_type, template_id, facility_type, supplier_scale, current_status,
-     assigned_specialist_id, assigned_specialist_user_id, created_by, created_by_user_id)
+     assigned_specialist_id, created_by)
     VALUES (?, ?, ?, ?, 'MB', 'Thực phẩm công nghệ', 'Định kỳ', ?, 'CHUNG', 'LARGE',
-      ?, ?, ?, ?, ?)`).run(
+      ?, ?, ?)`).run(
     `PHASE4-EVAL-${suffix}`, supplierId, `PHASE4-NCC-${suffix}`, `Phase 4 Supplier ${suffix}`,
-    template.id, status, owner.email, owner.user_id, owner.email, owner.user_id
+    template.id, status, owner.user_id, owner.user_id
   ).lastInsertRowid);
   return ticketId;
 }
 
 function insertParticipant(db, { ticketId = null, roundId = null, user, role }) {
   return Number(db.prepare(`INSERT INTO evaluation_participants
-    (ticket_id, round_id, user_id, principal_id, display_name, participant_role,
-     active, assigned_by, assigned_by_user_id)
-    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(
-    ticketId, roundId, user.email, user.user_id, user.display_name, role, user.email, user.user_id
+    (ticket_id, round_id, user_id, display_name, participant_role, active, assigned_by)
+    VALUES (?, ?, ?, ?, ?, 1, ?)`).run(
+    ticketId, roundId, user.user_id, user.display_name, role, user.user_id
   ).lastInsertRowid);
 }
 
@@ -94,17 +93,16 @@ test('Phase 4 transfers evaluation-only active work atomically, idempotently and
       (ticket_id, round_no, status) VALUES (?, 1, 'Đang xử lý')`).run(ticketId).lastInsertRowid);
     insertParticipant(db, { roundId, user: from, role: 'EVALUATOR' });
     const approvalId = Number(db.prepare(`INSERT INTO approval_tasks
-      (ticket_id, approval_level, assigned_role, assigned_user_id, assigned_principal_id, status)
-      VALUES (?, 'LEAD', 'Lead miền', ?, ?, 'PENDING')`).run(ticketId, from.email, from.user_id).lastInsertRowid);
+      (ticket_id, approval_level, assigned_role, assigned_user_id, status)
+      VALUES (?, 'LEAD', 'Lead miền', ?, 'PENDING')`).run(ticketId, from.user_id).lastInsertRowid);
     const stageId = Number(db.prepare(`INSERT INTO approval_stage_assignments
-      (workflow_type, stage_code, assigned_user_id, assigned_principal_id,
-       scope_type, active, created_by)
-      VALUES ('EVALUATION', 'GDK', ?, ?, 'GLOBAL', 1, ?)`)
-      .run(from.email, from.user_id, actor.email).lastInsertRowid);
+      (workflow_type, stage_code, assigned_user_id, scope_type, active, created_by)
+      VALUES ('EVALUATION', 'GDK', ?, 'GLOBAL', 1, ?)`)
+      .run(from.user_id, actor.user_id).lastInsertRowid);
     const historyId = Number(db.prepare(`INSERT INTO workflow_history
-      (ticket_id, actor_user_id, actor_principal_id, actor_role, action, from_status, to_status)
-      VALUES (?, ?, ?, 'Chuyên viên', 'PHASE4_HISTORY', 'Khởi tạo', 'Đang xử lý')`)
-      .run(ticketId, from.email, from.user_id).lastInsertRowid);
+      (ticket_id, actor_user_id, actor_role, action, from_status, to_status)
+      VALUES (?, ?, 'Chuyên viên', 'PHASE4_HISTORY', 'Khởi tạo', 'Đang xử lý')`)
+      .run(ticketId, from.user_id).lastInsertRowid);
     const completedTicketId = insertTicket(db, from, 'COMPLETED', 'Hoàn thành');
     insertParticipant(db, { ticketId: completedTicketId, user: from, role: 'OWNER' });
     const completedBefore = db.prepare('SELECT * FROM evaluation_tickets WHERE id = ?').get(completedTicketId);
@@ -151,26 +149,26 @@ test('Phase 4 transfers evaluation-only active work atomically, idempotently and
     });
     assert.equal(result.transferred_count, 3);
     assert.equal(result.user.active, false);
-    assert.equal(db.prepare('SELECT assigned_specialist_user_id FROM evaluation_tickets WHERE id = ?').get(ticketId).assigned_specialist_user_id,
+    assert.equal(db.prepare('SELECT assigned_specialist_id FROM evaluation_tickets WHERE id = ?').get(ticketId).assigned_specialist_id,
       recipient.user_id);
     assert.equal(db.prepare(`SELECT COUNT(*) FROM evaluation_participants p
       LEFT JOIN evaluation_rounds er ON er.id = p.round_id
-      WHERE p.active = 1 AND p.principal_id = ?
+      WHERE p.active = 1 AND p.user_id = ?
         AND (p.ticket_id = ? OR (er.ticket_id = ? AND er.completed_at IS NULL))
         AND p.participant_role IN ('OWNER', 'EVALUATOR')`).pluck().get(recipient.user_id, ticketId, ticketId), 3);
     assert.equal(db.prepare(`SELECT COUNT(*) FROM evaluation_participants p
       LEFT JOIN evaluation_rounds er ON er.id = p.round_id
-      WHERE p.active = 1 AND p.principal_id = ?
+      WHERE p.active = 1 AND p.user_id = ?
         AND (p.ticket_id = ? OR (er.ticket_id = ? AND er.completed_at IS NULL))
         AND p.participant_role IN ('OWNER', 'EVALUATOR')`).pluck().get(from.user_id, ticketId, ticketId), 0);
-    assert.equal(db.prepare('SELECT assigned_principal_id FROM approval_tasks WHERE id = ?').get(approvalId).assigned_principal_id,
+    assert.equal(db.prepare('SELECT assigned_user_id FROM approval_tasks WHERE id = ?').get(approvalId).assigned_user_id,
       recipient.user_id);
-    assert.equal(db.prepare('SELECT assigned_principal_id FROM approval_stage_assignments WHERE id = ?').get(stageId).assigned_principal_id,
+    assert.equal(db.prepare('SELECT assigned_user_id FROM approval_stage_assignments WHERE id = ?').get(stageId).assigned_user_id,
       recipient.user_id);
-    assert.equal(db.prepare('SELECT actor_principal_id FROM workflow_history WHERE id = ?').get(historyId).actor_principal_id,
+    assert.equal(db.prepare('SELECT actor_user_id FROM workflow_history WHERE id = ?').get(historyId).actor_user_id,
       from.user_id);
     const completedAfter = db.prepare('SELECT * FROM evaluation_tickets WHERE id = ?').get(completedTicketId);
-    assert.equal(completedAfter.assigned_specialist_user_id, completedBefore.assigned_specialist_user_id);
+    assert.equal(completedAfter.assigned_specialist_id, completedBefore.assigned_specialist_id);
     assert.equal(service.workload(from.user_id).summary.total, 0);
 
     const storedSession = db.prepare('SELECT revoked_at, revoke_reason FROM auth_sessions WHERE session_id = ?').get(session.sessionId);
@@ -243,8 +241,8 @@ test('Phase 4 rolls every transfer mutation back when deactivation fails', () =>
       idempotencyKey: 'phase4-rollback-request-0001',
     }), /phase4_forced_failure/);
     assert.equal(db.prepare('SELECT is_active FROM users WHERE user_id = ?').pluck().get(from.user_id), 1);
-    assert.equal(db.prepare('SELECT assigned_specialist_user_id FROM evaluation_tickets WHERE id = ?').pluck().get(ticketId), from.user_id);
-    assert.equal(db.prepare(`SELECT principal_id FROM evaluation_participants
+    assert.equal(db.prepare('SELECT assigned_specialist_id FROM evaluation_tickets WHERE id = ?').pluck().get(ticketId), from.user_id);
+    assert.equal(db.prepare(`SELECT user_id FROM evaluation_participants
       WHERE ticket_id = ? AND participant_role = 'OWNER' AND active = 1`).pluck().get(ticketId), from.user_id);
     assert.equal(db.prepare("SELECT COUNT(*) FROM work_transfers WHERE idempotency_key='phase4-rollback-request-0001'").pluck().get(), 0);
   } finally {

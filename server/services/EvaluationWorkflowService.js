@@ -321,7 +321,7 @@ class EvaluationWorkflowService {
       id: task.id,
       status: decision,
       comment: JSON.stringify({ ...payload, approver_comment: comment || null }),
-      actor: user.email,
+      actor: user.userId || user.user_id,
     });
     if (!info.changes) throw this.httpError(409, { error: 'approval_task_closed' });
     return payload;
@@ -335,7 +335,7 @@ class EvaluationWorkflowService {
         expected_status: ticket.current_status,
         next_status: nextStatus,
         cancelled_reason: options.cancelledReason,
-        actor: user.email,
+        actor: user.userId || user.user_id,
       });
     } else {
       info = this.statements.updateFinalStatusIfCurrent.run({
@@ -343,7 +343,7 @@ class EvaluationWorkflowService {
         expected_status: ticket.current_status,
         next_status: nextStatus,
         mark_cancelled: options.markCancelled ? 1 : 0,
-        actor: user.email,
+        actor: user.userId || user.user_id,
       });
     }
     if (!info.changes) throw this.httpError(409, { error: 'ticket_status_conflict' });

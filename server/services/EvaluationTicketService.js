@@ -13,6 +13,7 @@ const ScoringPolicyRepository = require('../scoring/ScoringPolicyRepository');
 const { supportsPreviousEvaluationDefaults } = require('../domain/evaluationHistoryDefaults');
 const { canonicalEvaluationOwnerSql, isEvaluationCreatedAndResponsible } = require('../domain/evaluationResponsibility');
 const { assertTicketMutable } = require('../domain/historicalEvaluation');
+const { resolveUserId } = require('../domain/userIdentity');
 
 const DRAFT_STATUS = WORKFLOW_STATUSES.DRAFT;
 const PROCESSING_STATUS = WORKFLOW_STATUSES.IN_PROGRESS;
@@ -299,8 +300,7 @@ class EvaluationTicketService {
     const scope = this.scopeForUser(user, alias);
     return {
       where: `(${scope.where}) AND (
-        COALESCE(${alias}.created_by_user_id, '') = @scope_user_id
-        OR LOWER(COALESCE(${alias}.created_by, '')) = LOWER(@scope_user_email)
+        COALESCE(${alias}.created_by, '') = @scope_user_id
       )`,
       params: scope.params,
     };
@@ -354,25 +354,26 @@ class EvaluationTicketService {
     if (errors.length) throw Object.assign(new Error('validation_failed'), { status: 400, code: 'validation_failed', errors });
     return this.db.transaction(() => {
       const supplier = this.resolveSupplier(body, user);
-      const payload = this.ticketPayload(body, supplier, user.email);
+      const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
+      const payload = this.ticketPayload(body, supplier, actorUserId);
       this.policyService.assert(user, PERMISSIONS.EVALUATION_CREATE, {
-        context: resourceContext({ ...payload, created_by: user.email }),
+        context: resourceContext({ ...payload, created_by: actorUserId }),
       });
       this.assertTicketSnapshot(payload);
       if (files?.business_license_file?.[0]) payload.business_license_file = files.business_license_file[0].originalname;
       if (files?.attp_certificate_file?.[0]) payload.attp_certificate_file = files.attp_certificate_file[0].originalname;
       const ticketCode = this.nextTicketCode(supplier.supplier_code);
-      const info = this.ticketRepository.insert({ ...payload, ticket_code: ticketCode, created_by: user.email });
+      const info = this.ticketRepository.insert({ ...payload, ticket_code: ticketCode, created_by: actorUserId });
       const scoringVersion = this.scoringPolicyRepository.pinTicket(info.lastInsertRowid);
       this.ticketRepository.updateCreateExtras({ ...payload, id: info.lastInsertRowid });
-      this.updateLegalFiles(info.lastInsertRowid, files, user.email);
+      this.updateLegalFiles(info.lastInsertRowid, files, actorUserId);
       this.roundRepository.insert({
         ticket_id: info.lastInsertRowid,
         round_no: 1,
         source_round_id: null,
         assessment_code: `${ticketCode}-R1`,
         assessment_date: null,
-        evaluator_id: user.email,
+        evaluator_id: actorUserId,
         status: DRAFT_STATUS,
       });
       this.statements.lockSnapshot.run(info.lastInsertRowid);
@@ -399,7 +400,8 @@ class EvaluationTicketService {
         user,
         { allowInactiveSupplierId: existing.supplier_id },
       );
-      const payload = this.ticketPayload(body, supplier, user.email, existing);
+      const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
+      const payload = this.ticketPayload(body, supplier, actorUserId, existing);
       this.policyService.assert(user, PERMISSIONS.EVALUATION_CREATE, {
         context: resourceContext({ ...existing, ...payload }),
       });
@@ -407,7 +409,7 @@ class EvaluationTicketService {
       if (files?.business_license_file?.[0]) payload.business_license_file = files.business_license_file[0].originalname;
       if (files?.attp_certificate_file?.[0]) payload.attp_certificate_file = files.attp_certificate_file[0].originalname;
       this.ticketRepository.updateByCode({ ...payload, ticket_code: existing.ticket_code });
-      this.updateLegalFiles(existing.id, files, user.email);
+      this.updateLegalFiles(existing.id, files, actorUserId);
       this.logWorkflow(existing.id, user, 'TICKET_EDIT', existing.current_status, existing.current_status, null);
       return this.getTicketByCode(existing.ticket_code);
     })();
@@ -426,7 +428,8 @@ class EvaluationTicketService {
       throw Object.assign(new Error('ticket_delete_not_allowed'), { status: 403, code: 'ticket_delete_not_allowed' });
     }
     if (!reason) throw Object.assign(new Error('delete_reason_required'), { status: 400, code: 'delete_reason_required' });
-    this.ticketRepository.softDelete({ id: existing.id, deleted_by: user.email, deleted_reason: reason });
+    const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
+    this.ticketRepository.softDelete({ id: existing.id, deleted_by: actorUserId, deleted_reason: reason });
     this.logWorkflow(existing.id, user, 'TICKET_SOFT_DELETE', existing.current_status, existing.current_status, reason);
     return { ok: true, deleted: existing.ticket_code, soft_deleted: true };
   }
@@ -459,7 +462,7 @@ class EvaluationTicketService {
   }
 
   resolveSupplier(body, user, options = {}) {
-    const userEmail = user?.email;
+    const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
     this.policyService.assert(user, PERMISSIONS.SUPPLIER_READ);
     if (body.supplier_id) {
       const supplier = this.statements.getSupplierById.get(parseInt(body.supplier_id, 10));
@@ -492,7 +495,7 @@ class EvaluationTicketService {
     this.policyService.assert(user, PERMISSIONS.SUPPLIER_WRITE, {
       context: resourceContext({ ...(existing || {}), ...supplier }),
     });
-    upsertSupplier(this.db, supplier, userEmail, 'MANUAL', null);
+    upsertSupplier(this.db, supplier, actorUserId, 'MANUAL', null);
     const resolved = this.statements.getSupplierByCode.get(supplier.supplier_code);
     this.policyService.assert(user, PERMISSIONS.SUPPLIER_READ, { context: resourceContext(resolved) });
     return resolved;
@@ -533,7 +536,7 @@ class EvaluationTicketService {
     }
   }
 
-  ticketPayload(body, supplier, userEmail, existing = {}) {
+  ticketPayload(body, supplier, actorUserId, existing = {}) {
     const templateCode = templateCodeFromBody(body) || existing.template_code;
     const facilityType = String(body.facility_type || existing.facility_type || '').trim();
     const supplierScale = normalizeScale(body.supplier_scale || existing.supplier_scale);
@@ -597,7 +600,7 @@ class EvaluationTicketService {
       .filter(Boolean);
     const evaluator = hasCanonicalParticipants
       ? identitiesForRole('EVALUATOR')[0] || ''
-      : String(body.evaluator_name || body.assignee || existingAssignments.evaluator || userEmail).trim();
+      : String(body.evaluator_name || body.assignee || existingAssignments.evaluator || actorUserId).trim();
     const qaLead = hasCanonicalParticipants
       ? identitiesForRole('QA_LEAD')[0] || ''
       : hasOwnField(body, 'qa_lead_id')
@@ -611,7 +614,7 @@ class EvaluationTicketService {
         : participantPayload(body.qa_support_ids);
     }
     const owner = String(
-      body.assigned_specialist_id || existing.assigned_specialist_id || userEmail,
+      resolveUserId(this.db, body.assigned_specialist_id || existing.assigned_specialist_id || actorUserId, { required: true }),
     ).trim();
     const payload = {
       supplier_id: supplier.id,
@@ -669,7 +672,7 @@ class EvaluationTicketService {
       planned_date: plannedDate,
       actual_evaluation_date: actualEvaluationDate,
       assigned_specialist_id: owner,
-      updated_by: userEmail,
+      updated_by: actorUserId,
     };
     return payload;
   }

@@ -171,7 +171,9 @@ test('evaluation summary route exports filtered rows using template columns and 
         '2026-04-19', '2026-04-20', 'Hoàn thành', 2, 2,
         72.5, 'C', 'Đạt mức cơ bản và tái đánh giá sau 6 tháng', 87.5, 'B',
         'Đạt mức trung bình và tái đánh giá sau 1 năm', '2026-05-01', '2027-04-20', 'Đạt', 'Approve supplier',
-        'Supplier corrected findings', 'qa.lead@masangroup.com', 'qa.lead@masangroup.com', '2026-04-18 08:00:00'
+        'Supplier corrected findings',
+        (SELECT user_id FROM users WHERE email='qa.lead@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='qa.lead@masangroup.com'), '2026-04-18 08:00:00'
       )
     `).run({
       supplier_id: supplier.lastInsertRowid,
@@ -180,9 +182,10 @@ test('evaluation summary route exports filtered rows using template columns and 
     });
     const insertTicketParticipant = db.prepare(`INSERT INTO evaluation_participants
       (ticket_id, user_id, display_name, participant_role, assigned_by)
-      VALUES (?, ?, ?, ?, 'qa.lead@masangroup.com')`);
+      VALUES (?, ?, ?, ?, (SELECT user_id FROM users WHERE email='qa.lead@masangroup.com'))`);
     insertTicketParticipant.run(ticket.lastInsertRowid, null, 'Evaluator A', 'EVALUATOR');
-    insertTicketParticipant.run(ticket.lastInsertRowid, 'qa.lead@masangroup.com', 'QA Lead', 'QA_LEAD');
+    insertTicketParticipant.run(ticket.lastInsertRowid,
+      db.prepare("SELECT user_id FROM users WHERE email='qa.lead@masangroup.com'").pluck().get(), 'QA Lead', 'QA_LEAD');
     insertTicketParticipant.run(ticket.lastInsertRowid, null, 'qa.support@masangroup.com', 'QA_SUPPORT');
     const otherTicket = db.prepare(`
       INSERT INTO evaluation_tickets (
@@ -194,7 +197,7 @@ test('evaluation summary route exports filtered rows using template columns and 
       VALUES (
         'TICKET-OTHER', @supplier_id, 'NCC-OTHER', 'Other Supplier', 'Đánh giá định kỳ', @template_id, @version_id,
         'CHUNG', 'LARGE', 'Thực phẩm công nghệ', 'Bánh kẹo', '2026-04-20', 'Hoàn thành',
-        1, 1, 'admin@masangroup.com'
+        1, 1, (SELECT user_id FROM users WHERE email='admin@masangroup.com')
       )
     `).run({ supplier_id: otherSupplier.lastInsertRowid, template_id: template.lastInsertRowid, version_id: version.lastInsertRowid });
 
@@ -212,7 +215,7 @@ test('evaluation summary route exports filtered rows using template columns and 
     `).run(otherTicket.lastInsertRowid);
     const insertAnswer = db.prepare(`INSERT INTO evaluation_answers
       (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, ?, 'Summary finding', 75, 'admin@masangroup.com')`);
+      VALUES (?, ?, ?, 'Summary finding', 75, (SELECT user_id FROM users WHERE email='admin@masangroup.com'))`);
     const legalAnswer = insertAnswer.run(round1.lastInsertRowid, legalQuestion, 'B').lastInsertRowid;
     const qualityAnswer = insertAnswer.run(round1.lastInsertRowid, qualityQuestion, 'C').lastInsertRowid;
     const round2Answer = insertAnswer.run(round2.lastInsertRowid, qualityQuestion, 'B').lastInsertRowid;
@@ -220,19 +223,19 @@ test('evaluation summary route exports filtered rows using template columns and 
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
-      VALUES (?, ?, ?, 'LEGAL-01', 'Hồ sơ pháp lý', 'Missing business license appendix', 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, 'LEGAL-01', 'Hồ sơ pháp lý', 'Missing business license appendix', 'B', 'OPEN', (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticket.lastInsertRowid, round1.lastInsertRowid, legalAnswer);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
-      VALUES (?, ?, ?, 'QUALITY-01', 'Kiểm soát chất lượng', 'Quality control checklist incomplete', 'C', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, 'QUALITY-01', 'Kiểm soát chất lượng', 'Quality control checklist incomplete', 'C', 'OPEN', (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticket.lastInsertRowid, round1.lastInsertRowid, qualityAnswer);
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
       )
-      VALUES (?, ?, ?, 'R2-ONLY', 'Kiểm soát chất lượng', 'Round 2 issue must not appear', 'B', 'OPEN', 'admin@masangroup.com')
+      VALUES (?, ?, ?, 'R2-ONLY', 'Kiểm soát chất lượng', 'Round 2 issue must not appear', 'B', 'OPEN', (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(ticket.lastInsertRowid, round2.lastInsertRowid, round2Answer);
 
     const appInfo = await startApp(evaluationsRouter);

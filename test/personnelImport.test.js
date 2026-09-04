@@ -30,9 +30,13 @@ const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 const migrationsDir = path.resolve(__dirname, '..', 'migrations');
 const ACTOR = 'personnel-admin@example.invalid';
 
+function userId(db, email) {
+  return db.prepare('SELECT user_id FROM users WHERE email = ? COLLATE NOCASE').get(email)?.user_id;
+}
+
 function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false, displayName = 'Synthetic user') {
   const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
-  upsertCanonicalUser(db, { email, roleCode, displayName, createdBy: 'fixture' });
+  const user = upsertCanonicalUser(db, { email, roleCode, displayName, createdBy: 'fixture' });
   const scopes = roleCode === ROLE_CODES.QLCL_SPECIALIST
     ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
     : [['GLOBAL', null]];
@@ -40,7 +44,7 @@ function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false, displayNam
     db.prepare(`INSERT INTO user_scope_assignments
       (user_id, role_id, scope_type, scope_value, effect, source)
       SELECT ?, id, ?, ?, 'ALLOW', 'MANUAL' FROM roles WHERE role_code = ?`
-    ).run(email, scopeType, scopeValue, roleCode);
+    ).run(user.user_id, scopeType, scopeValue, roleCode);
   }
 }
 
@@ -291,7 +295,8 @@ test('validation explains permission and scope conflicts with DENY_WINS', async 
       SELECT id, ?, 'DENY' FROM roles WHERE role_code='IMPORT_DENY_VIEW'`).run(PERMISSIONS.DASHBOARD_READ);
     fx.db.prepare(`INSERT INTO user_scope_assignments
       (user_id, scope_type, scope_value, effect, source, created_by)
-      VALUES (?, 'MCH2', '203', 'DENY', 'MANUAL', ?)`).run('scope-conflict@example.test', ACTOR);
+      VALUES (?, 'MCH2', '203', 'DENY', 'MANUAL', ?)`).run(
+      userId(fx.db, 'scope-conflict@example.test'), userId(fx.db, ACTOR));
 
     const buffer = workbookBuffer([
       canonicalRow({
@@ -353,10 +358,10 @@ test('role desired state reconciles a historical LEGACY_COMPAT source into canon
     addUser(fx.db, 'manual-window@example.test', ROLES.SPECIALIST, false, 'Synthetic imported person');
     fx.authz.syncLegacyUser('manual-window@example.test');
     fx.db.prepare(`UPDATE user_roles SET source='MANUAL', valid_from='2026-08-01 00:00:00',
-      valid_until='2031-01-01 00:00:00' WHERE user_id=?`).run('manual-window@example.test');
+      valid_until='2031-01-01 00:00:00' WHERE user_id=?`).run(userId(fx.db, 'manual-window@example.test'));
     addUser(fx.db, 'legacy-source@example.test', ROLES.SPECIALIST, false, 'Synthetic imported person');
     fx.db.prepare("UPDATE user_roles SET source='LEGACY_COMPAT' WHERE user_id=?")
-      .run('legacy-source@example.test');
+      .run(userId(fx.db, 'legacy-source@example.test'));
 
     const buffer = workbookBuffer([
       canonicalRow({ email: 'manual-window@example.test', role_codes: ROLE_CODES.QLCL_SPECIALIST,
@@ -381,12 +386,13 @@ test('IDP role and scope assignments fail closed instead of being converted to M
   try {
     addUser(fx.db, 'idp-role@example.test', ROLES.SPECIALIST, false, 'Synthetic imported person');
     fx.authz.syncLegacyUser('idp-role@example.test');
-    fx.db.prepare("UPDATE user_roles SET source='IDP' WHERE user_id=?").run('idp-role@example.test');
+    fx.db.prepare("UPDATE user_roles SET source='IDP' WHERE user_id=?").run(userId(fx.db, 'idp-role@example.test'));
     addUser(fx.db, 'idp-scope@example.test', ROLES.SPECIALIST, false, 'Synthetic imported person');
     fx.authz.syncLegacyUser('idp-scope@example.test');
     fx.db.prepare(`INSERT INTO user_scope_assignments
       (user_id, scope_type, scope_value, effect, source, created_by)
-      VALUES (?, 'REGION', 'REGION_SOUTH', 'ALLOW', 'IDP', ?)`).run('idp-scope@example.test', ACTOR);
+      VALUES (?, 'REGION', 'REGION_SOUTH', 'ALLOW', 'IDP', ?)`).run(
+      userId(fx.db, 'idp-scope@example.test'), userId(fx.db, ACTOR));
 
     const buffer = workbookBuffer([
       canonicalRow({ email: 'idp-role@example.test', role_codes: ROLE_CODES.QLCL_SPECIALIST,
@@ -402,9 +408,9 @@ test('IDP role and scope assignments fail closed instead of being converted to M
       assert.ok(codes.includes('role_source_conflict'));
       assert.ok(codes.includes('scope_source_conflict'));
     });
-    assert.equal(fx.db.prepare('SELECT source FROM user_roles WHERE user_id=?').get('idp-role@example.test').source, 'IDP');
+    assert.equal(fx.db.prepare('SELECT source FROM user_roles WHERE user_id=?').get(userId(fx.db, 'idp-role@example.test')).source, 'IDP');
     assert.equal(fx.db.prepare(`SELECT source FROM user_scope_assignments
-      WHERE user_id=? AND scope_type='REGION'`).get('idp-scope@example.test').source, 'IDP');
+      WHERE user_id=? AND scope_type='REGION'`).get(userId(fx.db, 'idp-scope@example.test')).source, 'IDP');
   } finally { fx.db.close(); }
 });
 
@@ -431,13 +437,13 @@ test('validated sensitive batch commits atomically, audits versions and is idemp
       assert.equal(committed.body.item.counts.created, 1);
       assert.equal(committed.body.item.idempotent, false);
 
-      const user = fx.db.prepare('SELECT email, authz_version FROM users WHERE email = ?').get('person-001@example.test');
+      const user = fx.db.prepare('SELECT user_id, email, authz_version FROM users WHERE email = ?').get('person-001@example.test');
       assert.ok(user.authz_version > 1);
       const roleCodes = fx.db.prepare(`SELECT r.role_code FROM user_roles ur JOIN roles r ON r.id=ur.role_id
-        WHERE ur.user_id=? AND ur.active=1 ORDER BY r.role_code`).all(user.email).map((row) => row.role_code);
+        WHERE ur.user_id=? AND ur.active=1 ORDER BY r.role_code`).all(user.user_id).map((row) => row.role_code);
       assert.deepEqual(roleCodes, [ROLE_CODES.AUDITOR, ROLE_CODES.QLCL_SPECIALIST].sort());
       assert.ok(fx.db.prepare("SELECT 1 FROM audit_events WHERE event_name='personnel.import.committed'").get());
-      assert.ok(fx.db.prepare("SELECT 1 FROM authz_change_log WHERE target_user_id=? AND reason IS NOT NULL").get(user.email));
+      assert.ok(fx.db.prepare("SELECT 1 FROM authz_change_log WHERE target_user_id=? AND reason IS NOT NULL").get(user.user_id));
 
       const ledger = fx.db.prepare(`SELECT mapping_json, summary_json, diagnostics_json
         FROM personnel_import_batches WHERE public_id=?`).get(checked.body.item.batchId);
@@ -489,7 +495,7 @@ test('batch-level last SYS_ADMIN guard validates final state and applies replace
       assert.equal(safe.body.item.status, 'VALIDATED', JSON.stringify(safe.body));
       const committed = await commit(baseUrl, safe.body.item, { idempotencyKey: 'PROMPT06-ADMIN-SWAP-0001' });
       assert.equal(committed.response.status, 200, JSON.stringify(committed.body));
-      const activeAdmins = fx.db.prepare(`SELECT u.email FROM users u JOIN user_roles ur ON ur.user_id=u.email
+      const activeAdmins = fx.db.prepare(`SELECT u.email FROM users u JOIN user_roles ur ON ur.user_id=u.user_id
         JOIN roles r ON r.id=ur.role_id WHERE u.is_active=1 AND ur.active=1 AND r.active=1
           AND r.role_code=? ORDER BY u.email`).all(ROLE_CODES.SYS_ADMIN).map((row) => row.email);
       assert.deepEqual(activeAdmins, ['z-new-admin@example.test']);

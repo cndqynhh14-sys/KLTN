@@ -147,13 +147,12 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.locator('#month-picker')).toHaveValue('2026-06');
     await expect(page).toHaveURL(/#\/dashboard\?periodType=MONTH&periodValue=2026-06$/);
     await page.locator('#dashboard-mode-overview').click();
-    const currentDashboardPeriod = await page.evaluate(() => {
-      const parts = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit' }).split('/');
-      return `${parts[1]}-${parts[0]}`;
-    });
-    if (currentDashboardPeriod !== '2026-06') {
-      await page.locator('#month-picker').selectOption(currentDashboardPeriod);
-      await expect(page.locator('#month-picker')).toHaveValue(currentDashboardPeriod);
+    const alternateDashboardPeriod = await page.locator('#month-picker option').evaluateAll((options) => (
+      options.map((option) => option.value).find((value) => value && value !== '2026-06') || ''
+    ));
+    if (alternateDashboardPeriod) {
+      await page.locator('#month-picker').selectOption(alternateDashboardPeriod);
+      await expect(page.locator('#month-picker')).toHaveValue(alternateDashboardPeriod);
       await page.locator('#month-picker').selectOption('2026-06');
     }
     await page.setViewportSize({ width: 390, height: 844 });
@@ -494,7 +493,7 @@ test.describe('@smoke QLCL foundation', () => {
     await expect(page.locator('#question-publish')).toBeDisabled();
     await expect(page.locator('#question-publish')).toHaveAttribute('data-disabled-reason', /Publish đang bị tắt/);
     await page.locator('#question-workspace-version-select').selectOption(publishedOptionValue);
-    await expect(page.locator('#question-version-status-chip')).toHaveText('Đang áp dụng');
+    await expect(page.locator('#question-version-status-chip')).toHaveText('Đã phát hành');
     await page.locator('#question-tab-questions').click();
     await page.locator('#question-management-workspace-root').scrollIntoViewIfNeeded();
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -588,7 +587,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.evaluate(() => { window.location.hash = '/admin/scoring-policies'; });
     await expect(page.locator('#scoring-policy-workspace')).toBeVisible();
     await expect(page.locator('#scoring-policy-version-select')).toBeVisible();
-    await expect(page.locator('#scoring-policy-status')).toContainText('Đang áp dụng');
+    await expect(page.locator('#scoring-policy-status')).toContainText('Đã phát hành');
     await expect(page.locator('#scoring-policy-lifecycle > li')).toHaveCount(5);
     await expect(page.locator('[data-scoring-policy-tab]')).toHaveCount(7);
     await expect(page.locator('#scoring-policy-readonly')).toBeVisible();
@@ -711,7 +710,7 @@ test.describe('@smoke QLCL foundation', () => {
     await page.locator('#mobile-more-navigation [data-route-tab="admin-question-templates"]').evaluate((button) => button.click());
     await expect(page.locator('#question-workspace-version-select')).toBeVisible();
     await page.locator('#question-workspace-version-select').selectOption(publishedOptionValue);
-    await expect(page.locator('#question-version-status-chip')).toHaveText('Đang áp dụng');
+    await expect(page.locator('#question-version-status-chip')).toHaveText('Đã phát hành');
     await expect(page.locator('#question-published-readonly')).toBeVisible();
     await page.locator('#question-tab-questions').click();
     await page.locator('#question-import-panel > summary').click();
@@ -730,7 +729,7 @@ test.describe('@smoke QLCL foundation', () => {
       }))
     ));
     expect(mobileQuestionImportTargets.every((target) => target.width >= 44 && target.height >= 44), JSON.stringify(mobileQuestionImportTargets)).toBeTruthy();
-    await page.locator('#question-version-clone').scrollIntoViewIfNeeded();
+    await page.locator('#question-version-clone').evaluate((button) => button.scrollIntoView({ block: 'center', inline: 'nearest' }));
     const mobilePrimaryActionVisible = await page.locator('#question-version-clone').evaluate((button) => {
       const rect = button.getBoundingClientRect();
       const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);

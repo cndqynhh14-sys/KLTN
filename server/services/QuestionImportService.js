@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const path = require('node:path');
+const { resolveUserId } = require('../domain/userIdentity');
 const XLSX = require('xlsx');
 const { parseCriteriaWorkbook, parseSheetName } = require('./criteriaImporter');
 const { QuestionVersionService } = require('./QuestionVersionService');
@@ -482,6 +483,7 @@ class QuestionImportService {
   }
 
   preview({ templateId, versionId, file, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const version = this.versions.getRow(versionId);
     if (!version || version.template_id !== Number(templateId)) throw importError('question_version_not_found', 404);
     if (version.status !== 'DRAFT') throw importError('question_version_not_draft', 409);
@@ -574,6 +576,7 @@ class QuestionImportService {
   }
 
   commit({ batchId, confirmationToken, idempotencyKey, expectedLockVersion, acceptPartial = false, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const initial = this.getBatchRow(batchId);
     if (!initial) throw importError('import_batch_not_found', 404);
     const key = clean(idempotencyKey);
@@ -634,6 +637,7 @@ class QuestionImportService {
   }
 
   rollback({ batchId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const initial = this.getBatchRow(batchId);
     if (!initial) throw importError('import_batch_not_found', 404);
     if (initial.status === 'ROLLED_BACK') {

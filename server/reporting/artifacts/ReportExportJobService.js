@@ -18,6 +18,7 @@ const {
 } = require('./artifactSecurity');
 const { createArtifactStorage } = require('./config');
 const ScoringPolicyRepository = require('../../scoring/ScoringPolicyRepository');
+const { resolveUserId } = require('../../domain/userIdentity');
 
 const RENDERER_VERSION = 'REPORT_RENDERER_V2_WINCOMMERCE';
 const DATA_CONTRACT_VERSION = 1;
@@ -77,7 +78,7 @@ class ReportExportJobService {
   createOrGetJob(input) {
     const definition = getDefinition(input.definitionCode);
     const roundNo = definition.validateRound(input.roundNo || definition.defaultRoundNo);
-    const requester = clean(input.requestedBy);
+    const requester = resolveUserId(this.db, input.requestedBy);
     const idempotencyKey = clean(input.idempotencyKey);
     if (!requester) throw artifactError('report_requester_required', 400);
     if (!idempotencyKey || idempotencyKey.length > 160) throw artifactError('report_idempotency_key_required', 400);
@@ -169,8 +170,10 @@ class ReportExportJobService {
   }
 
   requestExport(input) {
-    const { job } = this.createOrGetJob(input);
-    if (job.status === 'COMPLETED') return this.loadCompleted(job.id, input.requestedBy, input);
+    const requestedBy = resolveUserId(this.db, input.requestedBy, { required: true });
+    const canonicalInput = { ...input, requestedBy };
+    const { job } = this.createOrGetJob(canonicalInput);
+    if (job.status === 'COMPLETED') return this.loadCompleted(job.id, requestedBy, canonicalInput);
     if (job.status === 'FAILED' && job.attempt_count >= this.maxAttempts) {
       throw artifactError('report_export_retry_exhausted', 409);
     }
@@ -398,6 +401,7 @@ class ReportExportJobService {
   }
 
   loadCompleted(jobId, actor = null, context = {}) {
+    actor = resolveUserId(this.db, actor);
     const record = this.artifacts.completedByJobId(jobId);
     if (!record) throw artifactError('report_artifact_not_found', 404);
     if (record.availability_status !== 'AVAILABLE') throw artifactError('report_artifact_unavailable', 410);

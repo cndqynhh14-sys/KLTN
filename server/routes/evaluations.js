@@ -1166,7 +1166,7 @@ router.post('/export-summary', canExportEvaluation, (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     logger.info('[evaluation-summary-export]', {
-      exported_by: req.user.email,
+      exported_by: req.user.userId,
       report_type: 'EVALUATION_SUMMARY_XLSX',
       row_count: exported.row_count,
       filters: {
@@ -1243,8 +1243,8 @@ router.post('/:ticketId/reports/:templateId/export-pdf', canExportEvaluation, (r
     const alias = resolveReportAlias(template.report_type, { roundNo });
     const reportType = alias.canonical_code || alias.legacy_source;
     const exported = withReportIdentity(isCanonicalDefinition(reportType)
-      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'PDF', exportedBy: req.user.email, roundNo }, alias)
-      : exportReportPdf(db, { ticket, template, reportType, exportedBy: req.user.email, roundNo }), alias);
+      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'PDF', exportedBy: req.user.userId, roundNo }, alias)
+      : exportReportPdf(db, { ticket, template, reportType, exportedBy: req.user.userId, roundNo }), alias);
     logWorkflow(ticket.id, req.user, 'REPORT_EXPORT', ticket.current_status, ticket.current_status, JSON.stringify({
       report_template_id: template.id,
       report_type: template.report_type,
@@ -1269,8 +1269,8 @@ router.post('/:ticketId/reports/export-pdf', canExportEvaluation, (req, res) => 
   }
   try {
     const exported = withReportIdentity(isCanonicalDefinition(reportType)
-      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'PDF', exportedBy: req.user.email, roundNo: request.roundNo }, request.alias)
-      : exportReportPdf(db, { ticket, template, reportType, exportedBy: req.user.email, roundNo: request.roundNo }), request.alias);
+      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'PDF', exportedBy: req.user.userId, roundNo: request.roundNo }, request.alias)
+      : exportReportPdf(db, { ticket, template, reportType, exportedBy: req.user.userId, roundNo: request.roundNo }), request.alias);
     logWorkflow(ticket.id, req.user, 'REPORT_EXPORT_PDF', ticket.current_status, ticket.current_status, JSON.stringify(exportResponse(exported)));
     sendExportArtifact(res, exported);
   } catch (e) {
@@ -1287,8 +1287,8 @@ router.post('/:ticketId/reports/export-excel', canExportEvaluation, (req, res) =
   const template = isCanonicalDefinition(reportType) ? null : defaultReportTemplate(reportType);
   try {
     const exported = withReportIdentity(isCanonicalDefinition(reportType)
-      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'XLSX', exportedBy: req.user.email, roundNo: request.roundNo }, request.alias)
-      : exportReportXlsx(db, { ticket, template, reportType, exportedBy: req.user.email, roundNo: request.roundNo }), request.alias);
+      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'XLSX', exportedBy: req.user.userId, roundNo: request.roundNo }, request.alias)
+      : exportReportXlsx(db, { ticket, template, reportType, exportedBy: req.user.userId, roundNo: request.roundNo }), request.alias);
     logWorkflow(ticket.id, req.user, 'REPORT_EXPORT_XLSX', ticket.current_status, ticket.current_status, JSON.stringify(exportResponse(exported)));
     sendExportArtifact(res, exported);
   } catch (e) {
@@ -1305,8 +1305,8 @@ router.post('/:ticketId/reports/export-print', canExportEvaluation, (req, res) =
   const template = isCanonicalDefinition(reportType) ? null : defaultReportTemplate(reportType);
   try {
     const exported = withReportIdentity(isCanonicalDefinition(reportType)
-      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'HTML', exportedBy: req.user.email, roundNo: request.roundNo }, request.alias)
-      : exportReportHtml(db, { ticket, template, reportType, exportedBy: req.user.email, roundNo: request.roundNo }), request.alias);
+      ? exportCanonicalForRequest(req, { ticket, definitionCode: reportType, format: 'HTML', exportedBy: req.user.userId, roundNo: request.roundNo }, request.alias)
+      : exportReportHtml(db, { ticket, template, reportType, exportedBy: req.user.userId, roundNo: request.roundNo }), request.alias);
     logWorkflow(ticket.id, req.user, 'REPORT_EXPORT_HTML', ticket.current_status, ticket.current_status, JSON.stringify(exportResponse(exported)));
     sendExportArtifact(res, exported);
   } catch (e) {
@@ -1361,7 +1361,7 @@ router.put('/:ticketId/nonconformities/:nonconformityId', canEditEvaluation, (re
     corrective_requirement_id: requirement?.id || (requirementSelectionProvided ? null : existing.corrective_requirement_id) || null,
     due_date: dueDate || null,
     status,
-    updated_by: req.user.email,
+    updated_by: req.user.userId,
   });
   logWorkflow(ticket.id, req.user, 'NONCONFORMITY_UPDATE', ticket.current_status, ticket.current_status, `NC#${id}`);
   res.json({
@@ -1388,7 +1388,7 @@ router.post('/:ticketId/extensions', canEditEvaluation, (req, res) => {
     const info = db.prepare(`
       INSERT INTO correction_extensions (ticket_id, extension_no, old_due_date, new_due_date, reason, created_by)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(ticket.id, nextNo, oldDueDate, newDueDate, reason, req.user.email);
+    `).run(ticket.id, nextNo, oldDueDate, newDueDate, reason, req.user.userId);
     db.prepare(`
       UPDATE evaluation_nonconformities
       SET due_date = @new_due_date,
@@ -1398,9 +1398,9 @@ router.post('/:ticketId/extensions', canEditEvaluation, (req, res) => {
       WHERE ticket_id = @ticket_id
         AND severity IN ('B', 'C', 'D')
         AND status IN ('OPEN', 'IN_PROGRESS')
-    `).run({ ticket_id: ticket.id, new_due_date: newDueDate, actor: req.user.email });
+    `).run({ ticket_id: ticket.id, new_due_date: newDueDate, actor: req.user.userId });
     db.prepare("UPDATE evaluation_tickets SET current_status=?, updated_at=datetime('now'), updated_by=? WHERE id=?")
-      .run(EXTENDED_STATUS, req.user.email, ticket.id);
+      .run(EXTENDED_STATUS, req.user.userId, ticket.id);
     logWorkflow(ticket.id, req.user, 'CORRECTION_EXTENSION', ticket.current_status, EXTENDED_STATUS, JSON.stringify({
       extension_no: nextNo,
       old_due_date: oldDueDate,
@@ -1781,7 +1781,7 @@ router.patch('/:code', (req, res) => {
     scoring_locked: body.scoring_locked ? 1 : 0,
     has_completed_round: Object.prototype.hasOwnProperty.call(body, 'completed_round') ? 1 : 0,
     completed_round: body.completed_round || null,
-    updated_by: req.user.email,
+    updated_by: req.user.userId,
   });
   const updatedTicket = getTicketRowByCode(req.params.code);
   if (body.workflow_status && body.workflow_status !== ticket.current_status) {

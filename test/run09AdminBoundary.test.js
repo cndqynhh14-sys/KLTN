@@ -54,13 +54,13 @@ function rolePermissions(db, roleCode) {
 
 function addUser(db, email, role, isAdmin = false) {
   const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
-  upsertCanonicalUser(db, {
+  const user = upsertCanonicalUser(db, {
     email, roleCode, displayName: 'SYNTHETIC RUN-09 USER', createdBy: 'run-09',
   });
   db.prepare(`INSERT INTO user_scope_assignments
     (user_id, role_id, scope_type, scope_value, effect, source)
     SELECT ?, id, 'GLOBAL', NULL, 'ALLOW', 'MANUAL' FROM roles WHERE role_code=?`
-  ).run(email, roleCode);
+  ).run(user.user_id, roleCode);
 }
 
 async function withServer(app, callback) {

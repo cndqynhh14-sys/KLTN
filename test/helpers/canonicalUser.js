@@ -1,5 +1,7 @@
 'use strict';
 
+const crypto = require('node:crypto');
+
 const {
   LEGACY_ROLE_TO_CODE,
   ROLE_CODES,
@@ -24,16 +26,18 @@ function upsertCanonicalUser(db, {
 } = {}) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail) throw new Error('canonical_user_email_required');
-  const canonicalCreatedBy = createdBy && db.prepare('SELECT 1 FROM users WHERE email=?').get(createdBy)
-    ? String(createdBy).trim().toLowerCase()
+  const existing = db.prepare('SELECT user_id FROM users WHERE email=? COLLATE NOCASE').get(normalizedEmail);
+  const userId = existing?.user_id || crypto.randomUUID();
+  const canonicalCreatedBy = createdBy
+    ? db.prepare('SELECT user_id FROM users WHERE user_id=? OR email=? COLLATE NOCASE').get(createdBy, String(createdBy).trim())?.user_id || null
     : null;
   db.prepare(`INSERT INTO users
-    (email, is_active, display_name, created_at, created_by)
-    VALUES (?, ?, ?, COALESCE(?, datetime('now')), ?)
+    (user_id, email, is_active, display_name, created_at, created_by)
+    VALUES (?, ?, ?, ?, COALESCE(?, datetime('now')), ?)
     ON CONFLICT(email) DO UPDATE SET
       is_active=excluded.is_active,
       display_name=COALESCE(excluded.display_name, users.display_name)`)
-    .run(normalizedEmail, isActive ? 1 : 0, displayName, createdAt, canonicalCreatedBy);
+    .run(userId, normalizedEmail, isActive ? 1 : 0, displayName, createdAt, canonicalCreatedBy);
 
   const canonicalRoleCode = roleCodeFor({ roleCode, role, isAdmin });
   const roleRow = db.prepare('SELECT id FROM roles WHERE role_code=?').get(canonicalRoleCode);
@@ -41,8 +45,8 @@ function upsertCanonicalUser(db, {
   db.prepare(`INSERT INTO user_roles (user_id, role_id, active, source, created_by)
     VALUES (?, ?, 1, ?, NULL)
     ON CONFLICT(user_id, role_id) DO UPDATE SET active=1, source=excluded.source`)
-    .run(normalizedEmail, roleRow.id, source);
-  return { email: normalizedEmail, roleCode: canonicalRoleCode };
+    .run(userId, roleRow.id, source);
+  return { user_id: userId, userId, email: normalizedEmail, roleCode: canonicalRoleCode };
 }
 
 module.exports = { roleCodeFor, upsertCanonicalUser };

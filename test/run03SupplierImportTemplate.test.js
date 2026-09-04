@@ -222,16 +222,17 @@ test('RUN-03 wrong headers and duplicate supplier codes reject the whole workboo
 
 test('RUN-03 repository transaction rolls back the batch and prior rows when persistence fails', () => {
   const db = new Database(':memory:');
-  db.pragma('foreign_keys = ON');
-  db.exec(fs.readFileSync(path.join(ROOT, 'migrations', '0001_current_schema.sql'), 'utf8'));
-  db.prepare("INSERT INTO users (email, is_admin, is_active) VALUES ('admin@example.invalid', 1, 1)").run();
+  const { migrateDatabase } = require('../server/database/migrationRunner');
+  migrateDatabase(db, { migrationsDir: path.join(ROOT, 'migrations'), appVersion: 'run-03-test' });
+  upsertCanonicalUser(db, { email: 'admin@example.invalid', role: 'Admin', isAdmin: true });
+  const adminUserId = db.prepare("SELECT user_id FROM users WHERE email='admin@example.invalid'").pluck().get();
   const SupplierRepository = require('../server/repositories/SupplierRepository');
   const repository = new SupplierRepository(db);
   let attempt = 0;
 
   assert.throws(() => repository.importExcel({
     fileName: 'rollback.xlsx',
-    userEmail: 'admin@example.invalid',
+    userEmail: adminUserId,
     totalRows: 2,
     successRows: 2,
     failedRows: 0,

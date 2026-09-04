@@ -3,6 +3,7 @@
 const { listDefinitions, getDefinition } = require('./definitionCatalog');
 const { validateComponentTree } = require('./componentRegistry');
 const { checksum, parseJson, reportError, stableJson } = require('./reportUtils');
+const { resolveUserId } = require('../domain/userIdentity');
 
 const VERSION_STATUSES = Object.freeze({
   DRAFT: 'DRAFT',
@@ -163,6 +164,7 @@ class ReportTemplateVersionRepository {
   }
 
   createDraft({ definitionCode, sourceVersionId = null, name, note = null, effectiveFrom = null, effectiveTo = null, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const definition = getDefinition(definitionCode);
     const source = sourceVersionId ? this.requireVersion(sourceVersionId) : this.resolvePublished({ definitionCode: definition.code });
     if (source && source.definition_code !== definition.code) throw reportError('report_template_source_mismatch');
@@ -192,6 +194,7 @@ class ReportTemplateVersionRepository {
   }
 
   updateDraft({ versionId, expectedLockVersion, definition, name, note, effectiveFrom, effectiveTo, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.requireVersion(versionId);
     if (row.status !== VERSION_STATUSES.DRAFT) throw reportError('report_template_version_not_draft', 409);
     this.assertLock(row, expectedLockVersion);
@@ -239,6 +242,7 @@ class ReportTemplateVersionRepository {
   }
 
   submit({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.requireVersion(versionId);
     if (row.status !== VERSION_STATUSES.DRAFT) throw reportError('report_template_version_not_draft', 409);
     this.assertLock(row, expectedLockVersion);
@@ -282,6 +286,7 @@ class ReportTemplateVersionRepository {
   }
 
   publish({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.requireVersion(versionId);
     if (row.status !== VERSION_STATUSES.IN_REVIEW) throw reportError('report_template_version_not_in_review', 409);
     this.assertLock(row, expectedLockVersion);
@@ -305,6 +310,7 @@ class ReportTemplateVersionRepository {
   }
 
   retire({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.requireVersion(versionId);
     if (row.status !== VERSION_STATUSES.PUBLISHED) throw reportError('report_template_version_not_published', 409);
     this.assertLock(row, expectedLockVersion);
@@ -322,6 +328,7 @@ class ReportTemplateVersionRepository {
   }
 
   rollback({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.requireVersion(versionId);
     if (![VERSION_STATUSES.PUBLISHED, VERSION_STATUSES.RETIRED].includes(row.status)) {
       throw reportError('report_template_rollback_target_invalid', 409);

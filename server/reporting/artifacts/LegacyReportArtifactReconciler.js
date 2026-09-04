@@ -24,6 +24,7 @@ const {
   SCORING_RULES_MARKER,
 } = require('./ReportExportJobService');
 const { resolveReportAlias } = require('../reportAliasCatalog');
+const { resolveUserId } = require('../../domain/userIdentity');
 
 function within(root, target) {
   return target === root || target.startsWith(`${root}${path.sep}`);
@@ -340,7 +341,8 @@ class LegacyReportArtifactReconciler {
     const buffer = fs.readFileSync(classified.candidate_path);
     const integrity = assertArtifactBytes({ buffer, format, mimeType });
     const storage = this.storage || createArtifactStorage({ db: this.db, env: this.env });
-    const requester = row.exported_by || actor;
+    const requester = resolveUserId(this.db, row.exported_by || actor, { required: true });
+    const actorUserId = resolveUserId(this.db, actor);
     const idempotencyKey = `legacy-export:${row.id}`;
     const existing = this.repository.jobByIdempotency(requester, idempotencyKey);
     if (existing?.status === 'COMPLETED') return this.repository.byExportId(row.id);
@@ -448,7 +450,7 @@ class LegacyReportArtifactReconciler {
         jobId,
         artifactId,
         eventCode: 'LEGACY_ARTIFACT_IMPORTED',
-        actor,
+        actor: actorUserId,
         outcome: 'SUCCESS',
         requestId,
         correlationId,

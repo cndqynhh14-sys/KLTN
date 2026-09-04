@@ -26,15 +26,18 @@ function fixture() {
       email, roleCode: 'QLCL_SPECIALIST', displayName: name, createdBy: 'fixture',
     });
   }
+  const userId = (email) => db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(email);
   const supplierId = db.prepare(`INSERT INTO supplier_master
     (supplier_code, supplier_name, status, source_type, created_by)
-    VALUES ('STAGE3-NCC', 'Stage 3 Supplier', 'ACTIVE', 'MANUAL', 'owner@example.invalid')`).run().lastInsertRowid;
+    VALUES ('STAGE3-NCC', 'Stage 3 Supplier', 'ACTIVE', 'MANUAL',
+      (SELECT user_id FROM users WHERE email='owner@example.invalid'))`).run().lastInsertRowid;
   const templateId = db.prepare(`INSERT INTO question_templates
     (template_code, template_name, active)
     VALUES ('STAGE3-TEMPLATE', 'Stage 3 Template', 1)`).run().lastInsertRowid;
   const versionId = db.prepare(`INSERT INTO question_template_versions
     (template_id, version_no, status, checksum, lock_version, created_by)
-    VALUES (?, 1, 'DRAFT', ?, 1, 'fixture')`).run(templateId, 'f'.repeat(64)).lastInsertRowid;
+    VALUES (?, 1, 'DRAFT', ?, 1,
+      (SELECT user_id FROM users WHERE email='owner@example.invalid'))`).run(templateId, 'f'.repeat(64)).lastInsertRowid;
   const questionItemId = db.prepare(`INSERT INTO question_items
     (question_template_version_id, facility_type, supplier_scale, question_code,
      question_text, category, order_index, active)
@@ -45,7 +48,8 @@ function fixture() {
     (ticket_code, supplier_id, evaluation_type, template_id, question_template_version_id, facility_type, supplier_scale,
      current_status, assigned_specialist_id, created_by)
     VALUES ('STAGE3-TICKET', ?, 'Periodic', ?, ?, 'CHUNG', 'LARGE', 'Khởi tạo',
-      'lead@example.invalid', 'owner@example.invalid')`).run(
+      (SELECT user_id FROM users WHERE email='lead@example.invalid'),
+      (SELECT user_id FROM users WHERE email='owner@example.invalid'))`).run(
     supplierId,
     templateId,
     versionId,
@@ -57,17 +61,18 @@ function fixture() {
   ).lastInsertRowid;
   const answerId = db.prepare(`INSERT INTO evaluation_answers
     (round_id, question_item_id, score, comment, answered_by)
-    VALUES (?, ?, 'B', 'Canonical finding', 'owner@example.invalid')`)
+    VALUES (?, ?, 'B', 'Canonical finding',
+      (SELECT user_id FROM users WHERE email='owner@example.invalid'))`)
     .run(roundId, questionItemId).lastInsertRowid;
   db.prepare(`INSERT INTO evaluation_participants
     (ticket_id, user_id, display_name, participant_role)
-    VALUES (?, 'owner@example.invalid', 'Canonical Owner', 'OWNER')`).run(ticketId);
+    VALUES (?, (SELECT user_id FROM users WHERE email='owner@example.invalid'), 'Canonical Owner', 'OWNER')`).run(ticketId);
   db.prepare(`INSERT INTO evaluation_participants
     (round_id, user_id, display_name, participant_role)
-    VALUES (?, 'round@example.invalid', 'Canonical Evaluator', 'EVALUATOR')`).run(roundId);
+    VALUES (?, (SELECT user_id FROM users WHERE email='round@example.invalid'), 'Canonical Evaluator', 'EVALUATOR')`).run(roundId);
   db.prepare(`INSERT INTO evaluation_participants
     (ticket_id, user_id, display_name, participant_role)
-    VALUES (?, 'lead@example.invalid', 'Canonical Lead', 'QA_LEAD')`).run(ticketId);
+    VALUES (?, (SELECT user_id FROM users WHERE email='lead@example.invalid'), 'Canonical Lead', 'QA_LEAD')`).run(ticketId);
   db.prepare(`INSERT INTO evaluation_participants
     (ticket_id, display_name, participant_role)
     VALUES (?, 'Canonical Support', 'QA_SUPPORT')`).run(ticketId);
@@ -77,24 +82,24 @@ function fixture() {
   db.prepare(`INSERT INTO evaluation_participants
     (round_id, display_name, participant_role, opening_meeting, closing_meeting)
     VALUES (?, 'Canonical Attendee', 'ATTENDEE', 1, 0)`).run(roundId);
-  return { answerId, db, roundId, ticketId };
+  return { answerId, db, roundId, ticketId, userId };
 }
 
 test('participant reads use canonical rows exclusively without fallback mutation', () => {
-  const { answerId, db, roundId, ticketId } = fixture();
+  const { db, roundId, ticketId, userId } = fixture();
   try {
     const repository = new EvaluationParticipantRepository(db);
     const ticket = repository.resolveTicketParticipants(ticketId);
     assert.equal(ticket.source, 'CANONICAL');
     assert.equal(ticket.mismatch, false);
-    assert.equal(ticket.participants.find((row) => row.participant_role === 'OWNER').user_id, 'owner@example.invalid');
-    assert.equal(ticket.participants.find((row) => row.participant_role === 'QA_LEAD').user_id, 'lead@example.invalid');
+    assert.equal(ticket.participants.find((row) => row.participant_role === 'OWNER').user_id, userId('owner@example.invalid'));
+    assert.equal(ticket.participants.find((row) => row.participant_role === 'QA_LEAD').user_id, userId('lead@example.invalid'));
     assert.equal(ticket.participants.find((row) => row.participant_role === 'QA_SUPPORT').display_name, 'Canonical Support');
     assert.equal(ticket.participants.find((row) => row.participant_role === 'EVALUATOR').display_name, 'Canonical Ticket Evaluator');
 
     const round = repository.resolveRoundParticipants(roundId);
     assert.equal(round.source, 'CANONICAL');
-    assert.equal(round.participants.find((row) => row.participant_role === 'EVALUATOR').user_id, 'round@example.invalid');
+    assert.equal(round.participants.find((row) => row.participant_role === 'EVALUATOR').user_id, userId('round@example.invalid'));
     assert.equal(round.participants.find((row) => row.participant_role === 'ATTENDEE').display_name, 'Canonical Attendee');
     assert.equal(db.prepare('SELECT COUNT(*) FROM evaluation_participants').pluck().get(), 6, 'read must not mutate');
   } finally {
@@ -108,7 +113,8 @@ test('nonconformity reads expose canonical content through response compatibilit
     const id = db.prepare(`INSERT INTO evaluation_nonconformities
       (ticket_id, round_id, evaluation_answer_id, nonconformity_content, remediation_content, due_date, status, created_by)
       VALUES (?, ?, ?, 'Canonical finding', 'Canonical remediation',
-        '2026-12-31', 'OPEN', 'owner@example.invalid')`).run(ticketId, roundId, answerId).lastInsertRowid;
+        '2026-12-31', 'OPEN',
+        (SELECT user_id FROM users WHERE email='owner@example.invalid'))`).run(ticketId, roundId, answerId).lastInsertRowid;
     const repository = new CorrectiveActionRepository(db);
     const row = repository.listNonconformitiesByTicket(ticketId).find((item) => item.id === id);
     assert.equal(row.nonconformity_content, 'Canonical finding');

@@ -67,16 +67,15 @@ class WorkTransferService {
   }
 
   _ticketParticipants(ticketId, user) {
-    return this.db.prepare(`SELECT p.id, p.ticket_id, p.round_id, p.user_id, p.principal_id,
-        p.display_name, p.participant_role, p.active, p.assigned_at, p.assigned_by,
-        p.assigned_by_user_id
+    return this.db.prepare(`SELECT p.id, p.ticket_id, p.round_id, p.user_id,
+        p.display_name, p.participant_role, p.active, p.assigned_at, p.assigned_by
       FROM evaluation_participants p
       LEFT JOIN evaluation_rounds er ON er.id = p.round_id
       WHERE p.active = 1
-        AND (p.principal_id = @user_id OR (p.principal_id IS NULL AND lower(p.user_id) = lower(@email)))
+        AND p.user_id = @user_id
         AND p.participant_role IN ('OWNER', 'EVALUATOR')
         AND (p.ticket_id = @ticket_id OR (er.ticket_id = @ticket_id AND er.completed_at IS NULL))
-      ORDER BY p.id`).all({ ticket_id: ticketId, user_id: user.user_id, email: user.email });
+      ORDER BY p.id`).all({ ticket_id: ticketId, user_id: user.user_id });
   }
 
   _openWork(user) {
@@ -85,26 +84,23 @@ class WorkTransferService {
       WHERE t.source_kind = 'NATIVE' AND t.is_deleted = 0
         AND t.current_status NOT IN (@completed, @cancelled)
         AND (
-          t.assigned_specialist_user_id = @user_id
-          OR (t.assigned_specialist_user_id IS NULL AND lower(t.assigned_specialist_id) = lower(@email))
+          t.assigned_specialist_id = @user_id
           OR EXISTS (
             SELECT 1 FROM evaluation_participants p
             LEFT JOIN evaluation_rounds er ON er.id = p.round_id
             WHERE p.active = 1
-              AND (p.principal_id = @user_id OR (p.principal_id IS NULL AND lower(p.user_id) = lower(@email)))
+              AND p.user_id = @user_id
               AND p.participant_role IN ('OWNER', 'EVALUATOR')
               AND (p.ticket_id = t.id OR (er.ticket_id = t.id AND er.completed_at IS NULL))
           )
         )
       ORDER BY t.id`).all({
       user_id: user.user_id,
-      email: user.email,
       completed: WORKFLOW_STATUSES.COMPLETED,
       cancelled: WORKFLOW_STATUSES.CANCELLED,
     }).map((row) => {
       const participants = this._ticketParticipants(row.id, user);
-      const transfersAssignee = row.assigned_specialist_user_id === user.user_id
-        || (!row.assigned_specialist_user_id && String(row.assigned_specialist_id || '').toLowerCase() === user.email.toLowerCase());
+      const transfersAssignee = row.assigned_specialist_id === user.user_id;
       return {
         entity_type: ENTITY_TYPES.EVALUATION_TICKET,
         entity_id: String(row.id),
@@ -120,12 +116,11 @@ class WorkTransferService {
 
     const approvals = this.db.prepare(`SELECT a.*, t.ticket_code, t.current_status,
         t.source_kind, t.is_deleted, t.region, t.mch2, t.supplier_code,
-        t.supplier_id, t.assigned_specialist_user_id, t.assigned_specialist_id,
-        t.created_by_user_id, t.created_by
+        t.supplier_id, t.assigned_specialist_id, t.created_by
       FROM approval_tasks a
       JOIN evaluation_tickets t ON t.id = a.ticket_id
       WHERE a.status = 'PENDING'
-        AND a.assigned_principal_id = @user_id
+        AND a.assigned_user_id = @user_id
         AND t.source_kind = 'NATIVE' AND t.is_deleted = 0
         AND t.current_status NOT IN (@completed, @cancelled)
       ORDER BY a.id`).all({
@@ -146,7 +141,7 @@ class WorkTransferService {
     const assignments = this.db.prepare(`SELECT asa.*
       FROM approval_stage_assignments asa
       WHERE asa.workflow_type = 'EVALUATION'
-        AND asa.assigned_principal_id = ? AND asa.active = 1
+        AND asa.assigned_user_id = ? AND asa.active = 1
         AND (asa.valid_from IS NULL OR asa.valid_from <= datetime('now'))
         AND (asa.valid_until IS NULL OR asa.valid_until > datetime('now'))
       ORDER BY asa.id`).all(user.user_id).map((row) => ({
@@ -188,7 +183,7 @@ class WorkTransferService {
     if (row.scope_type === 'REGION') context.regionId = row.scope_value;
     else if (row.scope_type === 'MCH2') context.mch2Id = row.scope_value;
     else if (row.scope_type === 'SUPPLIER') context.supplierId = row.scope_value;
-    else if (row.scope_type === 'ASSIGNED') context.assignedPrincipalId = recipient.user_id;
+    else if (row.scope_type === 'ASSIGNED') context.assignedUserId = recipient.user_id;
     else if (row.scope_type === 'OWN') context.ownerUserId = recipient.user_id;
     else if (row.scope_type === 'CUSTOM') {
       context.customSchemaCode = row.custom_schema_code;
@@ -206,7 +201,7 @@ class WorkTransferService {
       if (item.entity_type === ENTITY_TYPES.EVALUATION_TICKET) {
         context = resourceContext(item.row);
         if (item.transfers_assignee) {
-          context.assignedPrincipalId = recipient.user_id;
+          context.assignedUserId = recipient.user_id;
           context.assignedUserId = recipient.email;
         }
       } else if (item.entity_type === ENTITY_TYPES.EVALUATION_APPROVAL_TASK) {
@@ -250,7 +245,6 @@ class WorkTransferService {
       id: row.id,
       ticket_id: row.ticket_id,
       round_id: row.round_id,
-      principal_id: row.principal_id,
       user_id: row.user_id,
       display_name: row.display_name,
       participant_role: row.participant_role,
@@ -262,59 +256,55 @@ class WorkTransferService {
     const counterpart = this.db.prepare(`SELECT id FROM evaluation_participants
       WHERE id != @id AND ticket_id IS @ticket_id AND round_id IS @round_id
         AND participant_role = @participant_role
-        AND (principal_id = @principal_id OR lower(user_id) = lower(@user_id))
+        AND user_id = @user_id
       ORDER BY active DESC, id DESC LIMIT 1`).get({
       id: participant.id,
       ticket_id: participant.ticket_id,
       round_id: participant.round_id,
       participant_role: participant.participant_role,
-      principal_id: to.user_id,
-      user_id: to.email,
+      user_id: to.user_id,
     });
     if (counterpart) {
-      this.db.prepare(`UPDATE evaluation_participants SET active = 1, user_id = ?, principal_id = ?,
-        display_name = ?, assigned_at = datetime('now'), assigned_by = ?, assigned_by_user_id = ?
-        WHERE id = ?`).run(to.email, to.user_id, to.display_name || to.email, actor.email, actor.user_id, counterpart.id);
+      this.db.prepare(`UPDATE evaluation_participants SET active = 1, user_id = ?,
+        display_name = ?, assigned_at = datetime('now'), assigned_by = ?
+        WHERE id = ?`).run(to.user_id, to.display_name || to.email, actor.user_id, counterpart.id);
       this.db.prepare('UPDATE evaluation_participants SET active = 0 WHERE id = ? AND active = 1').run(participant.id);
       return;
     }
-    this.db.prepare(`UPDATE evaluation_participants SET user_id = ?, principal_id = ?, display_name = ?,
-      assigned_at = datetime('now'), assigned_by = ?, assigned_by_user_id = ?
+    this.db.prepare(`UPDATE evaluation_participants SET user_id = ?, display_name = ?,
+      assigned_at = datetime('now'), assigned_by = ?
       WHERE id = ? AND active = 1`).run(
-      to.email, to.user_id, to.display_name || to.email, actor.email, actor.user_id, participant.id
+      to.user_id, to.display_name || to.email, actor.user_id, participant.id
     );
   }
 
   _ensureTicketOwner(ticketId, from, to, actor) {
     const owners = this.db.prepare(`SELECT * FROM evaluation_participants
       WHERE ticket_id = ? AND participant_role = 'OWNER' AND active = 1 ORDER BY id`).all(ticketId);
-    const sourceOwners = owners.filter((row) => row.principal_id === from.user_id
-      || (!row.principal_id && String(row.user_id || '').toLowerCase() === from.email.toLowerCase()));
+    const sourceOwners = owners.filter((row) => row.user_id === from.user_id);
     if (owners.some((row) => !sourceOwners.includes(row))) {
       throw new WorkTransferError('evaluation_participant_conflict', 409, { ticket_id: ticketId });
     }
     if (sourceOwners.length) return;
     const existing = this.db.prepare(`SELECT * FROM evaluation_participants
       WHERE ticket_id = ? AND participant_role = 'OWNER'
-        AND (principal_id = ? OR lower(user_id) = lower(?)) ORDER BY id DESC LIMIT 1`).get(ticketId, to.user_id, to.email);
+        AND user_id = ? ORDER BY id DESC LIMIT 1`).get(ticketId, to.user_id);
     if (existing) {
-      this.db.prepare(`UPDATE evaluation_participants SET active = 1, user_id = ?, principal_id = ?,
-        display_name = ?, assigned_at = datetime('now'), assigned_by = ?, assigned_by_user_id = ? WHERE id = ?`)
-        .run(to.email, to.user_id, to.display_name || to.email, actor.email, actor.user_id, existing.id);
+      this.db.prepare(`UPDATE evaluation_participants SET active = 1, user_id = ?,
+        display_name = ?, assigned_at = datetime('now'), assigned_by = ? WHERE id = ?`)
+        .run(to.user_id, to.display_name || to.email, actor.user_id, existing.id);
       return;
     }
     this.db.prepare(`INSERT INTO evaluation_participants
-      (ticket_id, user_id, principal_id, display_name, participant_role, active,
-       assigned_at, assigned_by, assigned_by_user_id)
-      VALUES (?, ?, ?, ?, 'OWNER', 1, datetime('now'), ?, ?)`)
-      .run(ticketId, to.email, to.user_id, to.display_name || to.email, actor.email, actor.user_id);
+      (ticket_id, user_id, display_name, participant_role, active, assigned_at, assigned_by)
+      VALUES (?, ?, ?, 'OWNER', 1, datetime('now'), ?)`)
+      .run(ticketId, to.user_id, to.display_name || to.email, actor.user_id);
   }
 
   _transferTicket(item, from, to, actor) {
     const before = {
       ticket: {
         id: item.row.id,
-        assigned_specialist_user_id: item.row.assigned_specialist_user_id,
         assigned_specialist_id: item.row.assigned_specialist_id,
         current_status: item.row.current_status,
         source_kind: item.row.source_kind,
@@ -323,19 +313,18 @@ class WorkTransferService {
     };
     if (item.transfers_assignee) {
       const changed = this.db.prepare(`UPDATE evaluation_tickets
-        SET assigned_specialist_user_id = ?, assigned_specialist_id = ?
+        SET assigned_specialist_id = ?
         WHERE id = ? AND source_kind = 'NATIVE' AND is_deleted = 0
           AND current_status NOT IN (?, ?)
-          AND (assigned_specialist_user_id = ?
-            OR (assigned_specialist_user_id IS NULL AND lower(assigned_specialist_id) = lower(?)))`)
-        .run(to.user_id, to.email, item.row.id, WORKFLOW_STATUSES.COMPLETED,
-          WORKFLOW_STATUSES.CANCELLED, from.user_id, from.email);
+          AND assigned_specialist_id = ?`)
+        .run(to.user_id, item.row.id, WORKFLOW_STATUSES.COMPLETED,
+          WORKFLOW_STATUSES.CANCELLED, from.user_id);
       if (changed.changes !== 1) throw new WorkTransferError('workload_changed', 409);
     }
     if (item.transfers_assignee) this._ensureTicketOwner(item.row.id, from, to, actor);
     for (const participant of item.participants) this._setParticipantRecipient(participant, to, actor);
-    const afterTicket = this.db.prepare(`SELECT id, assigned_specialist_user_id,
-      assigned_specialist_id, current_status, source_kind FROM evaluation_tickets WHERE id = ?`).get(item.row.id);
+    const afterTicket = this.db.prepare(`SELECT id, assigned_specialist_id,
+      current_status, source_kind FROM evaluation_tickets WHERE id = ?`).get(item.row.id);
     const afterParticipants = this.db.prepare(`SELECT p.* FROM evaluation_participants p
       LEFT JOIN evaluation_rounds er ON er.id = p.round_id
       WHERE p.active = 1 AND (p.ticket_id = ? OR (er.ticket_id = ? AND er.completed_at IS NULL))
@@ -350,31 +339,30 @@ class WorkTransferService {
       ticket_id: item.row.ticket_id,
       approval_level: item.row.approval_level,
       status: item.row.status,
-      assigned_principal_id: item.row.assigned_principal_id,
       assigned_user_id: item.row.assigned_user_id,
     };
     const changed = this.db.prepare(`UPDATE approval_tasks
-      SET assigned_principal_id = ?, assigned_user_id = ?
-      WHERE id = ? AND assigned_principal_id = ? AND status = 'PENDING'`)
-      .run(to.user_id, to.email, item.row.id, from.user_id);
+      SET assigned_user_id = ?
+      WHERE id = ? AND assigned_user_id = ? AND status = 'PENDING'`)
+      .run(to.user_id, item.row.id, from.user_id);
     if (changed.changes !== 1) throw new WorkTransferError('workload_changed', 409);
     const after = this.db.prepare(`SELECT id, ticket_id, approval_level, status,
-      assigned_principal_id, assigned_user_id FROM approval_tasks WHERE id = ?`).get(item.row.id);
+      assigned_user_id FROM approval_tasks WHERE id = ?`).get(item.row.id);
     return { before, after };
   }
 
   _transferApprovalAssignment(item, from, to) {
     const fields = ['id', 'workflow_type', 'stage_code', 'scope_type', 'scope_value',
-      'active', 'valid_from', 'valid_until', 'assigned_principal_id', 'assigned_user_id'];
+      'active', 'valid_from', 'valid_until', 'assigned_user_id'];
     const snapshot = (row) => Object.fromEntries(fields.map((field) => [field, row[field] ?? null]));
     const before = snapshot(item.row);
     const changed = this.db.prepare(`UPDATE approval_stage_assignments
-      SET assigned_principal_id = ?, assigned_user_id = ?
+      SET assigned_user_id = ?
       WHERE id = ? AND workflow_type = 'EVALUATION'
-        AND assigned_principal_id = ? AND active = 1
+        AND assigned_user_id = ? AND active = 1
         AND (valid_from IS NULL OR valid_from <= datetime('now'))
         AND (valid_until IS NULL OR valid_until > datetime('now'))`)
-      .run(to.user_id, to.email, item.row.id, from.user_id);
+      .run(to.user_id, item.row.id, from.user_id);
     if (changed.changes !== 1) throw new WorkTransferError('workload_changed', 409);
     const after = snapshot(this.db.prepare('SELECT * FROM approval_stage_assignments WHERE id = ?').get(item.row.id));
     return { before, after };
@@ -518,7 +506,8 @@ class WorkTransferService {
       if (this.auditEventService) {
         this.auditEventService.record({
           eventName: 'work.transfer.completed',
-          actorPrincipalId: actor.user_id,
+          actorUserId: actor.user_id,
+          actorEmailSnapshot: actor.email,
           entityType: 'USER',
           entityId: lockedFrom.user_id,
           action: 'OFFBOARD',

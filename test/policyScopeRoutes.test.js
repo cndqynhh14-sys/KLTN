@@ -133,7 +133,7 @@ test('generic evaluation PATCH requires the active assignment for each approval 
         supplier_id: supplier.lastInsertRowid,
         template_id: template.id,
         current_status: item.from,
-        created_by: item.email,
+        created_by: db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(item.email),
       }));
 
       const tokens = new Map(cases.map((item) => [
@@ -247,7 +247,7 @@ test('RUN-18 specialist reads the full supplier master while supplier writes rem
         business_type: BUSINESS_TYPE_OPTIONS[0],
         mch2,
         mch3,
-        created_by: 'supplier-owner@example.invalid',
+        created_by: db.prepare("SELECT user_id FROM users WHERE email='supplier-owner@example.invalid'").pluck().get(),
         created_at: '2026-07-14 08:00:00',
       });
       insertSupplier.run({
@@ -258,7 +258,7 @@ test('RUN-18 specialist reads the full supplier master while supplier writes rem
         business_type: BUSINESS_TYPE_OPTIONS[0],
         mch2,
         mch3,
-        created_by: 'supplier-other@example.invalid',
+        created_by: db.prepare("SELECT user_id FROM users WHERE email='supplier-other@example.invalid'").pluck().get(),
         created_at: '2026-07-14 09:00:00',
       });
 
@@ -296,7 +296,7 @@ test('RUN-18 specialist reads the full supplier master while supplier writes rem
         updateError: updateBody.error,
         globalScopeCount: db.prepare(`SELECT COUNT(*) AS count FROM user_scope_assignments
           WHERE user_id = ? AND active = 1 AND scope_type = 'GLOBAL'`)
-          .get('supplier-owner@example.invalid').count,
+          .get(db.prepare("SELECT user_id FROM users WHERE email='supplier-owner@example.invalid'").pluck().get()).count,
         storedContact: db.prepare('SELECT contact_name FROM supplier_master WHERE supplier_code = ?')
           .get('SCOPE-SUPPLIER-OTHER').contact_name,
       }, {

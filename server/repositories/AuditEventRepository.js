@@ -18,7 +18,7 @@ class AuditEventRepository {
     add('category = @category', 'category', filters.category);
     add('event_name = @event', 'event', filters.event);
     add('severity = @severity', 'severity', filters.severity);
-    add('(LOWER(actor_user_id) = @actor OR actor_principal_id = @actor)', 'actor', filters.actor);
+    add('(LOWER(actor_user_id) = @actor OR LOWER(COALESCE(actor_email_snapshot, \'\')) = @actor)', 'actor', filters.actor);
     add('entity_id = @entity', 'entity', filters.entity);
     add('entity_type = @entity_type', 'entity_type', filters.entity_type);
     add('outcome = @outcome', 'outcome', filters.outcome);

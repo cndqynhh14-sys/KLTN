@@ -116,7 +116,7 @@ router.post('/:policyCode/versions', (req, res) => {
       policyCode: req.params.policyCode,
       sourceVersionId: req.body?.source_version_id,
       note: req.body?.version_note,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: requestContext(req),
     });
     return res.status(201).json({ item: mapVersion(item, true, req.user) });
@@ -139,7 +139,7 @@ router.put('/versions/:versionId', (req, res) => {
       note: req.body?.version_note,
       effectiveFrom: req.body?.effective_from,
       effectiveTo: req.body?.effective_to,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: requestContext(req),
     });
     return res.json({ item: mapVersion(item, true, req.user) });
@@ -164,7 +164,7 @@ router.post('/versions/:versionId/submit', (req, res) => {
     const item = repository.submit({
       versionId: req.params.versionId,
       expectedLockVersion: req.body?.lock_version,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: requestContext(req),
     });
     return res.json({ item: mapVersion(item, true, req.user) });
@@ -179,7 +179,7 @@ for (const action of ['publish', 'rollback']) {
         versionId: req.params.versionId,
         expectedLockVersion: req.body?.lock_version,
         decisionId,
-        actor: req.user.email,
+        actor: req.user.userId,
         context: requestContext(req, decisionId),
       });
       return res.json({ item: mapVersion(item, true, req.user) });

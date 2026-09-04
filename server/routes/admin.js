@@ -54,7 +54,7 @@ function normalizeChangeReason(value) {
 
 function userAuditSnapshot(row) {
   if (!row) return null;
-  const roleCode = getPrimaryRoleCode.get(row.email)?.role_code || null;
+  const roleCode = getPrimaryRoleCode.get(row.user_id)?.role_code || null;
   return {
     active: Boolean(row.is_active),
     display_name: row.display_name || null,
@@ -194,11 +194,16 @@ router.post('/users', (req, res) => {
   const before = userAuditSnapshot(resolveUser(email));
   let identity;
   try {
-    stmts.upsertUser.run({ email, display_name, created_by: req.user.email });
+    stmts.upsertUser.run({
+      user_id: crypto.randomUUID(),
+      email,
+      display_name,
+      created_by: req.user.userId,
+    });
     identity = authorizationService.setPrimaryRole({
       userId: email,
       roleCode,
-      actor: req.user.email,
+      actor: req.user.userId,
       requestId: req.requestId,
       correlationId: req.correlationId,
     });
@@ -323,7 +328,7 @@ router.post('/restore-db', requirePermission(PERMISSIONS.SYSTEM_ADMIN), requireR
       stagedPath,
       backupPath,
       auditEvent: {
-        actorUserId: req.user.email,
+        actorUserId: req.user.userId,
         actorRoles: req.user.roleCodes || [],
         requestId: req.requestId,
         correlationId: req.correlationId,

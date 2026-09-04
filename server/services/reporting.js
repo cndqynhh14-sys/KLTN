@@ -8,6 +8,7 @@ const { calculateNextEvaluationDate, normalizeResultLabel } = require('../domain
 const { GOLDEN_V1_DEFINITION, buildEvaluationResultWithPolicy, validateScoringPolicyDefinition } = require('../scoring/scoringPolicyEngine');
 const { resolveReportAlias } = require('../reporting/reportAliasCatalog');
 const EvaluationParticipantRepository = require('../repositories/EvaluationParticipantRepository');
+const { resolveUserEmail, resolveUserId } = require('../domain/userIdentity');
 
 const EXPORT_DIR = REPORT_EXPORT_DIR;
 const PDF_RENDER_MAX_BUFFER = 100 * 1024 * 1024;
@@ -283,6 +284,7 @@ function renderTemplate(templateBody, variables) {
 }
 
 function recordReportExport(db, { ticket, round, template, reportType, fileFormat, fileName, exportedBy, alias }) {
+  const exporterUserId = resolveUserId(db, exportedBy);
   const info = db.prepare(`
     INSERT INTO report_exports (
       ticket_id, round_id, report_template_id, report_type, file_format,
@@ -290,7 +292,7 @@ function recordReportExport(db, { ticket, round, template, reportType, fileForma
     ) VALUES (?, ?, ?, ?, ?, 'TICKET', ?, ?, ?, ?)
   `).run(
     ticket.id, round?.id || null, template?.id || null, reportType, fileFormat,
-    fileName, exportedBy || null, alias?.legacy_source || null,
+    fileName, exporterUserId, alias?.legacy_source || null,
     alias?.legacy_source ? alias.mapping_version : null
   );
   return {
@@ -593,6 +595,7 @@ function buildReportContext(db, ticket, options = {}) {
     SELECT * FROM workflow_history WHERE ticket_id = ? ORDER BY created_at
   `).all(ticket.id);
   const finalApproval = approvals.filter((a) => a.status === 'APPROVED').slice(-1)[0] || {};
+  const approvedBy = resolveUserEmail(db, finalApproval.acted_by || ticket.updated_by);
   let scoringDefinition = GOLDEN_V1_DEFINITION;
   const scoringPolicyVersionId = latestRound.scoring_policy_version_id || ticket.scoring_policy_version_id;
   if (scoringPolicyVersionId) {
@@ -693,7 +696,7 @@ function buildReportContext(db, ticket, options = {}) {
     signatures: {
       evaluator: primaryEvaluator,
       supplier_representative: ticket.contact_name || '',
-      approved_by: finalApproval.acted_by || ticket.updated_by || '',
+      approved_by: approvedBy,
       approval_date: finalApproval.acted_at || ticket.updated_at || '',
     },
   };
@@ -744,7 +747,7 @@ function buildReportContext(db, ticket, options = {}) {
     corrective_actions: listText(correctiveActions, (r) => `- ${r.issue_description} | ${r.required_action} | ${r.responsible_party || ''} | ${r.due_date || ''} | ${r.status}`),
     correction_extensions: listText(correctionExtensions, (r) => `- Lan ${r.extension_no}: ${r.old_due_date || '-'} -> ${r.new_due_date} | ${r.reason} | ${r.created_by || ''} | ${r.created_at || ''}`),
     corrective_action_rows: correctiveActions,
-    approved_by: finalApproval.acted_by || ticket.updated_by || '',
+    approved_by: approvedBy,
     approval_date: finalApproval.acted_at || ticket.updated_at || '',
     approval_history: listText(history, (r) => `- ${r.created_at}: ${r.actor_role || ''} ${r.action} ${r.from_status || ''} -> ${r.to_status || ''}${r.comment ? ' | ' + r.comment : ''}`),
     approval_history_rows: history,

@@ -18,8 +18,8 @@ class SupplierRepository {
         created_user.display_name AS created_by_display_name,
         updated_user.display_name AS updated_by_display_name
       FROM supplier_master sm
-      LEFT JOIN users created_user ON created_user.email = sm.created_by
-      LEFT JOIN users updated_user ON updated_user.email = sm.updated_by
+      LEFT JOIN users created_user ON created_user.user_id = sm.created_by
+      LEFT JOIN users updated_user ON updated_user.user_id = sm.updated_by
     `;
     this.statements = {
       getById: db.prepare(`${detailSelect} WHERE sm.id = ?`),
@@ -52,9 +52,10 @@ class SupplierRepository {
       listHistoryBySupplier: db.prepare(`
         SELECT
           h.*,
-          actor.display_name AS actor_user_id_display_name
+          actor.display_name AS actor_user_id_display_name,
+          actor.email AS actor_email
         FROM supplier_master_history h
-        LEFT JOIN users actor ON actor.email = h.actor_user_id
+        LEFT JOIN users actor ON actor.user_id = h.actor_user_id
         WHERE h.supplier_id = @supplier_id OR h.supplier_code = @supplier_code
         ORDER BY h.created_at DESC, h.id DESC
         LIMIT 100

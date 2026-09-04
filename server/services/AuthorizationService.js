@@ -90,10 +90,10 @@ class AuthorizationService {
     const actorRef = this._reference(actor);
     const targetRef = this._reference(target);
     this.db.prepare(`INSERT INTO authz_change_log
-      (actor_user_id, target_user_id, actor_principal_id, target_principal_id,
-       change_type, object_type, object_key, before_json, after_json, request_id, correlation_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      actorRef.email, targetRef.email, actorRef.userId, targetRef.userId, changeType, objectType, objectKey,
+      (actor_user_id, target_user_id, change_type, object_type, object_key,
+       before_json, after_json, request_id, correlation_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      actorRef.userId, targetRef.userId, changeType, objectType, objectKey,
       before === undefined ? null : JSON.stringify(before),
       after === undefined ? null : JSON.stringify(after),
       requestId || null, correlationId || null
@@ -104,8 +104,8 @@ class AuthorizationService {
         : (changeType === 'LEGACY_COMPAT_SYNC' ? 'authz.compatibility.synced' : 'role.assignment.changed');
       this.auditEventService.record({
         eventName,
-        actorUserId: actorRef.email,
-        actorPrincipalId: actorRef.userId,
+        actorUserId: actorRef.userId,
+        actorEmailSnapshot: actorRef.email,
         entityType: objectType,
         entityId: target || objectKey,
         action: changeType,
@@ -133,7 +133,7 @@ class AuthorizationService {
 
   syncMissingLegacyUsers(options = {}) {
     const users = this.db.prepare(`SELECT u.email FROM users u
-      WHERE NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.email AND ur.active = 1)
+      WHERE NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.user_id AND ur.active = 1)
       ORDER BY u.email`).all();
     if (users.length) throw new AuthorizationError('canonical_role_assignment_required', 409);
     return [];
@@ -212,10 +212,10 @@ class AuthorizationService {
       JOIN roles r ON r.id = ur.role_id AND r.active = 1
       JOIN role_permissions rp ON rp.role_id = r.id
       JOIN permissions p ON p.permission_code = rp.permission_code AND p.active = 1
-      WHERE (ur.principal_id = ? OR (ur.principal_id IS NULL AND ur.user_id = ?)) AND ur.active = 1
+      WHERE ur.user_id = ? AND ur.active = 1
         AND (ur.valid_from IS NULL OR ur.valid_from <= ?)
         AND (ur.valid_until IS NULL OR ur.valid_until > ?)`
-    ).all(user.user_id, user.email, now, now);
+    ).all(user.user_id, now, now);
     const nearestExpiry = rows.map((row) => row.valid_until && Date.parse(`${row.valid_until.replace(' ', 'T')}Z`))
       .filter(Number.isFinite).reduce((min, value) => Math.min(min, value), Infinity);
     const value = this._permissionValue(rows, { userId: user.user_id, authzVersion: user.authz_version });
@@ -257,16 +257,15 @@ class AuthorizationService {
     return this.db.prepare(`SELECT usa.*, r.role_code
       FROM user_scope_assignments usa
       LEFT JOIN roles r ON r.id = usa.role_id
-      WHERE (usa.principal_id = ? OR (usa.principal_id IS NULL AND usa.user_id = ?)) AND usa.active = 1
+      WHERE usa.user_id = ? AND usa.active = 1
         AND (usa.valid_from IS NULL OR usa.valid_from <= ?)
         AND (usa.valid_until IS NULL OR usa.valid_until > ?)
         AND (usa.role_id IS NULL OR EXISTS (
           SELECT 1 FROM user_roles ur
-          WHERE (ur.principal_id = usa.principal_id
-            OR (ur.principal_id IS NULL AND ur.user_id = usa.user_id))
+          WHERE ur.user_id = usa.user_id
           AND ur.role_id = usa.role_id
           AND ur.active = 1 AND (ur.valid_from IS NULL OR ur.valid_from <= ?)
-          AND (ur.valid_until IS NULL OR ur.valid_until > ?)))`).all(user.user_id, user.email, now, now, now, now);
+          AND (ur.valid_until IS NULL OR ur.valid_until > ?)))`).all(user.user_id, now, now, now, now);
   }
 
   _scopeMatches(scope, context, userOrIdentifier) {
@@ -280,14 +279,13 @@ class AuthorizationService {
         && String(context.mch2Id || context.mch2_id || '') === scope.scope_value;
     }
     if (scope.scope_type === 'ASSIGNED') {
-      const value = String(context.assignedPrincipalId || context.assigned_principal_id
-        || context.assignedUserId || context.assigned_user_id || '').trim();
-      return value === user.user_id || normalizeEmail(value) === normalizeEmail(user.email);
+      const value = String(context.assignedUserId || context.assigned_user_id || '').trim();
+      return value === user.user_id;
     }
     if (scope.scope_type === 'OWN') {
-      const value = String(context.ownerUserId || context.created_by_user_id
+      const value = String(context.ownerUserId
         || context.ownerId || context.created_by || context.userId || '').trim();
-      return value === user.user_id || normalizeEmail(value) === normalizeEmail(user.email);
+      return value === user.user_id;
     }
     if (scope.scope_type === 'SUPPLIER') {
       return String(context.supplierId || context.supplier_id || context.supplierCode || '') === scope.scope_value;
@@ -342,11 +340,11 @@ class AuthorizationService {
     const fieldExpressions = options.fieldExpressions || {};
     const fieldSql = (fieldName) => fieldExpressions[fieldName] || `${alias}.${fields[fieldName]}`;
     const scopes = this._activeScopes(user.user_id);
-    const params = { scope_user_id: user.user_id, scope_user_email: user.email };
+    const params = { scope_user_id: user.user_id };
     const clauseFor = (scope, index) => {
       if (scope.scope_type === 'GLOBAL') return '1 = 1';
-      if (scope.scope_type === 'OWN') return `(COALESCE(${fieldSql('owner')}, '') = @scope_user_id OR LOWER(COALESCE(${fieldSql('owner')}, '')) = LOWER(@scope_user_email))`;
-      if (scope.scope_type === 'ASSIGNED') return `(COALESCE(${fieldSql('assigned')}, '') = @scope_user_id OR LOWER(COALESCE(${fieldSql('assigned')}, '')) = LOWER(@scope_user_email))`;
+      if (scope.scope_type === 'OWN') return `COALESCE(${fieldSql('owner')}, '') = @scope_user_id`;
+      if (scope.scope_type === 'ASSIGNED') return `COALESCE(${fieldSql('assigned')}, '') = @scope_user_id`;
       const fieldName = scope.scope_type === 'REGION' ? 'region'
         : scope.scope_type === 'MCH2' ? 'mch2'
           : scope.scope_type === 'SUPPLIER' ? 'supplier' : null;
@@ -371,19 +369,18 @@ class AuthorizationService {
 
   assignRole({ userId, roleCode, actor, validFrom, validUntil, source = 'MANUAL', requestId, correlationId }) {
     const user = this._user(userId, false);
-    const email = user?.email;
     const actorRef = this._reference(actor);
     const role = this.db.prepare('SELECT id FROM roles WHERE role_code = ? AND active = 1').get(roleCode);
     if (!user) throw new AuthorizationError('user_not_found', 404);
     if (!role) throw new AuthorizationError('role_not_found', 404);
     this.db.prepare(`INSERT INTO user_roles
-      (user_id, principal_id, role_id, active, valid_from, valid_until, source, created_by)
-      VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+      (user_id, role_id, active, valid_from, valid_until, source, created_by)
+      VALUES (?, ?, 1, ?, ?, ?, ?)
       ON CONFLICT(user_id, role_id) DO UPDATE SET active = 1, valid_from = excluded.valid_from,
-        valid_until = excluded.valid_until, principal_id = excluded.principal_id, updated_at = datetime('now')`).run(
-      email, user.user_id, role.id, validFrom || null, validUntil || null, source, actorRef.email
+        valid_until = excluded.valid_until, updated_at = datetime('now')`).run(
+      user.user_id, role.id, validFrom || null, validUntil || null, source, actorRef.userId
     );
-    this._audit({ actor, target: email, changeType: 'ROLE_ASSIGNED', objectType: 'USER_ROLE',
+    this._audit({ actor, target: user.user_id, changeType: 'ROLE_ASSIGNED', objectType: 'USER_ROLE',
       objectKey: roleCode, after: { role_code: roleCode, valid_from: validFrom || null, valid_until: validUntil || null },
       requestId, correlationId });
     this._forget(user);
@@ -392,12 +389,10 @@ class AuthorizationService {
   revokeRole({ userId, roleCode, actor, requestId, correlationId }) {
     const user = this._user(userId, false);
     if (!user) throw new AuthorizationError('user_not_found', 404);
-    const email = user.email;
     const info = this.db.prepare(`UPDATE user_roles SET active = 0, updated_at = datetime('now')
-      WHERE (principal_id = ? OR (principal_id IS NULL AND user_id = ?))
-        AND active = 1 AND role_id = (SELECT id FROM roles WHERE role_code = ?)`)
-      .run(user.user_id, email, roleCode);
-    if (info.changes) this._audit({ actor, target: email, changeType: 'ROLE_REVOKED', objectType: 'USER_ROLE',
+      WHERE user_id = ? AND active = 1 AND role_id = (SELECT id FROM roles WHERE role_code = ?)`)
+      .run(user.user_id, roleCode);
+    if (info.changes) this._audit({ actor, target: user.user_id, changeType: 'ROLE_REVOKED', objectType: 'USER_ROLE',
       objectKey: roleCode, before: { role_code: roleCode, active: true }, requestId, correlationId });
     this._forget(user);
     return info.changes;
@@ -405,7 +400,6 @@ class AuthorizationService {
 
   setPrimaryRole({ userId, roleCode, actor, requestId, correlationId, source = 'MANUAL' }) {
     const user = this._user(userId, false);
-    const email = user?.email;
     const actorRef = this._reference(actor);
     if (!LEGACY_PRIMARY_ROLE_PRIORITY.includes(roleCode)) {
       throw new AuthorizationError('invalid_primary_role', 400);
@@ -417,11 +411,11 @@ class AuthorizationService {
     const apply = this.db.transaction(() => {
       let changed = false;
       const existing = this.db.prepare('SELECT id, active FROM user_roles WHERE user_id=? AND role_id=?')
-        .get(email, desiredRole.id);
+        .get(user.user_id, desiredRole.id);
       if (!existing) {
         this.db.prepare(`INSERT INTO user_roles
-          (user_id, principal_id, role_id, active, source, created_by) VALUES (?, ?, ?, 1, ?, ?)`
-        ).run(email, user.user_id, desiredRole.id, source, actorRef.email);
+          (user_id, role_id, active, source, created_by) VALUES (?, ?, 1, ?, ?)`
+        ).run(user.user_id, desiredRole.id, source, actorRef.userId);
         changed = true;
       } else if (!existing.active) {
         this.db.prepare(`UPDATE user_roles SET active=1, source=?, updated_at=datetime('now') WHERE id=?`)
@@ -433,26 +427,26 @@ class AuthorizationService {
       const deactivated = this.db.prepare(`UPDATE user_roles SET active = 0, updated_at = datetime('now')
         WHERE user_id = ? AND role_id <> ? AND active = 1
           AND role_id IN (SELECT id FROM roles WHERE role_code IN (${placeholders}))`
-      ).run(email, desiredRole.id, ...LEGACY_PRIMARY_ROLE_PRIORITY);
+      ).run(user.user_id, desiredRole.id, ...LEGACY_PRIMARY_ROLE_PRIORITY);
       changed = changed || deactivated.changes > 0;
 
       const scopes = roleCode === ROLE_CODES.SUPPLIER_USER
-        ? [['SUPPLIER', email]]
+        ? [['SUPPLIER', user.email]]
         : roleCode === ROLE_CODES.QLCL_SPECIALIST
           ? [['OWN', 'SELF'], ['ASSIGNED', 'SELF']]
           : [['GLOBAL', null]];
       for (const [scopeType, scopeValue] of scopes) {
         const scope = this.db.prepare(`INSERT INTO user_scope_assignments
-          (user_id, principal_id, role_id, scope_type, scope_value, effect, source, created_by)
-          VALUES (?, ?, ?, ?, ?, 'ALLOW', ?, ?)
+          (user_id, role_id, scope_type, scope_value, effect, source, created_by)
+          VALUES (?, ?, ?, ?, 'ALLOW', ?, ?)
           ON CONFLICT DO NOTHING`
-        ).run(email, user.user_id, desiredRole.id, scopeType, scopeValue, source, actorRef.email);
+        ).run(user.user_id, desiredRole.id, scopeType, scopeValue, source, actorRef.userId);
         changed = changed || scope.changes > 0;
       }
       if (changed) {
         this._audit({
           actor,
-          target: email,
+          target: user.user_id,
           changeType: 'PRIMARY_ROLE_SET',
           objectType: 'USER_ROLE',
           objectKey: roleCode,
@@ -471,7 +465,6 @@ class AuthorizationService {
     validFrom, validUntil, customSchemaCode, customSchemaVersion, requestId, correlationId }) {
     const user = this._user(userId, false);
     if (!user) throw new AuthorizationError('user_not_found', 404);
-    const email = user.email;
     const actorRef = this._reference(actor);
     if (!SCOPE_TYPES.includes(scopeType)) throw new AuthorizationError('invalid_scope_type', 400);
     if (scopeType === 'MCH2' && !isCanonicalMch2Id(scopeValue)) throw new AuthorizationError('invalid_mch2_id', 400);
@@ -483,12 +476,12 @@ class AuthorizationService {
       if (!schema) throw new AuthorizationError('custom_scope_schema_not_found', 400);
     }
     this.db.prepare(`INSERT INTO user_scope_assignments
-      (user_id, principal_id, role_id, scope_type, scope_value, effect, valid_from, valid_until,
+      (user_id, role_id, scope_type, scope_value, effect, valid_from, valid_until,
        custom_schema_code, custom_schema_version, source, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?)
-      ON CONFLICT DO NOTHING`).run(email, user.user_id, role?.id || null, scopeType, scopeValue ?? null, effect,
-      validFrom || null, validUntil || null, customSchemaCode || null, customSchemaVersion || null, actorRef.email);
-    this._audit({ actor, target: email, changeType: 'SCOPE_ASSIGNED', objectType: 'USER_SCOPE',
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?)
+      ON CONFLICT DO NOTHING`).run(user.user_id, role?.id || null, scopeType, scopeValue ?? null, effect,
+      validFrom || null, validUntil || null, customSchemaCode || null, customSchemaVersion || null, actorRef.userId);
+    this._audit({ actor, target: user.user_id, changeType: 'SCOPE_ASSIGNED', objectType: 'USER_SCOPE',
       objectKey: `${scopeType}:${scopeValue || 'GLOBAL'}`, after: { role_code: roleCode || null, scope_type: scopeType, scope_value: scopeValue ?? null, effect },
       requestId, correlationId });
     this._forget(user);
@@ -500,9 +493,8 @@ class AuthorizationService {
     const authz = this.effectivePermissions(user.user_id);
     const roleLabels = this.db.prepare(`SELECT r.role_code, r.display_label
       FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-      WHERE (ur.principal_id = ? OR (ur.principal_id IS NULL AND ur.user_id = ?))
-        AND ur.active = 1 AND r.active = 1
-      ORDER BY r.role_code`).all(user.user_id, user.email);
+      WHERE ur.user_id = ? AND ur.active = 1 AND r.active = 1
+      ORDER BY r.role_code`).all(user.user_id);
     const primaryCode = LEGACY_PRIMARY_ROLE_PRIORITY.find((code) => authz.roleCodes.includes(code))
       || authz.roleCodes[0];
     if (!primaryCode) throw new AuthorizationError('canonical_role_assignment_required', 403);
@@ -532,22 +524,21 @@ class AuthorizationService {
     const expires = new Date(issued.getTime() + ttlSeconds * 1000);
     const sessionId = crypto.randomUUID();
     this.db.prepare(`INSERT INTO auth_sessions
-      (session_id, user_id, principal_id, authz_version, issued_at, expires_at, created_ip, user_agent)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(sessionId, identity.email, identity.userId, identity.authzVersion,
+      (session_id, user_id, authz_version, issued_at, expires_at, created_ip, user_agent)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(sessionId, identity.userId, identity.authzVersion,
       sqliteTime(issued), sqliteTime(expires), options.ip || null, options.userAgent || null);
     return { sessionId, authzVersion: identity.authzVersion, expiresAt: expires, identity };
   }
 
   resolveSession(sessionId, expectedUserId, expectedAuthzVersion) {
     const now = this._now();
-    const row = this.db.prepare(`SELECT s.session_id, s.user_id, s.principal_id, u.user_id AS immutable_user_id,
+    const row = this.db.prepare(`SELECT s.session_id, s.user_id, u.user_id AS immutable_user_id,
         s.authz_version AS session_authz_version, u.authz_version AS user_authz_version, u.is_active
       FROM auth_sessions s JOIN users u
-        ON u.user_id = s.principal_id OR (s.principal_id IS NULL AND u.email = s.user_id)
+        ON u.user_id = s.user_id
       WHERE s.session_id = ? AND s.revoked_at IS NULL AND s.expires_at > ?`).get(sessionId, now);
     if (!row || !row.is_active) throw new AuthorizationError('invalid_session', 401);
-    if (expectedUserId && String(expectedUserId) !== row.immutable_user_id
-        && normalizeEmail(expectedUserId) !== normalizeEmail(row.user_id)) {
+    if (expectedUserId && String(expectedUserId) !== row.immutable_user_id) {
       throw new AuthorizationError('invalid_session', 401);
     }
     if (Number(row.session_authz_version) !== Number(row.user_authz_version)

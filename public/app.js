@@ -2478,7 +2478,6 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     if (!Array.isArray(rows)) return [];
     return rows.map((row) => ({
       name: String(row && (row.name || row.title) || '').trim(),
-      principal_id: String(row && row.principal_id || '').trim() || null,
       user_id: String(row && row.user_id || '').trim() || null,
       opening: !!(row && (row.opening || row.opening_meeting)),
       closing: !!(row && (row.closing || row.closing_meeting)),
@@ -4155,7 +4154,6 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     Array.from(document.querySelectorAll('[data-attendee-index]')).forEach((input) => {
       const index = parseInt(input.getAttribute('data-attendee-index'), 10);
       rows[index] = rows[index] || {
-        principal_id: existingRows[index]?.principal_id || null,
         user_id: existingRows[index]?.user_id || null,
       };
       rows[index].name = input.value;
@@ -4163,7 +4161,6 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     Array.from(document.querySelectorAll('[data-attendee-opening]')).forEach((input) => {
       const index = parseInt(input.getAttribute('data-attendee-opening'), 10);
       rows[index] = rows[index] || {
-        principal_id: existingRows[index]?.principal_id || null,
         user_id: existingRows[index]?.user_id || null,
       };
       rows[index].opening = input.checked;
@@ -4171,7 +4168,6 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     Array.from(document.querySelectorAll('[data-attendee-closing]')).forEach((input) => {
       const index = parseInt(input.getAttribute('data-attendee-closing'), 10);
       rows[index] = rows[index] || {
-        principal_id: existingRows[index]?.principal_id || null,
         user_id: existingRows[index]?.user_id || null,
       };
       rows[index].closing = input.checked;
@@ -9831,9 +9827,7 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
   }
 
   function approvalAssignedUser(assignment) {
-    const principalId = assignment.assignedPrincipalId || assignment.assigned_principal_id || null;
-    return authzUsers.find((user) => authzUserKey(user) === principalId
-      || authzUserKey(user) === assignment.assignedUserId
+    return authzUsers.find((user) => authzUserKey(user) === assignment.assignedUserId
       || user.email === assignment.assignedUserId);
   }
 
@@ -10184,8 +10178,6 @@ import { EVALUATION_STATUS_TABS, evaluationStatusCounts, evaluationStatusMeta, f
     syncApprovalSubjectOptions();
     const assignedUser = approvalAssignedUser(assignment);
     $('authz-approval-subject').value = assignment.roleCode
-      || assignment.assignedPrincipalId
-      || assignment.assigned_principal_id
       || (assignedUser ? authzUserKey(assignedUser) : assignment.assignedUserId);
     $('authz-approval-scope-type').value = assignment.scopeType;
     $('authz-approval-scope-value').value = assignment.scopeValue || '';

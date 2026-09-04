@@ -9,12 +9,12 @@ function canonicalEvaluationOwner(row = {}) {
 }
 
 function isEvaluationResponsible(row, user) {
-  const userId = normalizeUserId(typeof user === 'string' ? user : user?.email);
+  const userId = normalizeUserId(typeof user === 'string' ? user : (user?.userId || user?.user_id || user?.email));
   return Boolean(userId) && canonicalEvaluationOwner(row) === userId;
 }
 
 function isEvaluationCreatedAndResponsible(row = {}, user) {
-  const userId = normalizeUserId(typeof user === 'string' ? user : user?.email);
+  const userId = normalizeUserId(typeof user === 'string' ? user : (user?.userId || user?.user_id || user?.email));
   const creatorId = normalizeUserId(row.created_by);
   const assignedId = normalizeUserId(row.assigned_specialist_id);
   return Boolean(userId) && creatorId === userId && (!assignedId || assignedId === userId);

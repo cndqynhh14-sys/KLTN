@@ -7,6 +7,8 @@ const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 
 const { parseSupplierWorkbook, upsertSupplier } = require('../server/services/supplierImporter');
+const { migrateDatabase } = require('../server/database/migrationRunner');
+const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
 function workbookBuffer(rows) {
   const wb = XLSX.utils.book_new();
@@ -18,8 +20,8 @@ function tempDb() {
   const dbPath = path.join(os.tmpdir(), `qlcl-supplier-test-${Date.now()}-${Math.random()}.db`);
   const db = new Database(dbPath);
   db.pragma('foreign_keys = ON');
-  db.exec(fs.readFileSync(path.resolve(__dirname, '..', 'migrations', '0001_current_schema.sql'), 'utf8'));
-  db.prepare("INSERT INTO users (email, is_admin, is_active) VALUES ('admin@masangroup.com', 1, 1)").run();
+  migrateDatabase(db, { migrationsDir: path.resolve(__dirname, '..', 'migrations'), appVersion: 'supplier-import-test' });
+  upsertCanonicalUser(db, { email: 'admin@masangroup.com', role: 'Admin', isAdmin: true });
   return { db, dbPath };
 }
 
