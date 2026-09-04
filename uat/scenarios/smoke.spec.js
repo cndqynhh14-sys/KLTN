@@ -729,13 +729,25 @@ test.describe('@smoke QLCL foundation', () => {
       }))
     ));
     expect(mobileQuestionImportTargets.every((target) => target.width >= 44 && target.height >= 44), JSON.stringify(mobileQuestionImportTargets)).toBeTruthy();
-    await page.locator('#question-version-clone').evaluate((button) => button.scrollIntoView({ block: 'center', inline: 'nearest' }));
-    const mobilePrimaryActionVisible = await page.locator('#question-version-clone').evaluate((button) => {
+    const mobileCloneAction = page.locator('#question-version-clone');
+    await mobileCloneAction.scrollIntoViewIfNeeded();
+    await expect(mobileCloneAction).toBeInViewport();
+    const mobilePrimaryActionLayout = await mobileCloneAction.evaluate((button) => {
       const rect = button.getBoundingClientRect();
-      const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      return target === button || button.contains(target);
+      const navigationRect = document.querySelector('#mobile-primary-navigation')?.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        viewportHeight: window.innerHeight,
+        navigationTop: navigationRect?.top ?? window.innerHeight,
+        visible: style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0,
+      };
     });
-    expect(mobilePrimaryActionVisible, 'Question clone action must remain visible above mobile navigation.').toBeTruthy();
+    expect(mobilePrimaryActionLayout.visible, JSON.stringify(mobilePrimaryActionLayout)).toBeTruthy();
+    expect(mobilePrimaryActionLayout.top, JSON.stringify(mobilePrimaryActionLayout)).toBeGreaterThanOrEqual(0);
+    expect(mobilePrimaryActionLayout.bottom, 'Question clone action must remain above mobile navigation.')
+      .toBeLessThanOrEqual(mobilePrimaryActionLayout.navigationTop + 1);
     await page.locator('#question-tab-questions').click();
     await page.locator('.question-version-toolbar').scrollIntoViewIfNeeded();
     await page.screenshot({
