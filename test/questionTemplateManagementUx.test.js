@@ -361,7 +361,9 @@ test('HTTP E2E creates Draft, edits a question, previews and commits import, rev
         ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type,
         template_id, question_template_version_id, facility_type, supplier_scale,
         planned_date, current_status, assigned_specialist_id, created_by
-      ) VALUES ('RUN16-TICKET', ?, 'RUN16-NCC', 'RUN-16 Synthetic', 'Dinh ky', ?, ?, 'ALL', 'LARGE', '2026-07-14', 'Khoi tao', 'admin@masangroup.com', 'admin@masangroup.com')
+      ) VALUES ('RUN16-TICKET', ?, 'RUN16-NCC', 'RUN-16 Synthetic', 'Dinh ky', ?, ?, 'ALL', 'LARGE', '2026-07-14', 'Khoi tao',
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(supplier.lastInsertRowid, created.id, published.id);
     const pinnedBefore = fx.db.prepare('SELECT question_template_version_id FROM evaluation_tickets WHERE id=?').get(ticket.lastInsertRowid).question_template_version_id;
     const rollbackResponse = await fetch(`${app.baseUrl}/question-templates/${created.id}/versions/${published.id}/rollback`, {

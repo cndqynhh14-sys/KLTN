@@ -20,7 +20,7 @@ function freshDb(dbPath) {
 
 function createFixture(db) {
   const actor = 'run18-exporter@synthetic.invalid';
-  upsertCanonicalUser(db, {
+  const actorIdentity = upsertCanonicalUser(db, {
     email: actor, role: 'Admin', isAdmin: true, displayName: 'RUN-18 Synthetic Exporter',
   });
   const supplier = db.prepare(`
@@ -45,7 +45,7 @@ function createFixture(db) {
       ?, ?, 'ALL', 'LARGE', '2026-07-14', '2026-07-14', 'Completed', 1,
       1, 100, 'A', 'Pass', ?
     )
-  `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actor);
+  `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actorIdentity.user_id);
   db.prepare(`
     INSERT INTO evaluation_rounds (
       ticket_id, round_no, assessment_code, assessment_date,
@@ -54,6 +54,7 @@ function createFixture(db) {
   `).run(ticketInfo.lastInsertRowid);
   return {
     actor,
+    actorUserId: actorIdentity.user_id,
     ticket: db.prepare('SELECT * FROM evaluation_tickets WHERE id=?').get(ticketInfo.lastInsertRowid),
   };
 }
@@ -105,7 +106,7 @@ test('RUN-18 canonical retry returns one durable artifact with complete provenan
   const oldDbPath = process.env.DB_PATH;
   const db = freshDb(dbPath);
   try {
-    const { actor, ticket } = createFixture(db);
+    const { actor, actorUserId, ticket } = createFixture(db);
     const { LocalArtifactStorage } = require('../server/reporting/artifacts/LocalArtifactStorage');
     const { ReportExportJobService } = require('../server/reporting/artifacts/ReportExportJobService');
     const storage = new LocalArtifactStorage({ root: path.join(root, 'artifacts') });
@@ -141,7 +142,7 @@ test('RUN-18 canonical retry returns one durable artifact with complete provenan
     assert.match(job.scoring_rules_checksum, /^[a-f0-9]{64}$/);
     assert.match(job.template_checksum, /^[a-f0-9]{64}$/);
     assert.match(job.context_checksum, /^[a-f0-9]{64}$/);
-    assert.equal(job.requester_user_id, actor);
+    assert.equal(job.requester_user_id, actorUserId);
     assert.equal(job.idempotency_key, request.idempotencyKey);
     assert.equal(artifact.availability_status, 'AVAILABLE');
     assert.equal(path.isAbsolute(artifact.storage_key), false);
@@ -169,7 +170,7 @@ test('RUN-18 failed byte persistence never creates a COMPLETED job or artifact',
   const oldDbPath = process.env.DB_PATH;
   const db = freshDb(dbPath);
   try {
-    const { actor, ticket } = createFixture(db);
+    const { actor, actorUserId, ticket } = createFixture(db);
     const { ReportExportJobService } = require('../server/reporting/artifacts/ReportExportJobService');
     const service = new ReportExportJobService({
       db,
@@ -287,12 +288,12 @@ test('RUN-18 legacy and retention reconciliation are dry-run by default', () => 
   const oldDbPath = process.env.DB_PATH;
   const db = freshDb(dbPath);
   try {
-    const { actor, ticket } = createFixture(db);
+    const { actor, actorUserId, ticket } = createFixture(db);
     const legacy = db.prepare(`
       INSERT INTO report_exports (
         ticket_id, report_type, file_format, export_scope, file_path, exported_by
       ) VALUES (?, 'INTERNAL', 'PDF', 'TICKET', ?, ?)
-    `).run(ticket.id, path.join(root, 'missing-legacy.pdf'), actor);
+    `).run(ticket.id, path.join(root, 'missing-legacy.pdf'), actorUserId);
     const { LegacyReportArtifactReconciler } = require('../server/reporting/artifacts/LegacyReportArtifactReconciler');
     const reconciler = new LegacyReportArtifactReconciler({ db, legacyRoot: root });
     const before = db.prepare('SELECT * FROM report_exports WHERE id=?').get(legacy.lastInsertRowid);
@@ -318,14 +319,14 @@ test('RUN-18 explicit legacy repair imports bytes and replaces absolute path wit
   const oldDbPath = process.env.DB_PATH;
   const db = freshDb(dbPath);
   try {
-    const { actor, ticket } = createFixture(db);
+    const { actor, actorUserId, ticket } = createFixture(db);
     const legacyPath = path.join(root, 'legacy-synthetic.html');
     fs.writeFileSync(legacyPath, '<!doctype html><title>RUN-18 legacy synthetic</title>', 'utf8');
     const legacy = db.prepare(`
       INSERT INTO report_exports (
         ticket_id, report_type, file_format, export_scope, file_path, exported_by
       ) VALUES (?, 'INTERNAL', 'HTML', 'TICKET', ?, ?)
-    `).run(ticket.id, legacyPath, actor);
+    `).run(ticket.id, legacyPath, actorUserId);
     const { LocalArtifactStorage } = require('../server/reporting/artifacts/LocalArtifactStorage');
     const { LegacyReportArtifactReconciler } = require('../server/reporting/artifacts/LegacyReportArtifactReconciler');
     const storage = new LocalArtifactStorage({ root: path.join(root, 'artifacts') });
@@ -395,11 +396,12 @@ test('RUN-18 history download rechecks auth/scope and verifies the same stored b
     const auth = require('../server/middleware/auth');
     const signToken = canonicalTokenFactory(dbModule, auth);
     signToken({ email: deniedUser }, 3600);
-    db.prepare(`DELETE FROM user_scope_assignments WHERE user_id=?`).run(deniedUser);
+    const deniedUserId = db.prepare('SELECT user_id FROM users WHERE email=?').get(deniedUser).user_id;
+    db.prepare(`DELETE FROM user_scope_assignments WHERE user_id=?`).run(deniedUserId);
     db.prepare(`INSERT INTO user_scope_assignments
       (user_id, role_id, scope_type, scope_value, effect, source)
       SELECT ?, id, 'OWN', 'SELF', 'ALLOW', 'MANUAL' FROM roles WHERE role_code='QLCL_SPECIALIST'`
-    ).run(deniedUser);
+    ).run(deniedUserId);
     const { requestContext } = require('../server/middleware/requestContext');
     const app = express();
     app.use(requestContext());

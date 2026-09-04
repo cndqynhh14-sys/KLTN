@@ -162,7 +162,7 @@ router.post('/:templateId/versions', requirePermission(PERMISSIONS.QUESTION_TEMP
       note: req.body?.note || req.body?.version_note || null,
       effectiveFrom: req.body?.effective_from || null,
       effectiveTo: req.body?.effective_to || null,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(req),
     });
     res.status(201).json({ item });
@@ -192,7 +192,7 @@ router.put('/:templateId/versions/:versionId', requirePermission(PERMISSIONS.QUE
       effectiveFrom: req.body?.effective_from,
       effectiveTo: req.body?.effective_to,
       items: req.body?.items,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(req),
     });
     res.json({ item });
@@ -212,7 +212,7 @@ router.patch('/:templateId/versions/:versionId/items', requirePermission(PERMISS
       expectedLockVersion: req.body?.expected_lock_version ?? req.body?.lock_version,
       updates: req.body?.updates,
       additions: req.body?.additions,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(req),
     });
     res.json({ item });
@@ -261,7 +261,7 @@ router.post(
         templateId: parseInt(req.params.templateId, 10),
         versionId: parseInt(req.params.versionId, 10),
         file: req.file,
-        actor: req.user.email,
+        actor: req.user.userId,
         context: versionContext(req),
       });
       res.status(201).json({ item });
@@ -335,7 +335,7 @@ router.post(
         idempotencyKey: req.get('Idempotency-Key'),
         expectedLockVersion: req.body?.expected_lock_version ?? req.body?.lock_version,
         acceptPartial: req.body?.accept_partial === true,
-        actor: req.user.email,
+        actor: req.user.userId,
         context: versionContext(req),
       });
       res.json({ item });
@@ -355,7 +355,7 @@ router.post(
       const item = questionImportService.rollback({
         batchId: req.params.batchId,
         expectedLockVersion: req.body?.expected_lock_version ?? req.body?.lock_version,
-        actor: req.user.email,
+        actor: req.user.userId,
         context: versionContext(req),
       });
       res.json({ item });
@@ -378,7 +378,7 @@ for (const [action, execute] of [
       const item = execute({
         versionId: existing.id,
         expectedLockVersion: req.body?.expected_lock_version ?? req.body?.lock_version,
-        actor: req.user.email,
+        actor: req.user.userId,
         context: versionContext(req),
       });
       res.json({ item });
@@ -399,7 +399,7 @@ router.post('/', requirePermission(PERMISSIONS.QUESTION_TEMPLATE_MANAGE), (req, 
       templateName,
       description: body.description,
       active: body.active !== false,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(req),
     });
     res.status(201).json({ item });

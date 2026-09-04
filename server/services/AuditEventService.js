@@ -45,12 +45,12 @@ class AuditEventService {
     this.clock = options.clock || (() => new Date());
     this.insert = db.prepare(`INSERT INTO audit_events (
       occurred_at, catalog_version, category, event_name, severity,
-      actor_user_id, actor_principal_id, actor_roles_json, request_id, correlation_id, uat_run_id,
+      actor_user_id, actor_email_snapshot, actor_roles_json, request_id, correlation_id, uat_run_id,
       entity_type, entity_id, action, outcome, reason_code, summary, metadata_json,
       idempotency_key, previous_hash, event_hash
     ) VALUES (
       @occurred_at, @catalog_version, @category, @event_name, @severity,
-      @actor_user_id, @actor_principal_id, @actor_roles_json, @request_id, @correlation_id, @uat_run_id,
+      @actor_user_id, @actor_email_snapshot, @actor_roles_json, @request_id, @correlation_id, @uat_run_id,
       @entity_type, @entity_id, @action, @outcome, @reason_code, @summary, @metadata_json,
       @idempotency_key, @previous_hash, @event_hash
     )`);
@@ -69,9 +69,8 @@ class AuditEventService {
     try {
       return this.db.prepare(`SELECT DISTINCT r.role_code FROM user_roles ur
         JOIN roles r ON r.id = ur.role_id
-        WHERE (ur.principal_id = ? OR (ur.principal_id IS NULL AND lower(ur.user_id) = lower(?)))
-          AND ur.active = 1 AND r.active = 1
-        ORDER BY r.role_code`).all(actorUserId, actorUserId).map((row) => row.role_code);
+        WHERE ur.user_id = ? AND ur.active = 1 AND r.active = 1
+        ORDER BY r.role_code`).all(actorUserId).map((row) => row.role_code);
     } catch {
       return [];
     }
@@ -89,15 +88,15 @@ class AuditEventService {
       metadata.changed_fields = Object.keys(changes).sort();
       metadata.changes = changes;
     }
-    const actor = this.actorIdentity(event.actorPrincipalId || event.actorUserId);
+    const actor = this.actorIdentity(event.actorUserId);
     const row = {
       occurred_at: this.clock().toISOString(),
       catalog_version: AUDIT_CATALOG_VERSION,
       category: definition.category,
       event_name: definition.name,
       severity: event.severity || definition.severity,
-      actor_user_id: actor?.email || (event.actorUserId ? sanitizeString(event.actorUserId, 320).toLowerCase() : null),
-      actor_principal_id: actor?.user_id || (event.actorPrincipalId ? sanitizeString(event.actorPrincipalId, 64) : null),
+      actor_user_id: actor?.user_id || null,
+      actor_email_snapshot: actor?.email || (event.actorEmailSnapshot ? sanitizeString(event.actorEmailSnapshot, 320).toLowerCase() : null),
       actor_roles_json: canonicalJson(this.actorRoles(actor?.user_id || event.actorUserId, event.actorRoles)),
       request_id: sanitizeString(event.requestId || context.request_id || '', 128) || null,
       correlation_id: sanitizeString(event.correlationId || context.correlation_id || '', 128) || null,
@@ -112,7 +111,12 @@ class AuditEventService {
       idempotency_key: event.idempotencyKey ? sanitizeString(event.idempotencyKey, 256) : null,
       previous_hash: previousHash,
     };
-    row.event_hash = hashPayload(row);
+    row.event_hash = hashPayload({
+      ...row,
+      actor_user_id: row.actor_email_snapshot,
+      actor_principal_id: row.actor_user_id,
+      actor_email_snapshot: undefined,
+    });
     return row;
   }
 
@@ -150,7 +154,7 @@ class AuditEventService {
         category: row.category,
         event_name: row.event_name,
         severity: row.severity,
-        actor_user_id: row.actor_user_id,
+        actor_user_id: row.actor_email_snapshot,
         actor_roles_json: row.actor_roles_json,
         request_id: row.request_id,
         correlation_id: row.correlation_id,
@@ -166,7 +170,7 @@ class AuditEventService {
         previous_hash: row.previous_hash,
       };
       if (String(row.catalog_version).localeCompare('1.8.0', undefined, { numeric: true }) >= 0) {
-        payload.actor_principal_id = row.actor_principal_id;
+        payload.actor_principal_id = row.actor_user_id;
       }
       const expected = hashPayload(payload);
       if (row.previous_hash !== previousHash || row.event_hash !== expected) {

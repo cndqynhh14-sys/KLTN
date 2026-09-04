@@ -14,7 +14,7 @@ function parseIdentityList(value) {
 function normalizedAttendee(value) {
   return {
     name: String(value?.name || value?.title || '').trim(),
-    identity: String(value?.principal_id || value?.user_id || value?.identity || '').trim(),
+    identity: String(value?.user_id || value?.identity || '').trim(),
     opening: !!(value?.opening || value?.opening_meeting),
     closing: !!(value?.closing || value?.closing_meeting),
   };
@@ -27,7 +27,7 @@ class EvaluationParticipantRepository {
       ticket: db.prepare('SELECT id, created_at, created_by, updated_by FROM evaluation_tickets WHERE id = ?'),
       round: db.prepare('SELECT id, started_at, locked_by FROM evaluation_rounds WHERE id = ?'),
       roundOwnership: db.prepare(`SELECT r.id, r.started_at, r.completed_at, r.locked_at,
-          r.status, t.source_kind, t.assigned_specialist_user_id, t.assigned_specialist_id
+          r.status, t.source_kind, t.assigned_specialist_id
         FROM evaluation_rounds r
         JOIN evaluation_tickets t ON t.id = r.ticket_id
         WHERE r.id = ?`),
@@ -46,22 +46,21 @@ class EvaluationParticipantRepository {
       deleteRoundAttendees: db.prepare(`DELETE FROM evaluation_participants
         WHERE round_id = ? AND participant_role = 'ATTENDEE'`),
       insert: db.prepare(`INSERT INTO evaluation_participants (
-        ticket_id, round_id, user_id, principal_id, display_name, participant_role,
-        opening_meeting, closing_meeting, assigned_at, assigned_by, assigned_by_user_id
+        ticket_id, round_id, user_id, display_name, participant_role,
+        opening_meeting, closing_meeting, assigned_at, assigned_by
       ) VALUES (
-        @ticket_id, @round_id, @user_id, @principal_id, @display_name, @participant_role,
-        @opening_meeting, @closing_meeting, @assigned_at, @assigned_by, @assigned_by_user_id
+        @ticket_id, @round_id, @user_id, @display_name, @participant_role,
+        @opening_meeting, @closing_meeting, @assigned_at, @assigned_by
       )`),
       roundOwnerAttendee: db.prepare(`SELECT * FROM evaluation_participants
         WHERE round_id = @round_id AND participant_role = 'ATTENDEE' AND active = 1
           AND (
-            principal_id = @principal_id
-            OR lower(COALESCE(user_id, '')) = lower(@user_id)
+            user_id = @user_id
             OR lower(trim(display_name)) = lower(trim(@display_name))
           )
         ORDER BY id LIMIT 1`),
       canonicalizeRoundAttendee: db.prepare(`UPDATE evaluation_participants
-        SET user_id = @user_id, principal_id = @principal_id
+        SET user_id = @user_id
         WHERE id = @id AND active = 1`),
     };
   }
@@ -74,7 +73,7 @@ class EvaluationParticipantRepository {
   }
 
   actor(value) {
-    return this.user(value)?.email || null;
+    return this.user(value)?.user_id || null;
   }
 
   canonicalParticipants(scope, id) {
@@ -130,15 +129,13 @@ class EvaluationParticipantRepository {
     this.statements.insert.run({
       ticket_id: ticketId,
       round_id: roundId,
-      user_id: user?.email || null,
-      principal_id: user?.user_id || null,
+      user_id: user?.user_id || null,
       display_name: name,
       participant_role: role,
       opening_meeting: opening ? 1 : 0,
       closing_meeting: closing ? 1 : 0,
       assigned_at: assignedAt || new Date().toISOString(),
-      assigned_by: actor?.email || null,
-      assigned_by_user_id: actor?.user_id || null,
+      assigned_by: actor?.user_id || null,
     });
   }
 
@@ -185,21 +182,19 @@ class EvaluationParticipantRepository {
   ensureRoundOwnerAttendee(roundId, actor = null) {
     const round = this.statements.roundOwnership.get(roundId);
     if (!round || round.source_kind !== 'NATIVE' || round.completed_at || round.locked_at || round.status === 'Hoàn thành') return null;
-    const owner = this.user(round.assigned_specialist_user_id || round.assigned_specialist_id);
+    const owner = this.user(round.assigned_specialist_id);
     if (!owner) return null;
     const lookup = {
       round_id: round.id,
-      principal_id: owner.user_id,
-      user_id: owner.email,
+      user_id: owner.user_id,
       display_name: owner.display_name || owner.email,
     };
     const existing = this.statements.roundOwnerAttendee.get(lookup);
     if (existing) {
-      if (!existing.principal_id || !existing.user_id) {
+      if (!existing.user_id) {
         this.statements.canonicalizeRoundAttendee.run({
           id: existing.id,
-          principal_id: owner.user_id,
-          user_id: owner.email,
+          user_id: owner.user_id,
         });
       }
       return existing.id;

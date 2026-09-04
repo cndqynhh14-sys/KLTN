@@ -80,7 +80,8 @@ function insertTicketFixture(db, { code, versionId, templateId, facilityType = '
       template_id, question_template_version_id, facility_type, supplier_scale,
       planned_date, current_status, assigned_specialist_id, created_by
     ) VALUES (?, ?, ?, ?, 'Dinh ky', ?, ?, ?, ?, '2026-07-14', 'Khoi tao',
-      'admin@masangroup.com', 'admin@masangroup.com')
+      (SELECT user_id FROM users WHERE email='admin@masangroup.com'),
+      (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
   `).run(
     code,
     supplier.lastInsertRowid,
@@ -202,7 +203,8 @@ test('publishing v2 leaves a pinned v1 ticket and its report question text uncha
     `).run(oldTicket.id);
     fx.db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, 'A', 'synthetic', 100, 'admin@masangroup.com')
+      VALUES (?, ?, 'A', 'synthetic', 100,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(round.lastInsertRowid, oldQuestions[0].id);
     const beforeHash = service.ticketQuestionHash(oldTicket.id);
 
@@ -251,7 +253,8 @@ test('publishing v2 leaves a pinned v1 ticket and its report question text uncha
     const newQuestion = service.questionsForTicket(newTicket)[0];
     fx.db.prepare(`
       INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-      VALUES (?, ?, 'A', 'synthetic', 100, 'admin@masangroup.com')
+      VALUES (?, ?, 'A', 'synthetic', 100,
+        (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     `).run(newRound.lastInsertRowid, newQuestion.id);
     const newContext = fx.reporting.buildReportContext(fx.db, newTicket, { reportType: 'INTERNAL', roundNo: 1 });
     assert.match(newContext.detailed_scoring, /— v2/);

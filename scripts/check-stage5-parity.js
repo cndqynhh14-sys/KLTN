@@ -30,12 +30,12 @@ function runParity(db) {
     user_without_canonical_role_history: scalar(db, `SELECT COUNT(*) FROM users u
       WHERE NOT EXISTS (
         SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id
-        WHERE ur.user_id=u.email
+        WHERE ur.user_id=u.user_id
       )`),
     active_user_without_effective_role: scalar(db, `SELECT COUNT(*) FROM users u
       WHERE u.is_active=1 AND NOT EXISTS (
         SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id
-        WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1
+        WHERE ur.user_id=u.user_id AND ur.active=1 AND r.active=1
           AND (ur.valid_from IS NULL OR ur.valid_from<=datetime('now'))
           AND (ur.valid_until IS NULL OR ur.valid_until>datetime('now'))
       )`),

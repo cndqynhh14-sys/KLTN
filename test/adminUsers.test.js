@@ -30,7 +30,7 @@ function removeDbFiles(dbPath) {
 
 function tokenFor(authorizationService, email) {
   const session = authorizationService.createSession(email, { ttlSeconds: 3600 });
-  return jwt.sign({ sub: email, sid: session.sessionId, av: session.authzVersion }, process.env.JWT_SECRET, {
+  return jwt.sign({ sub: session.identity.userId, sid: session.sessionId, av: session.authzVersion }, process.env.JWT_SECRET, {
     algorithm: 'HS256',
     expiresIn: 3600,
     issuer: 'masan-rms',

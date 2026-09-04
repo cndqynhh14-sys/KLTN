@@ -261,7 +261,7 @@ test('RUN-19 canonical export pins template, question, and scoring policy versio
   const db = freshDb(dbPath);
   try {
     const actor = 'run17-exporter@synthetic.invalid';
-    upsertCanonicalUser(db, {
+    const actorIdentity = upsertCanonicalUser(db, {
       email: actor, role: 'Admin', isAdmin: true, displayName: 'RUN-17 Synthetic Exporter',
     });
     const supplier = db.prepare(`
@@ -287,7 +287,7 @@ test('RUN-19 canonical export pins template, question, and scoring policy versio
         ?, ?, 'ALL', 'LARGE', '2026-07-14', '2026-07-14', 'Completed', 1,
         1, 100, 'A', 'Pass', ?
       )
-    `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actor);
+    `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actorIdentity.user_id);
     const round = db.prepare(`
       INSERT INTO evaluation_rounds (
         ticket_id, round_no, assessment_code, assessment_date,

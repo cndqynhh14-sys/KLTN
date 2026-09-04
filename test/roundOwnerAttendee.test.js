@@ -46,22 +46,21 @@ function insertTicket(db, owner) {
   return Number(db.prepare(`INSERT INTO evaluation_tickets
     (ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type,
      template_id, facility_type, supplier_scale, current_status, current_round_no,
-     assigned_specialist_id, assigned_specialist_user_id, created_by, created_by_user_id)
+     assigned_specialist_id, created_by)
     VALUES ('ROUND-OWNER-TICKET', ?, 'ROUND-OWNER-NCC', 'Round owner supplier',
-      'Đánh giá định kỳ', ?, 'CHUNG', 'LARGE', 'Chờ khắc phục', 1, ?, ?, ?, ?)`)
-    .run(supplierId, template.id, owner.email, owner.user_id, owner.email, owner.user_id).lastInsertRowid);
+      'Đánh giá định kỳ', ?, 'CHUNG', 'LARGE', 'Chờ khắc phục', 1, ?, ?)`)
+    .run(supplierId, template.id, owner.user_id, owner.user_id).lastInsertRowid);
 }
 
 function ticketOwnerParticipant(db, ticketId, owner, actor) {
   db.prepare(`INSERT INTO evaluation_participants
-    (ticket_id, user_id, principal_id, display_name, participant_role,
-     assigned_by, assigned_by_user_id)
-    VALUES (?, ?, ?, ?, 'OWNER', ?, ?)`)
-    .run(ticketId, owner.email, owner.user_id, owner.display_name, actor.email, actor.user_id);
+    (ticket_id, user_id, display_name, participant_role, assigned_by)
+    VALUES (?, ?, ?, 'OWNER', ?)`)
+    .run(ticketId, owner.user_id, owner.display_name, actor.user_id);
 }
 
 function attendeeRows(db, roundId) {
-  return db.prepare(`SELECT user_id, principal_id, display_name, opening_meeting, closing_meeting
+  return db.prepare(`SELECT user_id, display_name, opening_meeting, closing_meeting
     FROM evaluation_participants
     WHERE round_id = ? AND participant_role = 'ATTENDEE' AND active = 1
     ORDER BY id`).all(roundId);
@@ -98,7 +97,7 @@ test('round attendance defaults to the current ticket owner, stays idempotent an
     }).lastInsertRowid);
     let round1Attendees = attendeeRows(db, round1Id);
     assert.equal(round1Attendees.length, 1);
-    assert.equal(round1Attendees[0].principal_id, ownerA.user_id, 'admin opening/creating the round must not become an attendee');
+    assert.equal(round1Attendees[0].user_id, ownerA.user_id, 'admin opening/creating the round must not become an attendee');
     assert.equal(round1Attendees[0].opening_meeting, 1);
     assert.equal(round1Attendees[0].closing_meeting, 1);
 
@@ -106,13 +105,12 @@ test('round attendance defaults to the current ticket owner, stays idempotent an
     participantRepository.ensureRoundOwnerAttendee(round1Id, admin.user_id);
     roundRepository.updateAttendees(round1Id, [{
       name: ownerA.display_name,
-      principal_id: ownerA.user_id,
-      user_id: ownerA.email,
+      user_id: ownerA.user_id,
       opening: true,
       closing: true,
     }, { name: 'Đại diện NCC', opening: true, closing: false }], admin.user_id);
     round1Attendees = attendeeRows(db, round1Id);
-    assert.equal(round1Attendees.filter((row) => row.principal_id === ownerA.user_id).length, 1, 'refresh/save must not duplicate the owner');
+    assert.equal(round1Attendees.filter((row) => row.user_id === ownerA.user_id).length, 1, 'refresh/save must not duplicate the owner');
     assert.equal(round1Attendees.length, 2);
 
     db.prepare(`UPDATE evaluation_rounds
@@ -127,8 +125,8 @@ test('round attendance defaults to the current ticket owner, stays idempotent an
       idempotencyKey: 'round-owner-transfer-0001',
       requestId: 'request-round-owner-transfer-0001',
     });
-    assert.equal(db.prepare('SELECT assigned_specialist_user_id FROM evaluation_tickets WHERE id = ?').pluck().get(ticketId), ownerB.user_id);
-    assert.equal(attendeeRows(db, round1Id).find((row) => row.principal_id === ownerA.user_id)?.display_name, ownerA.display_name,
+    assert.equal(db.prepare('SELECT assigned_specialist_id FROM evaluation_tickets WHERE id = ?').pluck().get(ticketId), ownerB.user_id);
+    assert.equal(attendeeRows(db, round1Id).find((row) => row.user_id === ownerA.user_id)?.display_name, ownerA.display_name,
       'completed round 1 must retain A');
 
     db.prepare('UPDATE evaluation_tickets SET current_round_no = 2 WHERE id = ?').run(ticketId);
@@ -143,7 +141,7 @@ test('round attendance defaults to the current ticket owner, stays idempotent an
     }).lastInsertRowid);
     const round2Attendees = attendeeRows(db, round2Id);
     assert.equal(round2Attendees.length, 1, 'manual round 1 attendees must not be copied');
-    assert.equal(round2Attendees[0].principal_id, ownerB.user_id);
+    assert.equal(round2Attendees[0].user_id, ownerB.user_id);
     assert.equal(round2Attendees[0].opening_meeting, 1);
     assert.equal(round2Attendees[0].closing_meeting, 1);
     assert.equal(attendeeRows(db, round1Id).length, 2, 'round 1 remains unchanged after round 2 creation');
@@ -155,10 +153,10 @@ test('round attendance defaults to the current ticket owner, stays idempotent an
   }
 });
 
-test('frontend keeps canonical attendee identity while retaining the existing attendance table', () => {
+test('frontend keeps user_id attendee identity while retaining the existing attendance table', () => {
   const app = fs.readFileSync(path.resolve(__dirname, '..', 'public', 'app.js'), 'utf8');
   const html = fs.readFileSync(path.resolve(__dirname, '..', 'public', 'index.html'), 'utf8');
-  assert.match(app, /principal_id: String\(row && row\.principal_id/);
-  assert.match(app, /principal_id: existingRows\[index\]\?\.principal_id/);
+  assert.match(app, /user_id: String\(row && row\.user_id/);
+  assert.doesNotMatch(app, /principal_id/);
   assert.match(html, /<th>Tên\/Chức danh<\/th><th>Tham dự họp khai mạc<\/th><th>Tham dự họp bế mạc<\/th><th class="table-action-cell">Thao tác<\/th>/);
 });

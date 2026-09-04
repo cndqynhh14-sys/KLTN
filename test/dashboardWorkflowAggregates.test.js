@@ -81,7 +81,8 @@ function insertSupplier(db, code, name, extra = {}) {
     )
     VALUES (
       @supplier_code, @supplier_name, @tax_code, @address, @region, @province, @business_type,
-      @contact_name, @contact_email, @contact_phone, 'ACTIVE', 'MANUAL', 'admin@masangroup.com'
+      @contact_name, @contact_email, @contact_phone, 'ACTIVE', 'MANUAL',
+      (SELECT user_id FROM users WHERE email='admin@masangroup.com')
     )
   `).run({
     supplier_code: code,
@@ -177,7 +178,8 @@ function insertRound(db, ticketId, roundNo, fields = {}) {
 function insertAnswer(db, roundId, questionId, score) {
   db.prepare(`
     INSERT INTO evaluation_answers (round_id, question_item_id, score, comment, calculated_score, answered_by)
-    VALUES (?, ?, ?, 'Dashboard aggregate test', 0, 'admin@masangroup.com')
+    VALUES (?, ?, ?, 'Dashboard aggregate test', 0,
+      (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     ON CONFLICT(round_id, question_item_id) DO UPDATE SET score=excluded.score
   `).run(roundId, questionId, score);
 }
@@ -185,7 +187,8 @@ function insertAnswer(db, roundId, questionId, score) {
 function insertNonconformity(db, ticketId, roundId, questionId, clauseCode, category, status = 'OPEN') {
   db.prepare(`INSERT INTO evaluation_answers
     (round_id, question_item_id, score, comment, calculated_score, answered_by)
-    VALUES (?, ?, 'B', 'Aggregate finding', 75, 'admin@masangroup.com')
+    VALUES (?, ?, 'B', 'Aggregate finding', 75,
+      (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
     ON CONFLICT(round_id, question_item_id) DO NOTHING`).run(roundId, questionId);
   const answerId = db.prepare(`SELECT id FROM evaluation_answers
     WHERE round_id=? AND question_item_id=?`).pluck().get(roundId, questionId);
@@ -193,7 +196,8 @@ function insertNonconformity(db, ticketId, roundId, questionId, clauseCode, cate
     INSERT INTO evaluation_nonconformities (
       ticket_id, round_id, evaluation_answer_id, clause_code, category, nonconformity_content, severity, status, created_by
     )
-    VALUES (?, ?, ?, ?, ?, 'Aggregate finding', 'B', ?, 'admin@masangroup.com')
+    VALUES (?, ?, ?, ?, ?, 'Aggregate finding', 'B', ?,
+      (SELECT user_id FROM users WHERE email='admin@masangroup.com'))
   `).run(ticketId, roundId, answerId, clauseCode, category, status);
 }
 

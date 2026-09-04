@@ -18,7 +18,7 @@ class FakeNotificationRepository {
     this.deadlines = [];
   }
 
-  activeUser(email) { return this.users.has(String(email).toLowerCase()) ? { email } : null; }
+  activeUser(email) { return this.users.has(String(email).toLowerCase()) ? { user_id: email, email } : null; }
   insert(payload) {
     if (this.rows.some((row) => row.unique_key === payload.unique_key)) return { changes: 0 };
     this.rows.push({ id: this.rows.length + 1, is_read: 0, created_at: '2026-07-16 08:00:00', ...payload });
@@ -131,7 +131,7 @@ test('RUN-11 creates role-correct assignments and results once per receiver', ()
 test('RUN-11 rechecks scope for list/read and supports badge read state', () => {
   const { repository, service, ticket } = notificationFixture();
   service.createEvaluationAssigned({ ticket, actor: { email: 'owner@masangroup.com' } });
-  const owner = { email: 'owner@masangroup.com' };
+  const owner = { userId: 'owner@masangroup.com', email: 'owner@masangroup.com' };
   const listed = service.listForUser(owner, { filter: 'all' });
   assert.equal(listed.total, 1);
   assert.equal(listed.unread_count, 1);
@@ -151,8 +151,8 @@ test('RUN-11 rechecks scope for list/read and supports badge read state', () => 
 
   const hidden = { ...repository.rows[0], id: 99, receiver_user_id: 'other@masangroup.com', unique_key: 'hidden' };
   repository.rows.push(hidden);
-  assert.equal(service.listForUser({ email: 'other@masangroup.com', denied: true }).total, 0);
-  assert.equal(service.markReadForUser(99, { email: 'other@masangroup.com', denied: true }), null);
+  assert.equal(service.listForUser({ userId: 'other@masangroup.com', email: 'other@masangroup.com', denied: true }).total, 0);
+  assert.equal(service.markReadForUser(99, { userId: 'other@masangroup.com', email: 'other@masangroup.com', denied: true }), null);
 });
 
 test('RUN-11 uses existing round 1/round 2 dates with a notification-only warning horizon', () => {

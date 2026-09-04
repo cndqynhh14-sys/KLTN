@@ -10,6 +10,10 @@ const XLSX = require('xlsx');
 const { MCH2_VALUES, MCH3_BY_MCH2 } = require('../server/domain/merchandising');
 const { upsertCanonicalUser } = require('./helpers/canonicalUser');
 
+function userId(db, email) {
+  return db.prepare('SELECT user_id FROM users WHERE email = ? COLLATE NOCASE').get(email)?.user_id;
+}
+
 const MODULES = [
   '../server/config/paths',
   '../server/db',
@@ -91,14 +95,14 @@ async function withEvaluationFixture(prefix, run) {
 }
 
 function grantRoleAndScope(db, email, roleCode, scopeType, scopeValue = null) {
-  upsertCanonicalUser(db, { email, roleCode });
+  const user = upsertCanonicalUser(db, { email, roleCode });
   const role = db.prepare('SELECT id FROM roles WHERE role_code = ? AND active = 1').get(roleCode);
   assert.ok(role?.id, `role fixture ${roleCode} must exist`);
   db.prepare(`
     INSERT INTO user_scope_assignments (
       user_id, role_id, scope_type, scope_value, effect, active, source
     ) VALUES (?, ?, ?, ?, 'ALLOW', 1, 'MANUAL')
-  `).run(email, role.id, scopeType, scopeValue);
+  `).run(user.user_id, role.id, scopeType, scopeValue);
 }
 
 function addScope(db, email, roleCode, scopeType, scopeValue, effect = 'ALLOW') {
@@ -108,7 +112,7 @@ function addScope(db, email, roleCode, scopeType, scopeValue, effect = 'ALLOW') 
     INSERT INTO user_scope_assignments (
       user_id, role_id, scope_type, scope_value, effect, active, source
     ) VALUES (?, ?, ?, ?, ?, 1, 'MANUAL')
-  `).run(email, role.id, scopeType, scopeValue ?? null, effect);
+  `).run(userId(db, email), role.id, scopeType, scopeValue ?? null, effect);
 }
 
 function denyPermission(db, roleCode, permissionCode) {
@@ -120,7 +124,7 @@ function denyPermission(db, roleCode, permissionCode) {
 
 function tokenFor(authorizationService, email) {
   const session = authorizationService.createSession(email, { ttlSeconds: 3600 });
-  return jwt.sign({ sub: email, sid: session.sessionId, av: session.authzVersion }, process.env.JWT_SECRET, {
+  return jwt.sign({ sub: session.identity.userId, sid: session.sessionId, av: session.authzVersion }, process.env.JWT_SECRET, {
     algorithm: 'HS256',
     expiresIn: 3600,
     issuer: 'masan-rms',
@@ -139,6 +143,7 @@ function insertSupplier(db, fields) {
     )
   `).run({
     ...fields,
+    created_by: fields.created_by ? userId(db, fields.created_by) : null,
     tax_code: fields.tax_code || `${fields.supplier_code}-TAX`,
     address: fields.address || 'Policy supplier address',
     status: fields.status || 'ACTIVE',
@@ -158,7 +163,11 @@ function insertEvaluation(db, fields) {
       'CHUNG', 'LARGE', @mch2, @mch3, '2026-07-14', 'Khởi tạo',
       1, @created_by, @created_by, @created_at
     )
-  `).run({ ...fields, template_id: template.id }).lastInsertRowid;
+  `).run({
+    ...fields,
+    created_by: fields.created_by ? userId(db, fields.created_by) : null,
+    template_id: template.id,
+  }).lastInsertRowid;
 }
 
 function seedScopedEvaluations(db, ownerEmail) {

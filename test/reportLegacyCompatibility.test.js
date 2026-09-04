@@ -42,7 +42,7 @@ function externalReferences(buffer) {
 
 function createTicket(db, suffix = 'PRIMARY', { withRound = true } = {}) {
   const actor = `run21-${suffix.toLowerCase()}@synthetic.invalid`;
-  upsertCanonicalUser(db, {
+  const actorIdentity = upsertCanonicalUser(db, {
     email: actor, roleCode: 'SYS_ADMIN', displayName: 'RUN-21 Synthetic QA', createdBy: 'RUN-21',
   });
   const supplier = db.prepare(`
@@ -73,7 +73,7 @@ function createTicket(db, suffix = 'PRIMARY', { withRound = true } = {}) {
     questionVersion.template_id,
     questionVersion.id,
     1,
-    actor
+    actorIdentity.user_id
   );
   let roundId = null;
   if (withRound) {
@@ -92,11 +92,11 @@ function createTicket(db, suffix = 'PRIMARY', { withRound = true } = {}) {
       (round_id, user_id, display_name, participant_role, opening_meeting,
        closing_meeting, assigned_by)
       VALUES (?, ?, 'RUN-21 Synthetic QA', 'ATTENDEE', 1, 1, ?)`)
-      .run(roundId, actor, actor);
+      .run(roundId, actorIdentity.user_id, actorIdentity.user_id);
     db.prepare(`INSERT INTO evaluation_participants
       (round_id, user_id, display_name, participant_role, assigned_by)
       VALUES (?, ?, 'RUN-21 Synthetic QA', 'EVALUATOR', ?)`)
-      .run(roundId, actor, actor);
+      .run(roundId, actorIdentity.user_id, actorIdentity.user_id);
   }
   return {
     actor,

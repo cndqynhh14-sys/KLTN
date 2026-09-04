@@ -61,16 +61,19 @@ class NotificationService {
     const serialized = JSON.stringify(safePayload);
     if (SENSITIVE_PATTERN.test(serialized)) throw Object.assign(new Error('sensitive_notification_content'), { code: 'sensitive_notification_content' });
     compact(receivers).forEach((receiver) => {
-      if (!this.notificationRepository.activeUser(receiver)) return;
+      const receiverUser = this.notificationRepository.activeUser(receiver);
+      if (!receiverUser) return;
+      const senderIdentifier = sender?.userId || sender?.id || sender?.email || sender || null;
+      const senderUser = senderIdentifier ? this.notificationRepository.activeUser(senderIdentifier) : null;
       this.notificationRepository.insert({
-        receiver_user_id: receiver,
-        sender_user_id: sender?.email || sender || null,
+        receiver_user_id: receiverUser.user_id,
+        sender_user_id: senderUser?.user_id || null,
         ticket_id: ticket?.id || null,
         notification_type: type,
         title: safeTitle,
         message: safeMessage,
         payload_json: serialized,
-        unique_key: `${uniqueKey}:${receiver}`,
+        unique_key: `${uniqueKey}:${receiverUser.user_id}`,
       });
     });
   }
@@ -207,7 +210,7 @@ class NotificationService {
   }
 
   accessibleRows(user) {
-    return this.notificationRepository.allByReceiver(user.email).filter((row) => this.canAccess(user, row));
+    return this.notificationRepository.allByReceiver(user.userId || user.id).filter((row) => this.canAccess(user, row));
   }
 
   listForUser(user, query = {}) {
@@ -234,15 +237,16 @@ class NotificationService {
   }
 
   markReadForUser(id, user) {
-    const existing = this.notificationRepository.getForReceiver(id, user.email);
+    const userId = user.userId || user.id;
+    const existing = this.notificationRepository.getForReceiver(id, userId);
     if (!existing || !this.canAccess(user, existing)) return null;
-    this.notificationRepository.markRead(id, user.email);
-    return this.mapNotification(this.notificationRepository.getForReceiver(id, user.email));
+    this.notificationRepository.markRead(id, userId);
+    return this.mapNotification(this.notificationRepository.getForReceiver(id, userId));
   }
 
   markAllReadForUser(user) {
     this.accessibleRows(user).filter((row) => !row.is_read).forEach((row) => {
-      this.notificationRepository.markRead(row.id, user.email);
+      this.notificationRepository.markRead(row.id, user.userId || user.id);
     });
     return { unread_count: 0 };
   }

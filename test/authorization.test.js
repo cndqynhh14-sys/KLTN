@@ -25,7 +25,7 @@ function fixture() {
 
 function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
   const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
-  upsertCanonicalUser(db, {
+  const user = upsertCanonicalUser(db, {
     email, roleCode, displayName: 'SYNTHETIC RUN-05 USER', createdBy: 'fixture',
   });
   const scopes = roleCode === ROLE_CODES.SUPPLIER_USER
@@ -37,8 +37,9 @@ function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
     db.prepare(`INSERT INTO user_scope_assignments
       (user_id, role_id, scope_type, scope_value, effect, source)
       SELECT ?, id, ?, ?, 'ALLOW', 'MANUAL' FROM roles WHERE role_code = ?`
-    ).run(email, scopeType, scopeValue, roleCode);
+    ).run(user.user_id, scopeType, scopeValue, roleCode);
   }
+  return user;
 }
 
 function close(db) {
@@ -118,7 +119,7 @@ test('multiple roles combine ALLOW while DENY wins and invalidates cached decisi
 test('scope evaluation supports every base type, strict MCH2 IDs and versioned CUSTOM', () => {
   const { db, authz } = fixture();
   try {
-    addUser(db, 'scoped@example.invalid');
+    const scopedUser = addUser(db, 'scoped@example.invalid');
     authz.assignRole({ userId: 'scoped@example.invalid', roleCode: ROLE_CODES.READ_ONLY_VIEWER });
     authz.assignScope({ userId: 'scoped@example.invalid', roleCode: ROLE_CODES.READ_ONLY_VIEWER,
       scopeType: 'REGION', scopeValue: 'REGION_SOUTH' });
@@ -132,8 +133,8 @@ test('scope evaluation supports every base type, strict MCH2 IDs and versioned C
       scopeType: 'SUPPLIER', scopeValue: 'SUP-0007' });
     assert.equal(authz.isInScope('scoped@example.invalid', { regionId: 'REGION_SOUTH' }), true);
     assert.equal(authz.isInScope('scoped@example.invalid', { mch2Id: '203' }), true);
-    assert.equal(authz.isInScope('scoped@example.invalid', { assignedUserId: 'scoped@example.invalid' }), true);
-    assert.equal(authz.isInScope('scoped@example.invalid', { ownerId: 'scoped@example.invalid' }), true);
+    assert.equal(authz.isInScope('scoped@example.invalid', { assignedUserId: scopedUser.user_id }), true);
+    assert.equal(authz.isInScope('scoped@example.invalid', { ownerId: scopedUser.user_id }), true);
     assert.equal(authz.isInScope('scoped@example.invalid', { supplierId: 'SUP-0007' }), true);
     assert.throws(() => authz.assignScope({ userId: 'scoped@example.invalid', scopeType: 'MCH2', scopeValue: 'Miền Nam' }),
       (error) => error instanceof AuthorizationError && error.code === 'invalid_mch2_id');
@@ -155,17 +156,17 @@ test('scope evaluation supports every base type, strict MCH2 IDs and versioned C
 test('expired roles are ignored and authorization changes revoke existing sessions', () => {
   const { db, authz } = fixture();
   try {
-    addUser(db, 'expiry@example.invalid');
+    const expiryUser = addUser(db, 'expiry@example.invalid');
     authz.assignRole({ userId: 'expiry@example.invalid', roleCode: ROLE_CODES.AUDITOR,
       validFrom: '2025-01-01 00:00:00', validUntil: '2025-02-01 00:00:00' });
     assert.equal(authz.can('expiry@example.invalid', PERMISSIONS.AUDIT_READ), false);
 
     authz.syncLegacyUser('expiry@example.invalid');
     const session = authz.createSession('expiry@example.invalid', { ttlSeconds: 3600 });
-    assert.equal(authz.resolveSession(session.sessionId, 'expiry@example.invalid', session.authzVersion).email,
+    assert.equal(authz.resolveSession(session.sessionId, expiryUser.user_id, session.authzVersion).email,
       'expiry@example.invalid');
     authz.assignRole({ userId: 'expiry@example.invalid', roleCode: ROLE_CODES.DATA_UPLOADER });
-    assert.throws(() => authz.resolveSession(session.sessionId, 'expiry@example.invalid', session.authzVersion),
+    assert.throws(() => authz.resolveSession(session.sessionId, expiryUser.user_id, session.authzVersion),
       (error) => error instanceof AuthorizationError && error.code === 'invalid_session');
   } finally { close(db); }
 });
@@ -197,23 +198,23 @@ test('last active SYS_ADMIN is protected at the database boundary', () => {
 test('approval resolution and permission checks survive role display-label rename', () => {
   const { db, authz, approvals } = fixture();
   try {
-    addUser(db, 'lead-approver@example.invalid', ROLES.LEAD);
+    const lead = addUser(db, 'lead-approver@example.invalid', ROLES.LEAD);
     authz.syncLegacyUser('lead-approver@example.invalid');
     db.prepare(`UPDATE roles SET display_label = 'SYNTHETIC RENAMED LABEL'
       WHERE role_code = ?`).run(ROLE_CODES.REGIONAL_LEAD_APPROVER);
     assert.equal(authz.can('lead-approver@example.invalid', PERMISSIONS.EVALUATION_APPROVE_LEAD), true);
     const result = approvals.resolve('evaluation', 'lead', { regionId: 'ANY' });
     assert.equal(result.roleCode, ROLE_CODES.REGIONAL_LEAD_APPROVER);
-    assert.deepEqual(result.candidates, ['lead-approver@example.invalid']);
+    assert.deepEqual(result.candidates, [lead.user_id]);
 
     db.prepare(`INSERT INTO approval_stage_assignments
       (workflow_type, stage_code, role_id, scope_type, scope_value, priority)
       SELECT 'EVALUATION', 'LEAD_SCOPED', id, 'ASSIGNED', 'SELF', 1
       FROM roles WHERE role_code = ?`).run(ROLE_CODES.REGIONAL_LEAD_APPROVER);
     const scoped = approvals.resolve('EVALUATION', 'LEAD_SCOPED', {
-      assignedUserId: 'lead-approver@example.invalid',
+      assignedUserId: lead.user_id,
     });
-    assert.deepEqual(scoped.candidates, ['lead-approver@example.invalid']);
+    assert.deepEqual(scoped.candidates, [lead.user_id]);
     assert.throws(() => approvals.resolve('EVALUATION', 'LEAD_SCOPED', {
       assignedUserId: 'someone-else@example.invalid',
     }), (error) => error instanceof AuthorizationError && error.code === 'approval_assignment_not_found');
@@ -239,19 +240,23 @@ test('role-based approval assignments ignore inactive roles', () => {
 test('explicit approval assignees require an active matching data scope', () => {
   const { db, authz, approvals } = fixture();
   try {
+    const users = {};
     for (const email of ['expired-scope@example.invalid', 'missing-scope@example.invalid']) {
-      addUser(db, email, ROLES.TBP);
+      users[email] = addUser(db, email, ROLES.TBP);
       authz.syncLegacyUser(email);
     }
     db.prepare(`UPDATE user_scope_assignments
       SET valid_until = '2000-01-01 00:00:00'
-      WHERE user_id = 'expired-scope@example.invalid'`).run();
+      WHERE user_id = ?`).run(users['expired-scope@example.invalid'].user_id);
     db.prepare(`DELETE FROM user_scope_assignments
-      WHERE user_id = 'missing-scope@example.invalid'`).run();
+      WHERE user_id = ?`).run(users['missing-scope@example.invalid'].user_id);
     db.prepare(`INSERT INTO approval_stage_assignments
       (workflow_type, stage_code, assigned_user_id, scope_type, priority)
-      VALUES ('EVALUATION', 'EXPLICIT_EXPIRED', 'expired-scope@example.invalid', 'GLOBAL', 1),
-             ('EVALUATION', 'EXPLICIT_MISSING', 'missing-scope@example.invalid', 'GLOBAL', 1)`).run();
+      VALUES ('EVALUATION', 'EXPLICIT_EXPIRED', ?, 'GLOBAL', 1),
+             ('EVALUATION', 'EXPLICIT_MISSING', ?, 'GLOBAL', 1)`).run(
+      users['expired-scope@example.invalid'].user_id,
+      users['missing-scope@example.invalid'].user_id
+    );
 
     for (const stage of ['EXPLICIT_EXPIRED', 'EXPLICIT_MISSING']) {
       assert.throws(
@@ -274,14 +279,14 @@ test('shared policy keeps evaluation scope, allowed actions and approval errors 
     const tbp = authz.syncLegacyUser('tbp-policy@example.invalid');
 
     assert.equal(policy.decision(specialist, PERMISSIONS.EVALUATION_READ, {
-      context: { ownerId: specialist.email },
+      context: { ownerId: specialist.userId },
     }).allowed, true);
     assert.deepEqual(policy.decision(specialist, PERMISSIONS.EVALUATION_READ, {
-      context: { ownerId: 'specialist-b@example.invalid' },
+      context: { ownerId: authz.identityForUser('specialist-b@example.invalid').userId },
     }), { allowed: false, reason: 'forbidden_scope' });
 
     const draftEvaluationActions = policy.actionEnvelope('EVALUATION', {
-      current_status: 'Khởi tạo', created_by: specialist.email,
+      current_status: 'Khởi tạo', created_by: specialist.userId,
     }, specialist);
     assert.equal(draftEvaluationActions.allowed_actions.includes('view'), true);
     assert.equal(draftEvaluationActions.allowed_actions.includes('edit'), true);
@@ -290,7 +295,7 @@ test('shared policy keeps evaluation scope, allowed actions and approval errors 
 
     for (const currentStatus of ['Chờ khắc phục', 'Chờ duyệt (Lead)', 'Hoàn thành', 'Hủy']) {
       const stateActions = policy.actionEnvelope('EVALUATION', {
-        current_status: currentStatus, created_by: specialist.email,
+        current_status: currentStatus, created_by: specialist.userId,
       }, specialist);
       assert.equal(stateActions.allowed_actions.includes('score'), false, currentStatus);
       assert.equal(stateActions.allowed_actions.includes('edit'), false, currentStatus);

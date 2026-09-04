@@ -187,11 +187,15 @@ class AuthorizationAdminService {
   _userEmail(identifier) {
     const user = this._user(identifier);
     if (!user) throw new AuthorizationAdminError('user_not_found', 404);
-    return user.email;
+    return user.user_id;
   }
 
   _actorVersion(actor) {
     return this._user(actor)?.authz_version || 1;
+  }
+
+  _actorUserId(context = {}) {
+    return this._user(context.actorUserId || context.actor)?.user_id || null;
   }
 
   _targetVersion(target, actor) {
@@ -203,12 +207,9 @@ class AuthorizationAdminService {
     const actor = this._user(context.actorUserId || context.actor);
     const targetUser = target ? this._user(target) : null;
     this.db.prepare(`INSERT INTO authz_change_log
-      (actor_user_id, target_user_id, actor_principal_id, target_principal_id,
-       change_type, object_type, object_key,
+      (actor_user_id, target_user_id, change_type, object_type, object_key,
        before_json, after_json, request_id, correlation_id, reason, authz_version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      actor?.email || normalizeEmail(context.actor) || null,
-      targetUser?.email || (target ? normalizeEmail(target) : null),
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       actor?.user_id || null,
       targetUser?.user_id || null,
       changeType,
@@ -223,8 +224,8 @@ class AuthorizationAdminService {
     );
     this.auditEventService.record({
       eventName,
-      actorUserId: actor?.email || context.actor,
-      actorPrincipalId: actor?.user_id || context.actorUserId,
+      actorUserId: actor?.user_id || context.actorUserId,
+      actorEmailSnapshot: actor?.email || null,
       entityType: objectType,
       entityId: target || objectKey,
       action: changeType,
@@ -257,17 +258,17 @@ class AuthorizationAdminService {
     };
   }
 
-  _manualUserSnapshot(email) {
+  _manualUserSnapshot(userId) {
     return {
       role_codes: this.db.prepare(`SELECT r.role_code, ur.active, ur.valid_from, ur.valid_until
         FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-        WHERE ur.user_id = ? AND ur.source = 'MANUAL' ORDER BY r.role_code`).all(email),
+        WHERE ur.user_id = ? AND ur.source = 'MANUAL' ORDER BY r.role_code`).all(userId),
       scopes: this.db.prepare(`SELECT r.role_code, usa.scope_type, usa.scope_value, usa.effect,
           usa.active, usa.valid_from, usa.valid_until, usa.custom_schema_code, usa.custom_schema_version
         FROM user_scope_assignments usa LEFT JOIN roles r ON r.id = usa.role_id
         WHERE usa.user_id = ? AND usa.source = 'MANUAL'
-        ORDER BY usa.scope_type, usa.scope_value, usa.effect`).all(email),
-      authz_version: this._targetVersion(email),
+        ORDER BY usa.scope_type, usa.scope_value, usa.effect`).all(userId),
+      authz_version: this._targetVersion(userId),
     };
   }
 
@@ -350,13 +351,13 @@ class AuthorizationAdminService {
         const role = this._role(roleCode);
         const insert = this.db.prepare(`INSERT INTO role_permissions
           (role_id, permission_code, effect, created_by) VALUES (?, ?, ?, ?)`);
-        configuredPermissions.forEach((item) => insert.run(role.id, item.permissionCode, item.effect, context.actor || null));
+        configuredPermissions.forEach((item) => insert.run(role.id, item.permissionCode, item.effect, this._actorUserId(context)));
       } else if (clone) {
         this.db.prepare(`INSERT INTO role_permissions (role_id, permission_code, effect, created_by)
           SELECT target.id, rp.permission_code, rp.effect, ?
           FROM roles target CROSS JOIN roles source
           JOIN role_permissions rp ON rp.role_id = source.id
-          WHERE target.role_code = ? AND source.role_code = ?`).run(context.actor || null, roleCode, clone.role_code);
+          WHERE target.role_code = ? AND source.role_code = ?`).run(this._actorUserId(context), roleCode, clone.role_code);
       }
       const after = this._roleSnapshot(roleCode);
       const version = this._actorVersion(context.actor);
@@ -383,7 +384,7 @@ class AuthorizationAdminService {
         WHERE role_code = ?`).run(displayLabel, active ? 1 : 0, roleCode);
       const after = this._roleSnapshot(roleCode);
       const version = this.db.prepare(`SELECT COALESCE(MAX(u.authz_version), ?) AS version
-        FROM users u JOIN user_roles ur ON ur.user_id = u.email
+        FROM users u JOIN user_roles ur ON ur.user_id = u.user_id
         JOIN roles r ON r.id = ur.role_id WHERE r.role_code = ?`).get(this._actorVersion(context.actor), roleCode).version;
       this._record({ context, changeType: 'ROLE_UPDATED', objectType: 'ROLE', objectKey: roleCode,
         before, after, reason, authzVersion: version, eventName: 'role.catalog.changed',
@@ -446,21 +447,22 @@ class AuthorizationAdminService {
       .some((code) => ['high', 'critical'].includes(permissionRisk(code)));
     if (touchesSensitive) requireExactConfirmation(input.confirmation, 'PUBLISH_ROLE', roleCode);
     const actorBefore = this.authorizationService.effectivePermissions(context.actor).permissions;
+    const actorUserId = this._actorUserId(context);
     const actorUsesRole = Boolean(this.db.prepare(`SELECT 1 FROM user_roles
-      WHERE user_id = ? AND role_id = ? AND active = 1`).get(normalizeEmail(context.actor), role.id));
+      WHERE user_id = ? AND role_id = ? AND active = 1`).get(actorUserId, role.id));
     const publish = this.db.transaction(() => {
       this.db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(role.id);
       const insert = this.db.prepare(`INSERT INTO role_permissions
         (role_id, permission_code, effect, created_by) VALUES (?, ?, ?, ?)`);
-      permissions.forEach((item) => insert.run(role.id, item.permissionCode, item.effect, context.actor || null));
-      this.authorizationService.cache.delete(normalizeEmail(context.actor));
+      permissions.forEach((item) => insert.run(role.id, item.permissionCode, item.effect, this._actorUserId(context)));
+      this.authorizationService.cache.delete(actorUserId);
       const actorAfter = this.authorizationService.effectivePermissions(context.actor).permissions;
       if (actorUsesRole && actorAfter.some((code) => !actorBefore.includes(code))) {
         throw new AuthorizationAdminError('cannot_self_escalate', 409);
       }
       const after = this._roleSnapshot(roleCode);
       const version = this.db.prepare(`SELECT COALESCE(MAX(u.authz_version), ?) AS version
-        FROM users u JOIN user_roles ur ON ur.user_id = u.email WHERE ur.role_id = ?`).get(
+        FROM users u JOIN user_roles ur ON ur.user_id = u.user_id WHERE ur.role_id = ?`).get(
         this._actorVersion(context.actor), role.id
       ).version;
       this._record({ context, changeType: 'ROLE_PERMISSIONS_PUBLISHED', objectType: 'ROLE_PERMISSION', objectKey: roleCode,
@@ -469,7 +471,7 @@ class AuthorizationAdminService {
         eventName: 'role.permissions.changed', metadata: { role_code: roleCode, change_type: 'PUBLISHED' } });
       return this.roleDetail(roleCode);
     });
-    try { return publish(); } finally { this.authorizationService.cache.delete(normalizeEmail(context.actor)); }
+    try { return publish(); } finally { this.authorizationService.cache.delete(actorUserId); }
   }
 
   saveRoleConfiguration(roleCodeInput, input, context) {
@@ -494,13 +496,12 @@ class AuthorizationAdminService {
   userDetail(userId) {
     const user = this._user(userId);
     if (!user) throw new AuthorizationAdminError('user_not_found', 404);
-    const email = user.email;
     const now = this.authorizationService._now();
     const roles = this.db.prepare(`SELECT r.role_code, r.display_label, r.active AS role_active,
         ur.active, ur.valid_from, ur.valid_until, ur.source
       FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-      WHERE (ur.principal_id = ? OR (ur.principal_id IS NULL AND ur.user_id = ?))
-      ORDER BY r.role_code`).all(user.user_id, email).map((row) => ({
+      WHERE ur.user_id = ?
+      ORDER BY r.role_code`).all(user.user_id).map((row) => ({
       roleCode: row.role_code,
       displayLabel: row.display_label,
       roleActive: Boolean(row.role_active),
@@ -513,8 +514,8 @@ class AuthorizationAdminService {
     const scopes = this.db.prepare(`SELECT usa.id, r.role_code, usa.scope_type, usa.scope_value, usa.effect,
         usa.active, usa.valid_from, usa.valid_until, usa.source
       FROM user_scope_assignments usa LEFT JOIN roles r ON r.id = usa.role_id
-      WHERE (usa.principal_id = ? OR (usa.principal_id IS NULL AND usa.user_id = ?))
-      ORDER BY usa.scope_type, usa.scope_value, usa.effect`).all(user.user_id, email).map((row) => ({
+      WHERE usa.user_id = ?
+      ORDER BY usa.scope_type, usa.scope_value, usa.effect`).all(user.user_id).map((row) => ({
       id: row.id,
       roleCode: row.role_code,
       scopeType: row.scope_type,
@@ -533,10 +534,10 @@ class AuthorizationAdminService {
       FROM user_roles ur JOIN roles r ON r.id = ur.role_id AND r.active = 1
       JOIN role_permissions rp ON rp.role_id = r.id
       JOIN permissions p ON p.permission_code = rp.permission_code AND p.active = 1
-      WHERE (ur.principal_id = ? OR (ur.principal_id IS NULL AND ur.user_id = ?)) AND ur.active = 1
+      WHERE ur.user_id = ? AND ur.active = 1
         AND (ur.valid_from IS NULL OR ur.valid_from <= ?)
         AND (ur.valid_until IS NULL OR ur.valid_until > ?)
-      ORDER BY p.permission_code, rp.effect, r.role_code`).all(user.user_id, email, now, now)
+      ORDER BY p.permission_code, rp.effect, r.role_code`).all(user.user_id, now, now)
       .filter((row) => isActivePermission(row.permission_code));
     // Admins must still be able to inspect the preserved RBAC snapshot after an
     // account is deactivated. Do not use this snapshot for authorization:
@@ -620,6 +621,7 @@ class AuthorizationAdminService {
 
   _replaceUserRoles(userId, input, context, replaceSources) {
     const email = this._userEmail(userId);
+    const confirmationIdentity = this._user(userId)?.email || userId;
     const reason = normalizeReason(input.reason);
     const roles = this._normalizeUserRoles(email, input);
     const beforeRoles = this._roleAssignmentsBySource(email, replaceSources);
@@ -628,7 +630,7 @@ class AuthorizationAdminService {
       WHERE role_id = ?`).all(item.role.id).some((row) => ['high', 'critical'].includes(permissionRisk(row.permission_code))))
       || beforeRoles.some((item) => item.active && item.role_code === ROLE_CODES.SYS_ADMIN);
     if (touchesSensitiveRole) {
-      requireExactConfirmation(input.confirmation, 'ASSIGN_ROLES', email);
+      requireExactConfirmation(input.confirmation, 'ASSIGN_ROLES', confirmationIdentity);
     }
     const beforeEffective = this.authorizationService.effectivePermissions(email);
     const replace = this.db.transaction(() => {
@@ -650,12 +652,12 @@ class AuthorizationAdminService {
           throw new AuthorizationAdminError('role_source_conflict', 409, { roleCode: item.roleCode, source: row.source });
         }
         if (row) update.run(item.validFrom, item.validUntil, row.id);
-        else insert.run(email, item.role.id, item.validFrom, item.validUntil, context.actor || null);
+        else insert.run(email, item.role.id, item.validFrom, item.validUntil, this._actorUserId(context));
       });
       this.authorizationService.cache.delete(email);
       const afterEffective = this.authorizationService.effectivePermissions(email);
       if (!afterEffective.roleCodes.length) throw new AuthorizationAdminError('canonical_role_assignment_required', 409);
-      if (email === normalizeEmail(context.actor)
+      if (email === this._actorUserId(context)
           && (afterEffective.permissions.some((code) => !beforeEffective.permissions.includes(code))
             || (!beforeEffective.roleCodes.includes(ROLE_CODES.SYS_ADMIN) && afterEffective.roleCodes.includes(ROLE_CODES.SYS_ADMIN)))) {
         throw new AuthorizationAdminError('cannot_self_escalate', 409);
@@ -719,6 +721,7 @@ class AuthorizationAdminService {
 
   setUserScopes(userId, input, context) {
     const email = this._userEmail(userId);
+    const confirmationIdentity = this._user(userId)?.email || userId;
     if (!Array.isArray(input.scopes)) throw new AuthorizationAdminError('scopes_required', 400);
     const reason = normalizeReason(input.reason);
     const scopes = input.scopes.map((item) => this._normalizeScope(item, email));
@@ -727,7 +730,7 @@ class AuthorizationAdminService {
     const before = this._manualUserSnapshot(email);
     if (scopes.some((scope) => scope.scopeType === 'GLOBAL' && scope.effect === 'ALLOW')
         || before.scopes.some((scope) => scope.active && scope.scope_type === 'GLOBAL' && scope.effect === 'ALLOW')) {
-      requireExactConfirmation(input.confirmation, 'ASSIGN_SCOPE', email);
+      requireExactConfirmation(input.confirmation, 'ASSIGN_SCOPE', confirmationIdentity);
     }
     const beforeAllows = new Set(before.scopes.filter((scope) => scope.active && scope.effect === 'ALLOW')
       .map((scope) => `${scope.role_code || ''}:${scope.scope_type}:${scope.scope_value || ''}`));
@@ -739,12 +742,12 @@ class AuthorizationAdminService {
          custom_schema_code, custom_schema_version, source, created_by)
         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'MANUAL', ?)`);
       scopes.forEach((scope) => insert.run(email, scope.role?.id || null, scope.scopeType, scope.scopeValue,
-        scope.effect, scope.validFrom, scope.validUntil, scope.customSchemaCode, scope.customSchemaVersion, context.actor || null));
+        scope.effect, scope.validFrom, scope.validUntil, scope.customSchemaCode, scope.customSchemaVersion, this._actorUserId(context)));
       const after = this._manualUserSnapshot(email);
       const newAllows = after.scopes.filter((scope) => scope.active && scope.effect === 'ALLOW')
         .map((scope) => `${scope.role_code || ''}:${scope.scope_type}:${scope.scope_value || ''}`)
         .filter((key) => !beforeAllows.has(key));
-      if (email === normalizeEmail(context.actor) && newAllows.length) throw new AuthorizationAdminError('cannot_self_escalate', 409);
+      if (email === this._actorUserId(context) && newAllows.length) throw new AuthorizationAdminError('cannot_self_escalate', 409);
       const version = this._targetVersion(email, context.actor);
       this._record({ context, target: email, changeType: 'USER_SCOPES_REPLACED', objectType: 'USER_AUTHORIZATION', objectKey: email,
         before: { scopes: before.scopes, authz_version: before.authz_version },
@@ -818,10 +821,11 @@ class AuthorizationAdminService {
 
   upsertUserScope(userId, input, context) {
     const email = this._userEmail(userId);
+    const confirmationIdentity = this._user(userId)?.email || userId;
     const reason = normalizeReason(input.reason);
     const scope = this._normalizeScope(input.scope || {}, email);
     if (scope.scopeType === 'GLOBAL' && scope.effect === 'ALLOW') {
-      requireExactConfirmation(input.confirmation, 'ASSIGN_SCOPE', email);
+      requireExactConfirmation(input.confirmation, 'ASSIGN_SCOPE', confirmationIdentity);
     }
     const before = this._manualUserSnapshot(email);
     const beforeAllows = new Set(before.scopes.filter((item) => item.active && item.effect === 'ALLOW')
@@ -854,14 +858,14 @@ class AuthorizationAdminService {
            custom_schema_code, custom_schema_version, source, created_by)
           VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'MANUAL', ?)`).run(
           email, scope.role?.id || null, scope.scopeType, scope.scopeValue, scope.effect,
-          scope.validFrom, scope.validUntil, scope.customSchemaCode, scope.customSchemaVersion, context.actor || null
+          scope.validFrom, scope.validUntil, scope.customSchemaCode, scope.customSchemaVersion, this._actorUserId(context)
         );
       }
       const after = this._manualUserSnapshot(email);
       const newAllows = after.scopes.filter((item) => item.active && item.effect === 'ALLOW')
         .map((item) => `${item.role_code || ''}:${item.scope_type}:${item.scope_value || ''}`)
         .filter((key) => !beforeAllows.has(key));
-      if (email === normalizeEmail(context.actor) && newAllows.length) {
+      if (email === this._actorUserId(context) && newAllows.length) {
         throw new AuthorizationAdminError('cannot_self_escalate', 409);
       }
       const version = this._targetVersion(email, context.actor);
@@ -876,7 +880,7 @@ class AuthorizationAdminService {
 
   listApprovalAssignments() {
     return this.db.prepare(`SELECT asa.id, asa.workflow_type, asa.stage_code, r.role_code,
-        asa.assigned_user_id, asa.assigned_principal_id, asa.scope_type, asa.scope_value, asa.custom_schema_code,
+        asa.assigned_user_id, asa.scope_type, asa.scope_value, asa.custom_schema_code,
         asa.custom_schema_version, asa.priority, asa.active,
         asa.valid_from, asa.valid_until, asa.created_at
       FROM approval_stage_assignments asa LEFT JOIN roles r ON r.id = asa.role_id
@@ -887,7 +891,6 @@ class AuthorizationAdminService {
       stageCode: row.stage_code,
       roleCode: row.role_code,
       assignedUserId: row.assigned_user_id,
-      assignedPrincipalId: row.assigned_principal_id,
       scopeType: row.scope_type,
       scopeValue: row.scope_value,
       customSchemaCode: row.custom_schema_code,
@@ -909,11 +912,10 @@ class AuthorizationAdminService {
     if (workflowType !== 'EVALUATION') throw new AuthorizationAdminError('invalid_approval_workflow', 400);
     if (!APPROVAL_PERMISSION_BY_LEVEL[stageCode]) throw new AuthorizationAdminError('invalid_approval_stage', 400);
     const roleCode = input.roleCode ? normalizeCode(input.roleCode, 'role_code') : null;
-    const assignedUser = input.assignedPrincipalId || input.assignedUserId
-      ? this._user(input.assignedPrincipalId || input.assignedUserId) : null;
-    const assignedUserId = assignedUser?.email || null;
-    const assignedPrincipalId = assignedUser?.user_id || null;
-    if ((input.assignedPrincipalId || input.assignedUserId) && !assignedUser) {
+    const assignedIdentifier = input.assignedUserId;
+    const assignedUser = assignedIdentifier ? this._user(assignedIdentifier) : null;
+    const assignedUserId = assignedUser?.user_id || null;
+    if (input.assignedUserId && !assignedUser) {
       throw new AuthorizationAdminError('user_not_found', 404);
     }
     if (Boolean(roleCode) === Boolean(assignedUserId)) throw new AuthorizationAdminError('approval_subject_required', 400);
@@ -941,7 +943,7 @@ class AuthorizationAdminService {
     if (!Number.isSafeInteger(priority) || priority < 1 || priority > 10000) throw new AuthorizationAdminError('invalid_priority', 400);
     const window = validityWindow(input.validFrom, input.validUntil);
     return { id: input.id == null ? null : Number(input.id), workflowType, stageCode, roleCode, role,
-      assignedUserId, assignedPrincipalId, scopeType, scopeValue, customSchemaCode, customSchemaVersion,
+      assignedUserId, scopeType, scopeValue, customSchemaCode, customSchemaVersion,
       priority, active: input.active !== false, ...window };
   }
 
@@ -960,19 +962,18 @@ class AuthorizationAdminService {
     if (assignment.assignedUserId) {
       if (this.authorizationService._scopeMatches(probe, fixture, assignment.assignedUserId)
           && this.authorizationService.isInScope(assignment.assignedUserId, fixture)
-          && this.authorizationService.can(assignment.assignedPrincipalId, requiredPermission)) candidates = [assignment.assignedUserId];
+          && this.authorizationService.can(assignment.assignedUserId, requiredPermission)) candidates = [assignment.assignedUserId];
     } else {
       const now = this.authorizationService._now();
-      candidates = this.db.prepare(`SELECT DISTINCT u.email FROM user_roles ur
-        JOIN users u ON u.user_id = ur.principal_id
-          OR (ur.principal_id IS NULL AND lower(u.email) = lower(ur.user_id))
+      candidates = this.db.prepare(`SELECT DISTINCT u.user_id FROM user_roles ur
+        JOIN users u ON u.user_id = ur.user_id
         WHERE ur.role_id = ? AND ur.active = 1 AND u.is_active = 1
           AND (ur.valid_from IS NULL OR ur.valid_from <= ?)
           AND (ur.valid_until IS NULL OR ur.valid_until > ?)
-        ORDER BY u.email`).all(assignment.role.id, now, now).map((row) => row.email)
-        .filter((email) => this.authorizationService._scopeMatches(probe, fixture, email))
-        .filter((email) => this.authorizationService.isInScope(email, fixture))
-        .filter((email) => this.authorizationService.can(email, requiredPermission));
+        ORDER BY u.email`).all(assignment.role.id, now, now).map((row) => row.user_id)
+        .filter((userId) => this.authorizationService._scopeMatches(probe, fixture, userId))
+        .filter((userId) => this.authorizationService.isInScope(userId, fixture))
+        .filter((userId) => this.authorizationService.can(userId, requiredPermission));
     }
     const conflicts = this.db.prepare(`SELECT id FROM approval_stage_assignments
       WHERE workflow_type = ? AND stage_code = ? AND priority = ? AND active = 1
@@ -1004,20 +1005,20 @@ class AuthorizationAdminService {
         before = this.listApprovalAssignments().find((item) => item.id === assignmentId);
         if (!before) throw new AuthorizationAdminError('approval_assignment_not_found', 404);
         this.db.prepare(`UPDATE approval_stage_assignments SET workflow_type = ?, stage_code = ?, role_id = ?,
-          assigned_user_id = ?, assigned_principal_id = ?, scope_type = ?, scope_value = ?, custom_schema_code = ?,
+          assigned_user_id = ?, scope_type = ?, scope_value = ?, custom_schema_code = ?,
           custom_schema_version = ?, priority = ?, active = ?, valid_from = ?, valid_until = ? WHERE id = ?`).run(normalized.workflowType, normalized.stageCode,
-          normalized.role?.id || null, normalized.assignedUserId, normalized.assignedPrincipalId, normalized.scopeType, normalized.scopeValue,
+          normalized.role?.id || null, normalized.assignedUserId, normalized.scopeType, normalized.scopeValue,
           normalized.customSchemaCode, normalized.customSchemaVersion, normalized.priority,
           normalized.active ? 1 : 0, normalized.validFrom, normalized.validUntil, assignmentId);
       } else {
         assignmentId = Number(this.db.prepare(`INSERT INTO approval_stage_assignments
-          (workflow_type, stage_code, role_id, assigned_user_id, assigned_principal_id, scope_type, scope_value,
+          (workflow_type, stage_code, role_id, assigned_user_id, scope_type, scope_value,
            custom_schema_code, custom_schema_version, priority, active, valid_from, valid_until, created_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(normalized.workflowType, normalized.stageCode,
-          normalized.role?.id || null, normalized.assignedUserId, normalized.assignedPrincipalId, normalized.scopeType, normalized.scopeValue,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(normalized.workflowType, normalized.stageCode,
+          normalized.role?.id || null, normalized.assignedUserId, normalized.scopeType, normalized.scopeValue,
           normalized.customSchemaCode, normalized.customSchemaVersion, normalized.priority,
           normalized.active ? 1 : 0, normalized.validFrom, normalized.validUntil,
-          context.actor || null).lastInsertRowid);
+          this._actorUserId(context)).lastInsertRowid);
       }
       const missing = this._missingRequiredStages();
       if (missing.length) throw new AuthorizationAdminError('approval_stage_missing', 409, { missing });
@@ -1033,14 +1034,12 @@ class AuthorizationAdminService {
 
   history(limit = 100) {
     const bounded = Math.max(1, Math.min(250, Number(limit) || 100));
-    return this.db.prepare(`SELECT id, actor_user_id, target_user_id, actor_principal_id, target_principal_id, change_type, object_type,
+    return this.db.prepare(`SELECT id, actor_user_id, target_user_id, change_type, object_type,
         object_key, before_json, after_json, request_id, correlation_id, reason, authz_version, created_at
       FROM authz_change_log ORDER BY id DESC LIMIT ?`).all(bounded).map((row) => ({
       id: row.id,
       actorUserId: row.actor_user_id,
       targetUserId: row.target_user_id,
-      actorPrincipalId: row.actor_principal_id,
-      targetPrincipalId: row.target_principal_id,
       changeType: row.change_type,
       objectType: row.object_type,
       objectKey: row.object_key,
@@ -1070,8 +1069,8 @@ class AuthorizationAdminService {
       const pattern = `%${search.toLowerCase()}%`;
       clauses.push(`(LOWER(COALESCE(actor_user_id, 'system')) LIKE ?
         OR LOWER(COALESCE(target_user_id, '')) LIKE ?
-        OR LOWER(COALESCE(actor_principal_id, '')) LIKE ?
-        OR LOWER(COALESCE(target_principal_id, '')) LIKE ?
+        OR LOWER(COALESCE((SELECT email FROM users WHERE user_id = actor_user_id), '')) LIKE ?
+        OR LOWER(COALESCE((SELECT email FROM users WHERE user_id = target_user_id), '')) LIKE ?
         OR LOWER(change_type) LIKE ? OR LOWER(object_type) LIKE ?
         OR LOWER(COALESCE(object_key, '')) LIKE ? OR LOWER(COALESCE(reason, '')) LIKE ?
         OR LOWER(COALESCE(request_id, '')) LIKE ? OR LOWER(COALESCE(correlation_id, '')) LIKE ?)`);
@@ -1082,7 +1081,7 @@ class AuthorizationAdminService {
       else if (actor === 'manual') clauses.push("(actor_user_id IS NOT NULL AND TRIM(actor_user_id) <> '')");
       else {
         clauses.push(`(LOWER(actor_user_id) LIKE ?
-          OR LOWER(COALESCE(actor_principal_id, '')) LIKE ?)`);
+          OR LOWER(COALESCE((SELECT email FROM users WHERE user_id = actor_user_id), '')) LIKE ?)`);
         params.push(`%${actor}%`, `%${actor}%`);
       }
     }
@@ -1098,7 +1097,7 @@ class AuthorizationAdminService {
 
   _historyRows(input = {}, limit = 250, offset = 0) {
     const filter = this._historyFilter(input);
-    return this.db.prepare(`SELECT id, actor_user_id, target_user_id, actor_principal_id, target_principal_id, change_type, object_type,
+    return this.db.prepare(`SELECT id, actor_user_id, target_user_id, change_type, object_type,
         object_key, before_json, after_json, request_id, correlation_id, reason, authz_version, created_at
       FROM authz_change_log ${filter.where} ORDER BY id DESC LIMIT ? OFFSET ?`).all(
       ...filter.params, limit, offset
@@ -1106,8 +1105,6 @@ class AuthorizationAdminService {
       id: row.id,
       actorUserId: row.actor_user_id,
       targetUserId: row.target_user_id,
-      actorPrincipalId: row.actor_principal_id,
-      targetPrincipalId: row.target_principal_id,
       changeType: row.change_type,
       objectType: row.object_type,
       objectKey: row.object_key,

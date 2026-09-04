@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { resolveUserId } = require('../domain/userIdentity');
 
 const VERSION_STATUSES = Object.freeze({
   DRAFT: 'DRAFT',
@@ -249,6 +250,7 @@ class QuestionVersionService {
   }
 
   createTemplateWithDraft({ templateCode, templateName, description = null, active = true, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const code = clean(templateCode).toUpperCase();
     const name = clean(templateName);
     if (!code || !name) throw serviceError('template_code_and_name_required');
@@ -363,6 +365,7 @@ class QuestionVersionService {
   }
 
   createDraft({ templateId, cloneFromVersionId = null, note = null, effectiveFrom = null, effectiveTo = null, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const template = this.db.prepare('SELECT * FROM question_templates WHERE id = ?').get(Number(templateId));
     if (!template) throw serviceError('template_not_found', 404);
     return this.db.transaction(() => {
@@ -445,6 +448,7 @@ class QuestionVersionService {
   }
 
   updateDraft({ versionId, expectedLockVersion, note, effectiveFrom, effectiveTo, items, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.getRow(versionId);
     if (!row) throw serviceError('question_version_not_found', 404);
     if (row.status !== VERSION_STATUSES.DRAFT) {
@@ -472,6 +476,7 @@ class QuestionVersionService {
   }
 
   patchDraftItems({ versionId, expectedLockVersion, updates = [], additions = [], actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.getRow(versionId);
     if (!row) throw serviceError('question_version_not_found', 404);
     if (row.status !== VERSION_STATUSES.DRAFT) {
@@ -576,6 +581,7 @@ class QuestionVersionService {
   }
 
   submit({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.getRow(versionId);
     if (!row) throw serviceError('question_version_not_found', 404);
     if (row.status !== VERSION_STATUSES.DRAFT) throw serviceError('question_version_not_draft', 409);
@@ -629,6 +635,7 @@ class QuestionVersionService {
   }
 
   publish({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     this.assertPublishingEnabled();
     const row = this.getRow(versionId);
     if (!row) throw serviceError('question_version_not_found', 404);
@@ -653,6 +660,7 @@ class QuestionVersionService {
   }
 
   retire({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     this.assertPublishingEnabled();
     const row = this.getRow(versionId);
     if (!row) throw serviceError('question_version_not_found', 404);
@@ -682,6 +690,7 @@ class QuestionVersionService {
   }
 
   rollback({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     this.assertPublishingEnabled();
     const row = this.getRow(versionId);
     if (!row) throw serviceError('question_version_not_found', 404);

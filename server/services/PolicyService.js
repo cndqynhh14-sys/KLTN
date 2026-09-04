@@ -27,9 +27,8 @@ class PolicyError extends Error {
 
 function resourceContext(row = {}) {
   return {
-    ownerUserId: row.created_by_user_id || row.owner_user_id || null,
+    ownerUserId: row.created_by || row.owner_user_id || null,
     ownerId: row.created_by || row.owner_id || row.ownerId || null,
-    assignedPrincipalId: row.assigned_specialist_user_id || row.assigned_principal_id || null,
     assignedUserId: row.assigned_specialist_id || row.qa_owner || row.assigned_user_id || null,
     regionId: row.region_id || row.regionId || row.region || null,
     mch2Id: row.mch2_id || row.mch2Id || stableMch2Id(row.mch2) || null,
@@ -126,7 +125,7 @@ class PolicyService {
       if (error.code === 'assignment_expired') throw new PolicyError('assignment_expired');
       throw new PolicyError('approval_assignment_missing');
     }
-    if (!this.has(user, PERMISSIONS.SYSTEM_ADMIN) && !assignment.candidates.includes(user.email)) {
+    if (!this.has(user, PERMISSIONS.SYSTEM_ADMIN) && !assignment.candidates.includes(user.userId)) {
       throw new PolicyError('forbidden_scope');
     }
     return assignment;

@@ -25,14 +25,14 @@ const root = path.resolve(__dirname, '..');
 const migrationsDir = path.join(root, 'migrations');
 
 function addUser(db, email, roleCode, scopeType = 'GLOBAL') {
-  upsertCanonicalUser(db, {
+  const user = upsertCanonicalUser(db, {
     email, roleCode, displayName: 'SYNTHETIC RUN-08 USER', createdBy: 'fixture',
   });
   const role = db.prepare('SELECT id FROM roles WHERE role_code = ?').get(roleCode);
   db.prepare(`INSERT INTO user_scope_assignments
     (user_id, role_id, scope_type, scope_value, effect, source)
     VALUES (?, ?, ?, ?, 'ALLOW', 'MANUAL')`
-  ).run(email, role.id, scopeType, scopeType === 'GLOBAL' ? null : 'SELF');
+  ).run(user.user_id, role.id, scopeType, scopeType === 'GLOBAL' ? null : 'SELF');
 }
 
 function fixture(options = {}) {

@@ -32,7 +32,7 @@ class NotificationRepository {
         WHERE id = ? AND receiver_user_id = ?
       `),
       evaluationById: db.prepare(`SELECT * FROM evaluation_tickets WHERE id = ? AND COALESCE(is_deleted, 0) = 0`),
-      activeUser: db.prepare(`SELECT * FROM users WHERE lower(email) = lower(?) AND is_active = 1`),
+      activeUser: db.prepare(`SELECT * FROM users WHERE (user_id = ? OR lower(email) = lower(?)) AND is_active = 1`),
       deadlineCandidates: db.prepare(`
         WITH round_2_due AS (
           SELECT t.id AS ticket_id, MAX(date(nc.due_date)) AS due_date
@@ -68,7 +68,7 @@ class NotificationRepository {
   getForReceiver(id, receiverUserId) { return this.statements.getForReceiver.get(id, receiverUserId); }
   markRead(id, receiverUserId) { return this.statements.markRead.run(id, receiverUserId); }
   evaluationById(id) { return this.statements.evaluationById.get(id); }
-  activeUser(email) { return this.statements.activeUser.get(email); }
+  activeUser(identifier) { return this.statements.activeUser.get(identifier, identifier); }
   deadlineCandidates(statuses) { return this.statements.deadlineCandidates.all(statuses); }
 }
 

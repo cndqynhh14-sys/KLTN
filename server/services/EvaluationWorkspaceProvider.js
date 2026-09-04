@@ -25,7 +25,7 @@ const APPROVAL_LABEL = Object.freeze({
 });
 
 function safeApproval(policyService, user, level, row, task) {
-  if (task.assigned_user_id && task.assigned_user_id !== user.email && !policyService.has(user, PERMISSIONS.SYSTEM_ADMIN)) {
+  if (task.assigned_user_id && task.assigned_user_id !== user.userId && !policyService.has(user, PERMISSIONS.SYSTEM_ADMIN)) {
     return false;
   }
   try {
@@ -222,7 +222,7 @@ class EvaluationWorkspaceProvider {
       ) activity ON activity.ticket_id=t.id
       WHERE t.is_deleted=0
       ORDER BY activity.acted_at DESC
-    `).all(user.email, user.email);
+    `).all(user.userId, user.userId);
     return rows.filter((row) => this.policyService.decision(user, PERMISSIONS.EVALUATION_READ, {
       context: resourceContext(row),
     }).allowed).map((row) => ({

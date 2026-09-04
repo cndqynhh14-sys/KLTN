@@ -145,7 +145,7 @@ router.post('/', requirePermission(PERMISSIONS.SUPPLIER_WRITE), (req, res) => {
     if (supplierRepository.getByCode(supplier.supplier_code)) {
       return res.status(409).json({ error: 'supplier_code_exists' });
     }
-    upsertSupplier(db, supplier, req.user.email, 'MANUAL', null);
+    upsertSupplier(db, supplier, req.user.userId, 'MANUAL', null);
     const item = supplierRepository.getByCode(supplier.supplier_code);
     logAccess({ email: req.user.email, action: 'SUPPLIER_UPSERT', details: { supplier_code: supplier.supplier_code, source_type: 'MANUAL' }, ip: req.ip, ua: req.get('user-agent') });
     res.status(201).json({ item: withActions(item, req.user) });
@@ -165,13 +165,13 @@ router.put('/:id', requirePermission(PERMISSIONS.SUPPLIER_WRITE), (req, res) => 
   if (Object.keys(errors).length) return res.status(400).json({ error: 'validation_failed', errors });
 
   try {
-    const info = supplierRepository.update({ ...supplier, updated_by: req.user.email, id: existing.id });
+    const info = supplierRepository.update({ ...supplier, updated_by: req.user.userId, id: existing.id });
     if (info.changes === 0) return res.status(404).json({ error: 'not_found' });
     const item = supplierRepository.getById(existing.id);
     recordSupplierHistory(db, {
       before: existing,
       after: item,
-      actorUserId: req.user.email,
+      actorUserId: req.user.userId,
       action: 'Cập nhật NCC',
       comment: 'Lưu thủ công',
     });
@@ -196,7 +196,7 @@ router.post('/import-excel', requirePermission(PERMISSIONS.SUPPLIER_WRITE), uplo
 
   const batchId = supplierRepository.importExcel({
     fileName: req.file.originalname,
-    userEmail: req.user.email,
+    userEmail: req.user.userId,
     totalRows,
     successRows,
     failedRows,

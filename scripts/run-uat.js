@@ -13,6 +13,7 @@ const scenarioIndex = process.argv.indexOf('--scenario');
 const scenario = scenarioIndex >= 0 ? process.argv[scenarioIndex + 1] : 'smoke';
 const grepByScenario = {
   smoke: '@smoke',
+  run05: '@smoke RUN-05',
   full: '@full',
   prompt124: '@prompt124',
   phase4: '@phase4',

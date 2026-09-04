@@ -94,6 +94,7 @@ test('RUN-06 returns deterministic, scoped and partial defaults from prior valid
       supplier_scale: 'LARGE',
       ...values,
       template_id: templateIds[values.template_code],
+      created_by: db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(values.created_by),
     }).lastInsertRowid;
 
     addTicket({

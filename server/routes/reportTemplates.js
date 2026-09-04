@@ -301,7 +301,7 @@ router.get('/legacy-migration', (req, res) => {
 router.post('/legacy-migration/apply', requirePermission(PERMISSIONS.REPORT_TEMPLATE_PUBLISH), (req, res) => {
   try {
     const migration = new LegacyReportTemplateMigration({ db });
-    return res.json({ report: migration.applyApproved({ actor: req.user.email }) });
+    return res.json({ report: migration.applyApproved({ actor: req.user.userId }) });
   } catch (error) { return sendVersionError(res, error); }
 });
 
@@ -330,7 +330,7 @@ router.post('/definitions/:definitionCode/versions', requirePermission(PERMISSIO
       note: req.body?.version_note,
       effectiveFrom: req.body?.effective_from,
       effectiveTo: req.body?.effective_to,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(),
     });
     return res.status(201).json({ item: mapVersion(item, { includeDefinition: true, user: req.user }) });
@@ -347,14 +347,14 @@ router.post('/definitions/:definitionCode/import-package', requirePermission(PER
       definitionCode: imported.targetCode,
       name: req.body?.version_name || `Imported ${imported.targetCode}`,
       note: `Imported definition package ${imported.checksum}`,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(),
     });
     const updated = reportVersionRepository.updateDraft({
       versionId: created.id,
       expectedLockVersion: created.lock_version,
       definition: imported.definition,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(),
     });
     return res.status(201).json({ item: mapVersion(updated, { includeDefinition: true, user: req.user }) });
@@ -390,7 +390,7 @@ router.put('/versions/:versionId', requirePermission(PERMISSIONS.REPORT_TEMPLATE
       note: req.body?.version_note,
       effectiveFrom: req.body?.effective_from,
       effectiveTo: req.body?.effective_to,
-      actor: req.user.email,
+      actor: req.user.userId,
       context: versionContext(),
     });
     return res.json({ item: mapVersion(item, { includeDefinition: true, user: req.user }) });
@@ -423,7 +423,7 @@ for (const [action, permission, execute] of [
 ]) {
   router.post(`/versions/:versionId/${action}`, requirePermission(permission), (req, res) => {
     try {
-      const item = execute({ ...req.body, version_id: req.params.versionId }, req.user.email, versionContext());
+      const item = execute({ ...req.body, version_id: req.params.versionId }, req.user.userId, versionContext());
       return res.json({ item: mapVersion(item, { includeDefinition: true, user: req.user }) });
     } catch (error) { return sendVersionError(res, error); }
   });

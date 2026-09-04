@@ -411,9 +411,9 @@ class PersonnelImportService {
   }
 
   _currentAccount(email) {
-    return this.db.prepare(`SELECT u.email, u.display_name, u.is_active, u.authz_version,
+    return this.db.prepare(`SELECT u.user_id, u.email, u.display_name, u.is_active, u.authz_version,
       (SELECT r.role_code FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-       WHERE ur.user_id = u.email AND ur.active = 1 AND r.active = 1
+       WHERE ur.user_id = u.user_id AND ur.active = 1 AND r.active = 1
          AND r.role_code IN (
            'SYS_ADMIN', 'BLOCK_DIRECTOR_APPROVER', 'DEPARTMENT_HEAD_APPROVER',
            'REGIONAL_LEAD_APPROVER', 'SUPPLIER_USER', 'QLCL_SPECIALIST'
@@ -432,11 +432,11 @@ class PersonnelImportService {
     if (!account) return null;
     const roles = this.db.prepare(`SELECT r.role_code, ur.active, ur.valid_from, ur.valid_until, ur.source
       FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-      WHERE ur.user_id = ? ORDER BY r.role_code, ur.source`).all(account.email);
+      WHERE ur.user_id = ? ORDER BY r.role_code, ur.source`).all(account.user_id);
     const scopes = this.db.prepare(`SELECT r.role_code, usa.scope_type, usa.scope_value, usa.effect,
         usa.active, usa.valid_from, usa.valid_until, usa.source
       FROM user_scope_assignments usa LEFT JOIN roles r ON r.id = usa.role_id
-      WHERE usa.user_id = ? ORDER BY usa.scope_type, usa.scope_value, usa.effect, usa.source`).all(account.email);
+      WHERE usa.user_id = ? ORDER BY usa.scope_type, usa.scope_value, usa.effect, usa.source`).all(account.user_id);
     return {
       hash: sha256(canonicalJson({ account, roles, scopes })),
       authzVersion: Number(account.authz_version),
@@ -599,12 +599,12 @@ class PersonnelImportService {
 
   _activeSuperAdmins() {
     const now = this.clock().getTime();
-    return new Set(this.db.prepare(`SELECT DISTINCT ur.user_id, ur.valid_from, ur.valid_until
-      FROM user_roles ur JOIN roles r ON r.id = ur.role_id JOIN users u ON u.email = ur.user_id
+    return new Set(this.db.prepare(`SELECT DISTINCT u.email, ur.valid_from, ur.valid_until
+      FROM user_roles ur JOIN roles r ON r.id = ur.role_id JOIN users u ON u.user_id = ur.user_id
       WHERE r.role_code = ? AND r.active = 1 AND ur.active = 1 AND u.is_active = 1`).all(ROLE_CODES.SYS_ADMIN)
       .filter((row) => (!row.valid_from || timestampMs(row.valid_from) <= now)
         && (!row.valid_until || timestampMs(row.valid_until) > now))
-      .map((row) => row.user_id));
+      .map((row) => row.email));
   }
 
   _applyBatchSafetyGuards(evaluated) {
@@ -841,11 +841,12 @@ class PersonnelImportService {
   }
 
   _idempotentResult(actor, batchId, idempotencyKey, requestSha256) {
+    const actorUserId = this._currentAccount(actor)?.user_id || actor;
     let row = this.db.prepare(`SELECT public_id, idempotency_key, request_sha256, summary_json
-      FROM personnel_import_batches WHERE actor_user_id = ? AND idempotency_key = ?`).get(actor, idempotencyKey);
+      FROM personnel_import_batches WHERE actor_user_id = ? AND idempotency_key = ?`).get(actorUserId, idempotencyKey);
     if (!row) {
       row = this.db.prepare(`SELECT public_id, idempotency_key, request_sha256, summary_json
-        FROM personnel_import_batches WHERE actor_user_id = ? AND public_id = ?`).get(actor, batchId);
+        FROM personnel_import_batches WHERE actor_user_id = ? AND public_id = ?`).get(actorUserId, batchId);
       if (!row) return null;
     }
     if (row.public_id !== batchId || row.idempotency_key !== idempotencyKey || row.request_sha256 !== requestSha256) {
@@ -897,10 +898,11 @@ class PersonnelImportService {
     if (operation.outcome === 'UNCHANGED') return;
     const before = this._currentAccount(operation.email);
     if (!before) {
+      const actorUserId = this._currentAccount(context.actor)?.user_id || null;
       this.db.prepare(`INSERT INTO users
-        (email, is_active, display_name, created_at, created_by)
-        VALUES (?, 1, ?, datetime('now'), ?)`).run(
-        operation.email, operation.displayName, context.actor || null
+        (user_id, email, is_active, display_name, created_at, created_by)
+        VALUES (?, ?, 1, ?, datetime('now'), ?)`).run(
+        crypto.randomUUID(), operation.email, operation.displayName, actorUserId
       );
     } else if (!before.is_active && (operation.rolesChanged || (operation.scope && operation.scopeChanged))) {
       this.db.prepare('UPDATE users SET is_active = 1 WHERE email = ?').run(operation.email);
@@ -997,7 +999,7 @@ class PersonnelImportService {
          reason, request_id, correlation_id, created_at, committed_at)
         VALUES (?, ?, ?, ?, ?, ?, 'COMMITTED', ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         batch.batchId,
-        actor,
+        this._currentAccount(actor)?.user_id || null,
         batch.sourceChecksum.replace(/^sha256:/, ''),
         batch.validation.planSha256,
         requestSha256,

@@ -25,9 +25,13 @@ const migrationsDir = path.resolve(__dirname, '..', 'migrations');
 const ACTOR = 'run10-admin@example.invalid';
 const TARGET = 'run10-designer@example.invalid';
 
+function userId(db, email) {
+  return db.prepare('SELECT user_id FROM users WHERE email = ? COLLATE NOCASE').get(email)?.user_id;
+}
+
 function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
   const roleCode = isAdmin ? ROLE_CODES.SYS_ADMIN : LEGACY_ROLE_TO_CODE[role];
-  upsertCanonicalUser(db, {
+  const user = upsertCanonicalUser(db, {
     email, roleCode, displayName: 'SYNTHETIC RUN-10 USER', createdBy: 'fixture',
   });
   const scopes = roleCode === ROLE_CODES.QLCL_SPECIALIST
@@ -37,8 +41,9 @@ function addUser(db, email, role = ROLES.SPECIALIST, isAdmin = false) {
     db.prepare(`INSERT INTO user_scope_assignments
       (user_id, role_id, scope_type, scope_value, effect, source)
       SELECT ?, id, ?, ?, 'ALLOW', 'MANUAL' FROM roles WHERE role_code = ?`
-    ).run(email, scopeType, scopeValue, roleCode);
+    ).run(user.user_id, scopeType, scopeValue, roleCode);
   }
+  return user;
 }
 
 function fixture() {
@@ -119,7 +124,7 @@ test('custom report designer can be created, configured and assigned without cod
 
     const changes = db.prepare(`SELECT reason, before_json, after_json, request_id,
       correlation_id, authz_version FROM authz_change_log
-      WHERE actor_user_id = ? ORDER BY id`).all(ACTOR);
+      WHERE actor_user_id = ? ORDER BY id`).all(userId(db, ACTOR));
     assert.ok(changes.length >= 3);
     assert.ok(changes.every((row) => row.reason && row.request_id && row.correlation_id));
     assert.ok(changes.some((row) => row.before_json && row.after_json && row.authz_version >= 1));
@@ -162,7 +167,7 @@ test('role catalog keeps inactive historical assignments in the deletion guard',
     }, context());
     const role = db.prepare('SELECT id FROM roles WHERE role_code = ?').get('RUN10_ARCHIVED_ASSIGNMENT');
     db.prepare(`INSERT INTO user_roles (user_id, role_id, active, source, created_by)
-      VALUES (?, ?, 0, 'MANUAL', ?)`).run(TARGET, role.id, ACTOR);
+      VALUES (?, ?, 0, 'MANUAL', ?)`).run(userId(db, TARGET), role.id, userId(db, ACTOR));
 
     const catalogRole = service.catalog().roles.find((item) => item.roleCode === 'RUN10_ARCHIVED_ASSIGNMENT');
     assert.equal(catalogRole.userCount, 0);
@@ -226,7 +231,7 @@ test('self escalation and last SYS_ADMIN removal fail closed', () => {
     db.prepare(`INSERT INTO role_permissions (role_id, permission_code, effect)
       SELECT id, ?, 'ALLOW' FROM roles WHERE role_code = 'RUN10_MANAGER'`).run(PERMISSIONS.USER_MANAGE);
     db.prepare(`INSERT INTO user_roles (user_id, role_id, source)
-      SELECT ?, id, 'MANUAL' FROM roles WHERE role_code = 'RUN10_MANAGER'`).run('run10-manager@example.invalid');
+      SELECT ?, id, 'MANUAL' FROM roles WHERE role_code = 'RUN10_MANAGER'`).run(userId(db, 'run10-manager@example.invalid'));
 
     assert.throws(() => service.setUserRoles('run10-manager@example.invalid', {
       roles: [{ roleCode: ROLE_CODES.SYS_ADMIN }],
@@ -249,7 +254,7 @@ test('approval preview and publish reject missing or conflicting approvers', () 
     addUser(db, 'run10-no-scope@example.invalid', ROLES.TBP);
     service.authorizationService.syncLegacyUser('run10-no-scope@example.invalid');
     db.prepare(`UPDATE user_scope_assignments SET active = 0
-      WHERE user_id = 'run10-no-scope@example.invalid'`).run();
+      WHERE user_id = ?`).run(userId(db, 'run10-no-scope@example.invalid'));
     const input = {
       workflowType: 'EVALUATION', stageCode: 'TBP', assignedUserId: 'run10-no-scope@example.invalid',
       scopeType: 'GLOBAL', scopeValue: null, priority: 10,
@@ -283,8 +288,8 @@ test('approval preview and publish reject missing or conflicting approvers', () 
     addUser(db, 'run10-scope-only@example.invalid');
     service.authorizationService.syncLegacyUser('run10-scope-only@example.invalid');
     db.prepare(`INSERT INTO user_scope_assignments
-      (user_id, principal_id, scope_type, scope_value, effect, source)
-      SELECT email, user_id, 'GLOBAL', NULL, 'ALLOW', 'MANUAL' FROM users WHERE email=?`)
+      (user_id, scope_type, scope_value, effect, source)
+      SELECT user_id, 'GLOBAL', NULL, 'ALLOW', 'MANUAL' FROM users WHERE email=?`)
       .run('run10-scope-only@example.invalid');
     assert.deepEqual(service.previewApprovalAssignment({
       workflowType: 'EVALUATION', stageCode: 'TBP', assignedUserId: 'run10-scope-only@example.invalid',
@@ -297,28 +302,24 @@ test('approval preview and publish reject missing or conflicting approvers', () 
   } finally { close(db); }
 });
 
-test('approval resolution uses immutable principal membership before compatibility email', () => {
+test('approval resolution keeps immutable user membership after an email change', () => {
   const { db, approvals, service } = fixture();
   try {
     const leadEmail = 'run10-principal-lead@example.invalid';
-    const aliasEmail = 'run10-compat-alias@example.invalid';
     addUser(db, leadEmail, ROLES.LEAD);
-    addUser(db, aliasEmail);
     service.authorizationService.syncLegacyUser(leadEmail);
-    service.authorizationService.syncLegacyUser(aliasEmail);
     const lead = db.prepare('SELECT user_id FROM users WHERE email=?').get(leadEmail);
-    const role = db.prepare('SELECT id FROM roles WHERE role_code=?').get(ROLE_CODES.REGIONAL_LEAD_APPROVER);
-    db.prepare('UPDATE user_roles SET user_id=? WHERE principal_id=? AND role_id=?').run(aliasEmail, lead.user_id, role.id);
-    db.prepare('UPDATE user_roles SET principal_id=? WHERE user_id=? AND role_id=?').run(lead.user_id, aliasEmail, role.id);
+    const changedEmail = 'run10-renamed-lead@example.invalid';
+    db.prepare('UPDATE users SET email=? WHERE user_id=?').run(changedEmail, lead.user_id);
     service.authorizationService.cache.delete(leadEmail);
 
     const preview = service.previewApprovalAssignment({
       workflowType: 'EVALUATION', stageCode: 'LEAD', roleCode: ROLE_CODES.REGIONAL_LEAD_APPROVER,
       scopeType: 'GLOBAL', priority: 75, fixture: {},
     });
-    assert.ok(preview.candidates.includes(leadEmail));
+    assert.ok(preview.candidates.includes(lead.user_id));
     assert.equal(preview.requiredPermission, PERMISSIONS.EVALUATION_APPROVE_LEAD);
-    assert.ok(approvals.resolve('EVALUATION', 'LEAD', {}).candidates.includes(leadEmail));
+    assert.ok(approvals.resolve('EVALUATION', 'LEAD', {}).candidates.includes(lead.user_id));
     assert.throws(() => approvals.resolve('UNRELATED', 'LEAD', {}), /approval_assignment_not_found/);
   } finally { close(db); }
 });
@@ -330,7 +331,7 @@ test('valid approval assignment publishes its fixture preview and audit record',
       workflowType: 'EVALUATION', stageCode: 'LEAD', assignedUserId: ACTOR,
       scopeType: 'GLOBAL', scopeValue: null, priority: 50, fixture: {},
     };
-    assert.deepEqual(service.previewApprovalAssignment(input).candidates, [ACTOR]);
+    assert.deepEqual(service.previewApprovalAssignment(input).candidates, [userId(db, ACTOR)]);
 
     const published = service.publishApprovalAssignment({
       ...input,
@@ -338,8 +339,8 @@ test('valid approval assignment publishes its fixture preview and audit record',
       confirmation: requiredConfirmation('PUBLISH_APPROVER', 'EVALUATION:LEAD'),
     }, context());
 
-    assert.equal(published.item.assignedUserId, ACTOR);
-    assert.deepEqual(published.preview.candidates, [ACTOR]);
+    assert.equal(published.item.assignedUserId, userId(db, ACTOR));
+    assert.deepEqual(published.preview.candidates, [userId(db, ACTOR)]);
     assert.ok(db.prepare(`SELECT 1 FROM audit_events
       WHERE event_name = 'approval.assignment.changed' AND correlation_id = ?`)
       .get('correlation-run10-0001'));
@@ -468,9 +469,9 @@ test('Phase 2 history uses server filters and pagination and export produces an 
     const insert = db.prepare(`INSERT INTO authz_change_log
       (actor_user_id, target_user_id, change_type, object_type, object_key, reason, authz_version, created_at)
       VALUES (?, ?, ?, 'USER_AUTHORIZATION', ?, ?, 7, ?)`);
-    insert.run(ACTOR, TARGET, 'USER_ROLES_REPLACED', 'phase2-january', 'January manual update', '2026-01-15 08:00:00');
-    insert.run(null, TARGET, 'MIGRATION_APPLIED', 'phase2-february', null, '2026-02-15 08:00:00');
-    insert.run(ACTOR, TARGET, 'USER_SCOPES_REPLACED', 'phase2-march', 'March manual update', '2026-03-15 08:00:00');
+    insert.run(userId(db, ACTOR), userId(db, TARGET), 'USER_ROLES_REPLACED', 'phase2-january', 'January manual update', '2026-01-15 08:00:00');
+    insert.run(null, userId(db, TARGET), 'MIGRATION_APPLIED', 'phase2-february', null, '2026-02-15 08:00:00');
+    insert.run(userId(db, ACTOR), userId(db, TARGET), 'USER_SCOPES_REPLACED', 'phase2-march', 'March manual update', '2026-03-15 08:00:00');
 
     const first = service.historyPage({ search: 'phase2', actor: 'manual', page: 1, pageSize: 1 });
     assert.equal(first.pagination.total, 2);

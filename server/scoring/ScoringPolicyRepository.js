@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveUserId } = require('../domain/userIdentity');
+
 const {
   calculateWithPolicy,
   classifyWithPolicy,
@@ -192,6 +194,7 @@ class ScoringPolicyRepository {
   }
 
   createDraft({ policyCode, sourceVersionId = null, note = null, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const policy = this.requirePolicy(policyCode);
     const source = sourceVersionId
       ? this.requireVersion(sourceVersionId)
@@ -217,6 +220,7 @@ class ScoringPolicyRepository {
   }
 
   updateDraft({ versionId, expectedLockVersion, definition, note, effectiveFrom, effectiveTo, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.requireVersion(versionId);
     if (row.status !== VERSION_STATUSES.DRAFT) throw policyError('scoring_policy_version_not_draft', 409);
     this.assertLock(row, expectedLockVersion);
@@ -316,6 +320,7 @@ class ScoringPolicyRepository {
   }
 
   submit({ versionId, expectedLockVersion, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     const row = this.requireVersion(versionId);
     if (row.status !== VERSION_STATUSES.DRAFT) throw policyError('scoring_policy_version_not_draft', 409);
     this.assertLock(row, expectedLockVersion);
@@ -375,6 +380,7 @@ class ScoringPolicyRepository {
   }
 
   publish({ versionId, expectedLockVersion, decisionId, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     this.assertPublishingEnabled();
     const row = this.requireVersion(versionId);
     if (row.status !== VERSION_STATUSES.IN_REVIEW) throw policyError('scoring_policy_version_not_in_review', 409);
@@ -405,6 +411,7 @@ class ScoringPolicyRepository {
   }
 
   rollback({ versionId, expectedLockVersion, decisionId, actor = null, context = {} }) {
+    actor = resolveUserId(this.db, actor);
     this.assertPublishingEnabled();
     const row = this.requireVersion(versionId);
     if (![VERSION_STATUSES.PUBLISHED, VERSION_STATUSES.RETIRED].includes(row.status)) {

@@ -115,7 +115,8 @@ test('RUN-33 creates/reuses suppliers transactionally and preserves independent 
     ) VALUES (
       'RUN33-EXISTING', 'NCC RUN-33 hiện có', 'RUN33-TAX-1', 'Trụ sở ban đầu',
       'MB', 'Thành phố Hà Nội', 'Tự sản xuất', 'Liên hệ RUN-33',
-      'run33-existing@example.test', '0900000033', 'ACTIVE', 'MANUAL', 'admin@masangroup.com'
+      'run33-existing@example.test', '0900000033', 'ACTIVE', 'MANUAL',
+      (SELECT user_id FROM users WHERE email='admin@masangroup.com')
     )`).run().lastInsertRowid);
     const app = await startApp(evaluationsRouter);
     server = app.server;

@@ -66,7 +66,7 @@ function startApp({ workspaceRouter, evaluationsRouter }) {
 }
 
 function addUser(db, email, role, isAdmin = false) {
-  upsertCanonicalUser(db, {
+  return upsertCanonicalUser(db, {
     email, role, isAdmin, displayName: `RUN-12 ${role}`, createdBy: 'run-12-test',
   });
 }
@@ -79,6 +79,7 @@ function seedEvaluation(db, {
   status = 'Khởi tạo',
   plannedDate = null,
 }) {
+  const specialistUserId = db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(specialist);
   const info = db.prepare(`
     INSERT INTO evaluation_tickets (
       ticket_code, supplier_id, supplier_code, supplier_name, evaluation_type,
@@ -87,7 +88,7 @@ function seedEvaluation(db, {
     ) VALUES (?, ?, 'NCC-RUN12', 'Nhà cung cấp RUN-12', 'Đánh giá định kỳ',
       ?, (SELECT id FROM question_template_versions WHERE template_id=? AND status='PUBLISHED'
           ORDER BY version_no DESC LIMIT 1), 'CHUNG', 'LARGE', ?, ?, ?, ?, datetime('now'))
-  `).run(code, supplierId, templateId, templateId, plannedDate, status, specialist, specialist);
+  `).run(code, supplierId, templateId, templateId, plannedDate, status, specialistUserId, specialistUserId);
   return Number(info.lastInsertRowid);
 }
 
@@ -204,7 +205,8 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
 
     const supplier = db.prepare(`
       INSERT INTO supplier_master (supplier_code, supplier_name, status, source_type, created_by)
-      VALUES ('NCC-RUN12', 'Nhà cung cấp RUN-12', 'ACTIVE', 'MANUAL', 'run12-admin@example.invalid')
+      VALUES ('NCC-RUN12', 'Nhà cung cấp RUN-12', 'ACTIVE', 'MANUAL',
+        (SELECT user_id FROM users WHERE email='run12-admin@example.invalid'))
     `).run();
     const template = db.prepare('SELECT id FROM question_templates ORDER BY id LIMIT 1').get();
     assert.ok(template?.id);
@@ -239,7 +241,7 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
     db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by)
       VALUES (?, 1, 'COMPLETED', datetime('now'), ?)
-    `).run(round2StartEvaluationId, users.specialist[0]);
+    `).run(round2StartEvaluationId, db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.specialist[0]));
     const round2EvaluationId = seedEvaluation(db, {
       code: 'DG-R12-R2', supplierId: supplier.lastInsertRowid, templateId: template.id,
       specialist: users.specialist[0], status: 'Đang đánh giá lần 2', plannedDate: isoDate(-20),
@@ -248,7 +250,7 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
     const round1Info = db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, status, locked_at, locked_by)
       VALUES (?, 1, 'COMPLETED', datetime('now'), ?)
-    `).run(round2EvaluationId, users.specialist[0]);
+    `).run(round2EvaluationId, db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.specialist[0]));
     db.prepare(`
       INSERT INTO evaluation_rounds (ticket_id, round_no, status)
       VALUES (?, 2, 'PROCESSING')
@@ -260,12 +262,14 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
     const answerId = db.prepare(`INSERT INTO evaluation_answers
       (round_id, question_item_id, score, comment, answered_by)
       VALUES (?, ?, 'C', 'Điểm cần khắc phục', ?)`)
-      .run(round1Info.lastInsertRowid, questionItemId, users.specialist[0]).lastInsertRowid;
+      .run(round1Info.lastInsertRowid, questionItemId,
+        db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.specialist[0])).lastInsertRowid;
     db.prepare(`
       INSERT INTO evaluation_nonconformities (
         ticket_id, round_id, evaluation_answer_id, nonconformity_content, remediation_content, due_date, severity, status, created_by
       ) VALUES (?, ?, ?, 'Điểm cần khắc phục', 'Bổ sung bằng chứng', ?, 'C', 'OPEN', ?)
-    `).run(round2EvaluationId, round1Info.lastInsertRowid, answerId, isoDate(4), users.specialist[0]);
+    `).run(round2EvaluationId, round1Info.lastInsertRowid, answerId, isoDate(4),
+      db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.specialist[0]));
     seedEvaluation(db, {
       code: 'DG-R12-HIDDEN', supplierId: supplier.lastInsertRowid, templateId: template.id,
       specialist: users.other[0], plannedDate: isoDate(2),
@@ -277,7 +281,7 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
     db.prepare(`
       INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, assigned_user_id, status, comment)
       VALUES (?, 'LEAD', 'Lead miền', ?, 'PENDING', 'NHẬN XÉT NHẠY CẢM KHÔNG ĐƯỢC RÒ RỈ')
-    `).run(leadEvaluationId, users.lead[0]);
+    `).run(leadEvaluationId, db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.lead[0]));
     const tbpEvaluationId = seedEvaluation(db, {
       code: 'DG-R12-TBP', supplierId: supplier.lastInsertRowid, templateId: template.id,
       specialist: users.specialist[0], status: 'Chờ duyệt (TBP)', plannedDate: isoDate(-10),
@@ -285,7 +289,7 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
     db.prepare(`
       INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, assigned_user_id, status)
       VALUES (?, 'TBP', 'TBP', ?, 'PENDING')
-    `).run(tbpEvaluationId, users.tbp[0]);
+    `).run(tbpEvaluationId, db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.tbp[0]));
     const gdkEvaluationId = seedEvaluation(db, {
       code: 'DG-R12-GDK', supplierId: supplier.lastInsertRowid, templateId: template.id,
       specialist: users.specialist[0], status: 'Chờ duyệt (GĐK)', plannedDate: isoDate(-10),
@@ -293,7 +297,7 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
     db.prepare(`
       INSERT INTO approval_tasks (ticket_id, approval_level, assigned_role, assigned_user_id, status)
       VALUES (?, 'GDK', 'GĐK', ?, 'PENDING')
-    `).run(gdkEvaluationId, users.gdk[0]);
+    `).run(gdkEvaluationId, db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.gdk[0]));
 
     const completedEvaluationId = seedEvaluation(db, {
       code: 'DG-R12-DONE', supplierId: supplier.lastInsertRowid, templateId: template.id,
@@ -304,7 +308,7 @@ test('RUN-12 synthetic UAT gives every role only authorized evaluation work', as
         ticket_id, actor_user_id, actor_role, action, from_status, to_status, comment, created_at
       ) VALUES (?, ?, 'Chuyên viên', 'END', 'Đang xử lý', 'Hoàn thành',
         'LỊCH SỬ NHẠY CẢM KHÔNG ĐƯỢC RÒ RỈ', datetime('now'))
-    `).run(completedEvaluationId, users.specialist[0]);
+    `).run(completedEvaluationId, db.prepare('SELECT user_id FROM users WHERE email=?').pluck().get(users.specialist[0]));
 
     const appInfo = await startApp({ workspaceRouter, evaluationsRouter });
     server = appInfo.server;

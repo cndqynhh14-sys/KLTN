@@ -23,7 +23,7 @@ function freshDb(dbPath) {
 
 function createTicket(db) {
   const actor = 'stage4d-exporter@synthetic.invalid';
-  upsertCanonicalUser(db, {
+  const actorIdentity = upsertCanonicalUser(db, {
     email: actor, roleCode: 'SYS_ADMIN', displayName: 'Stage 4D Synthetic Exporter', createdBy: 'STAGE4D',
   });
   const supplier = db.prepare(`
@@ -44,7 +44,7 @@ function createTicket(db) {
       current_status, current_round_no, created_by
     ) VALUES ('STAGE4D-TICKET-001', ?, 'STAGE4D-NCC', 'Stage 4D Synthetic Supplier',
       'Periodic', ?, ?, 'ALL', 'LARGE', 'Completed', 1, ?)
-  `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actor);
+  `).run(supplier.lastInsertRowid, questionVersion.template_id, questionVersion.id, actorIdentity.user_id);
   const round = db.prepare(`
     INSERT INTO evaluation_rounds (
       ticket_id, round_no, assessment_code, status, total_score, final_result, classification
@@ -52,6 +52,7 @@ function createTicket(db) {
   `).run(ticket.lastInsertRowid);
   return {
     actor,
+    actorUserId: actorIdentity.user_id,
     ticketId: Number(ticket.lastInsertRowid),
     roundId: Number(round.lastInsertRowid),
     questionVersionId: Number(questionVersion.id),
@@ -63,7 +64,7 @@ function insertLegacyExport(db, fixture, filePath) {
     INSERT INTO report_exports (
       ticket_id, round_id, report_type, file_format, export_scope, file_path, exported_by
     ) VALUES (?, ?, 'ROUND1_RESULT', 'HTML', 'TICKET', ?, ?)
-  `).run(fixture.ticketId, fixture.roundId, filePath, fixture.actor).lastInsertRowid);
+  `).run(fixture.ticketId, fixture.roundId, filePath, fixture.actorUserId).lastInsertRowid);
 }
 
 test('Stage 4D dry-run verifies approved legacy bytes without exposing report names', () => {
@@ -190,7 +191,7 @@ test('Stage 4D canonical audit verifies stored bytes and detects checksum drift'
         'STAGE4D_TEMPLATE', ?, ?, ?, 1, 'HTML', 1, ?, 'STAGE4D_RENDERER',
         'STAGE4D_COMMIT', '1', NULL, ?, ?, 'stage4d-generator', 'INLINE',
         'COMPLETED', 'SUCCESS', 1, ?, ?, ?)
-    `).run(jobId, checksum, fixture.ticketId, fixture.roundId, checksum, checksum, fixture.actor, at, at, at);
+    `).run(jobId, checksum, fixture.ticketId, fixture.roundId, checksum, checksum, fixture.actorUserId, at, at, at);
     const snapshotId = Number(db.prepare(`
       INSERT INTO report_source_snapshots (
         job_id, ticket_id, round_id, round_no, question_template_version_id,
@@ -211,7 +212,7 @@ test('Stage 4D canonical audit verifies stored bytes and detects checksum drift'
         ticket_id, round_id, report_type, file_format, export_scope, file_path,
         exported_by, job_id, artifact_id, availability_status, legacy_reconciliation_status
       ) VALUES (?, ?, 'ROUND1_RESULT', 'HTML', 'TICKET', ?, ?, ?, ?, 'AVAILABLE', 'IMPORTED')
-    `).run(fixture.ticketId, fixture.roundId, 'reports/stage4d/canonical.html', fixture.actor, jobId, artifactId);
+    `).run(fixture.ticketId, fixture.roundId, 'reports/stage4d/canonical.html', fixture.actorUserId, jobId, artifactId);
     const reconciler = new LegacyReportArtifactReconciler({ db, legacyRoot, storage });
     const clean = reconciler.auditCanonicalProvenance();
     assert.equal(clean.status, 'PASS');

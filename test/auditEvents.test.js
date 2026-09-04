@@ -293,7 +293,9 @@ test('HTTP middleware traces request to one actor-action-entity-outcome event an
     const rows = db.prepare('SELECT * FROM audit_events ORDER BY id').all();
     assert.equal(rows.length, 2);
     assert.equal(rows[0].request_id, 'request-run07-http-0001');
-    assert.equal(rows[0].actor_user_id, 'run07.actor@example.test');
+    assert.equal(rows[0].actor_user_id,
+      db.prepare('SELECT user_id FROM users WHERE email = ?').get('run07.actor@example.test').user_id);
+    assert.equal(rows[0].actor_email_snapshot, 'run07.actor@example.test');
     assert.equal(rows[0].entity_id, 'NCC_SYNTHETIC_07');
     assert.equal(rows[0].action, 'UPDATE');
     assert.equal(rows[0].outcome, 'SUCCESS');

@@ -1,4 +1,5 @@
 const path = require('path');
+const { resolveUserId } = require('../domain/userIdentity');
 
 class EvaluationAttachmentService {
   constructor({
@@ -33,6 +34,7 @@ class EvaluationAttachmentService {
     if (!entries.length) return {};
 
     const saved = {};
+    const actorUserId = resolveUserId(this.db, userEmail, { required: true });
     this.db.transaction(() => {
       entries.forEach(([kind, file]) => {
         const previous = this.attachmentRepository.listLegalByKind(ticketId, kind);
@@ -47,7 +49,7 @@ class EvaluationAttachmentService {
           storage_key: storageKey,
           mime_type: file.mimetype,
           size_bytes: file.size,
-          uploaded_by: userEmail,
+          uploaded_by: actorUserId,
         });
         saved[kind] = { id: info.lastInsertRowid, file_name: file.originalname };
       });
@@ -57,7 +59,8 @@ class EvaluationAttachmentService {
 
   uploadAnswerAttachment({ ticket, round, questionId, file, user }) {
     return this.db.transaction(() => {
-      this.answerRepository.insertBlankIfMissing(round.id, questionId, user.email);
+      const actorUserId = resolveUserId(this.db, user?.userId || user?.user_id || user?.email, { required: true });
+      this.answerRepository.insertBlankIfMissing(round.id, questionId, actorUserId);
       const answer = this.answerRepository.getByRoundAndQuestion(round.id, questionId);
       const info = this.attachmentRepository.insert({
         answer_id: answer.id,
@@ -67,7 +70,7 @@ class EvaluationAttachmentService {
         storage_key: path.basename(file.path),
         mime_type: file.mimetype,
         size_bytes: file.size,
-        uploaded_by: user.email,
+        uploaded_by: actorUserId,
       });
       const attachment = this.attachmentRepository.getById(info.lastInsertRowid);
       return { answer, attachment: this.mapAttachment(attachment) };

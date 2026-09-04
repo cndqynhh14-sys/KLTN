@@ -41,6 +41,7 @@ function addSession(db, email) {
 
 test('Stage 4E cutover validates canonical roles, bumps authz versions, and revokes old sessions', () => {
   const historical = historicalDirectory('0028');
+  const stage4e = historicalDirectory('0029');
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   try {
@@ -62,7 +63,7 @@ test('Stage 4E cutover validates canonical roles, bumps authz versions, and revo
       addSession(db, 'stage4e-specialist@example.invalid'),
     ];
 
-    migrateDatabase(db, { migrationsDir, appVersion: 'stage4e-test' });
+    migrateDatabase(db, { migrationsDir: stage4e, appVersion: 'stage4e-test' });
 
     assert.equal(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE migration_id='0029'").pluck().get(), 1);
     for (const session of sessions) {
@@ -80,6 +81,7 @@ test('Stage 4E cutover validates canonical roles, bumps authz versions, and revo
   } finally {
     db.close();
     fs.rmSync(historical, { recursive: true, force: true });
+    fs.rmSync(stage4e, { recursive: true, force: true });
   }
 });
 

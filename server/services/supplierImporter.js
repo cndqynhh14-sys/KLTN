@@ -167,7 +167,9 @@ function parseSupplierWorkbook(buffer) {
   return { rows, errors, headers };
 }
 
-function upsertSupplier(db, supplier, userEmail, sourceType, importBatchId) {
+function upsertSupplier(db, supplier, userReference, sourceType, importBatchId) {
+  const { resolveUserId } = require('../domain/userIdentity');
+  const actorUserId = resolveUserId(db, userReference, { required: true });
   const now = new Date().toISOString();
   const supplierCode = normalizeSupplierCode(supplier.supplier_code);
   const before = db.prepare('SELECT * FROM supplier_master WHERE UPPER(TRIM(supplier_code)) = ?').get(supplierCode);
@@ -179,7 +181,7 @@ function upsertSupplier(db, supplier, userEmail, sourceType, importBatchId) {
     ) VALUES (
       @supplier_code, @supplier_name, @tax_code, @address, @region, @province, @business_type,
       @contact_name, @contact_email, @contact_phone, @status, @source_type, @import_batch_id,
-      @now, @userEmail, @now, @userEmail
+      @now, @actorUserId, @now, @actorUserId
     )
     ON CONFLICT(supplier_code) DO UPDATE SET
       supplier_name = excluded.supplier_name,
@@ -211,14 +213,14 @@ function upsertSupplier(db, supplier, userEmail, sourceType, importBatchId) {
     source_type: sourceType,
     import_batch_id: importBatchId || null,
     now,
-    userEmail,
+    actorUserId,
   });
   const after = db.prepare('SELECT * FROM supplier_master WHERE UPPER(TRIM(supplier_code)) = ?').get(supplierCode);
   const fromExcel = sourceType === 'EXCEL_UPLOAD';
   recordSupplierHistory(db, {
     before,
     after,
-    actorUserId: userEmail,
+    actorUserId,
     action: before
       ? (fromExcel ? 'Cập nhật từ Excel' : 'Cập nhật NCC')
       : (fromExcel ? 'Thêm NCC từ Excel' : 'Tạo NCC'),

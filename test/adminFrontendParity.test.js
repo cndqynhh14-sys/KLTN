@@ -59,7 +59,7 @@ test('approver workspace is evaluation-only and keeps UUID as the technical iden
   assert.doesNotMatch(pane.match(/id="authz-approval-advanced"[^>]*>/)?.[0] || '', /open/);
   assert.match(app, /value:\s*authzUserKey\(user\),\s*label:/);
   assert.match(app, /function approvalAssignedUser\(assignment\)/);
-  assert.match(app, /assignment\.assignedPrincipalId/);
+  assert.match(app, /assignment\.assignedUserId/);
   assert.match(app, /filter\(\(item\) => item\.workflowType === 'EVALUATION'\)/);
   assert.match(app, /const current = authzAssignments\.find[\s\S]*?selectApprovalAssignment\(current\)/);
 });

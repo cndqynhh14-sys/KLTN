@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('node:crypto');
 const Database = require('better-sqlite3');
 const packageInfo = require('../package.json');
 const { DB_PATH, MIGRATIONS_DIR, DEFAULT_SEED_PATH } = require('./config/paths');
@@ -117,11 +118,11 @@ function initSchema() {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   const upsertAdmin = db.prepare(
-    `INSERT INTO users (email, is_active, created_by)
-     VALUES (?, 1, 'seed')
+    `INSERT INTO users (user_id, email, is_active, created_by)
+     VALUES (?, ?, 1, NULL)
      ON CONFLICT(email) DO UPDATE SET is_active = 1`
   );
-  for (const e of adminEmails) upsertAdmin.run(e);
+  for (const e of adminEmails) upsertAdmin.run(crypto.randomUUID(), e);
 
   authorizationService = new AuthorizationService(db);
   for (const e of adminEmails) {
@@ -212,6 +213,7 @@ function ensureSupplierMasterColumns() {
 }
 
 function ensureSupplierHistoryTable() {
+  const userKey = canonicalUserForeignKeyColumn();
   db.exec(`
     CREATE TABLE IF NOT EXISTS supplier_master_history (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,7 +228,7 @@ function ensureSupplierHistoryTable() {
       payload_json    TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (supplier_id) REFERENCES supplier_master(id) ON DELETE SET NULL,
-      FOREIGN KEY (actor_user_id) REFERENCES users(email) ON DELETE SET NULL
+      FOREIGN KEY (actor_user_id) REFERENCES users(${userKey}) ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_supplier_master_history_code_time ON supplier_master_history(supplier_code, created_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_supplier_master_history_supplier_time ON supplier_master_history(supplier_id, created_at DESC, id DESC);
@@ -326,6 +328,20 @@ function tableExists(tableName) {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName);
 }
 
+function canonicalUserForeignKeyColumn() {
+  if (!tableExists('users')) return 'email';
+  const userId = db.prepare("PRAGMA table_info('users')").all().find((column) => column.name === 'user_id');
+  if (!userId) return 'email';
+  if (userId.pk) return 'user_id';
+  const hasUniqueUserId = db.prepare("PRAGMA index_list('users')").all()
+    .filter((index) => index.unique)
+    .some((index) => {
+      const columns = db.prepare(`PRAGMA index_info('${String(index.name).replaceAll("'", "''")}')`).all();
+      return columns.length === 1 && columns[0].name === 'user_id';
+    });
+  return hasUniqueUserId ? 'user_id' : 'email';
+}
+
 function ensureQuestionTemplateVersions() {
   if (!tableExists('question_template_versions')) return;
   const reconciliation = new QuestionVersionService(db).ensureCanonicalV1();
@@ -388,6 +404,7 @@ function ensureEvaluationRoundColumns() {
 }
 
 function ensureEvaluationNonconformitiesTable() {
+  const userKey = canonicalUserForeignKeyColumn();
   db.exec(`
     CREATE TABLE IF NOT EXISTS evaluation_nonconformities (
       id                     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -410,8 +427,8 @@ function ensureEvaluationNonconformitiesTable() {
       FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE SET NULL,
       FOREIGN KEY (question_id) REFERENCES evaluation_questions(id) ON DELETE SET NULL,
       FOREIGN KEY (corrective_action_id) REFERENCES corrective_actions(id) ON DELETE SET NULL,
-      FOREIGN KEY (created_by) REFERENCES users(email) ON DELETE SET NULL,
-      FOREIGN KEY (updated_by) REFERENCES users(email) ON DELETE SET NULL
+      FOREIGN KEY (created_by) REFERENCES users(${userKey}) ON DELETE SET NULL,
+      FOREIGN KEY (updated_by) REFERENCES users(${userKey}) ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_eval_nonconformities_ticket ON evaluation_nonconformities(ticket_id);
     CREATE INDEX IF NOT EXISTS idx_eval_nonconformities_round ON evaluation_nonconformities(round_id);
@@ -420,6 +437,7 @@ function ensureEvaluationNonconformitiesTable() {
 }
 
 function ensureCorrectionExtensionsTable() {
+  const userKey = canonicalUserForeignKeyColumn();
   db.exec(`
     CREATE TABLE IF NOT EXISTS correction_extensions (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,7 +449,7 @@ function ensureCorrectionExtensionsTable() {
       created_at       TEXT NOT NULL DEFAULT (datetime('now')),
       created_by       TEXT,
       FOREIGN KEY (ticket_id) REFERENCES evaluation_tickets(id) ON DELETE CASCADE,
-      FOREIGN KEY (created_by) REFERENCES users(email) ON DELETE SET NULL
+      FOREIGN KEY (created_by) REFERENCES users(${userKey}) ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_correction_extensions_ticket ON correction_extensions(ticket_id, extension_no);
   `);
@@ -439,6 +457,7 @@ function ensureCorrectionExtensionsTable() {
 
 function ensureNotificationsTable() {
   const allowed = NOTIFICATION_TYPE_CODES.map((code) => `'${code}'`).join(', ');
+  const userKey = canonicalUserForeignKeyColumn();
   db.exec(`
     CREATE TABLE IF NOT EXISTS notifications (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -453,8 +472,8 @@ function ensureNotificationsTable() {
       is_read            INTEGER NOT NULL DEFAULT 0 CHECK (is_read IN (0, 1)),
       read_at            TEXT,
       created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (receiver_user_id) REFERENCES users(email) ON DELETE CASCADE,
-      FOREIGN KEY (sender_user_id) REFERENCES users(email) ON DELETE SET NULL,
+      FOREIGN KEY (receiver_user_id) REFERENCES users(${userKey}) ON DELETE CASCADE,
+      FOREIGN KEY (sender_user_id) REFERENCES users(${userKey}) ON DELETE SET NULL,
       FOREIGN KEY (ticket_id) REFERENCES evaluation_tickets(id) ON DELETE CASCADE,
       UNIQUE (unique_key)
     );
@@ -488,8 +507,8 @@ function ensureNotificationsTable() {
           is_read            INTEGER NOT NULL DEFAULT 0 CHECK (is_read IN (0, 1)),
           read_at            TEXT,
           created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-          FOREIGN KEY (receiver_user_id) REFERENCES users(email) ON DELETE CASCADE,
-          FOREIGN KEY (sender_user_id) REFERENCES users(email) ON DELETE SET NULL,
+          FOREIGN KEY (receiver_user_id) REFERENCES users(${userKey}) ON DELETE CASCADE,
+          FOREIGN KEY (sender_user_id) REFERENCES users(${userKey}) ON DELETE SET NULL,
           FOREIGN KEY (ticket_id) REFERENCES evaluation_tickets(id) ON DELETE CASCADE,
           UNIQUE (unique_key)
         );
@@ -535,6 +554,7 @@ function ensureReportTypeConstraints() {
   if (!upgradeTemplates && !upgradeExports) return;
 
   const allowed = REPORT_TYPE_CODES.map((code) => `'${code}'`).join(', ');
+  const userKey = canonicalUserForeignKeyColumn();
   runForeignKeySafeSchemaChange(() => {
     if (upgradeTemplates) {
       db.exec(`
@@ -572,7 +592,7 @@ function ensureReportTypeConstraints() {
           FOREIGN KEY (ticket_id) REFERENCES evaluation_tickets(id) ON DELETE CASCADE,
           FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE SET NULL,
           FOREIGN KEY (report_template_id) REFERENCES report_templates(id) ON DELETE SET NULL,
-          FOREIGN KEY (exported_by) REFERENCES users(email) ON DELETE SET NULL
+          FOREIGN KEY (exported_by) REFERENCES users(${userKey}) ON DELETE SET NULL
         );
         INSERT INTO report_exports_new (
           id, ticket_id, round_id, report_template_id, report_type, file_format,
@@ -642,8 +662,8 @@ const stmts = {
   // ---- Auth ----
   getUser: db.prepare('SELECT user_id, email, is_active, display_name, authz_version FROM users WHERE email = ? AND is_active = 1'),
   upsertUser: db.prepare(
-    `INSERT INTO users (email, is_active, display_name, created_by)
-     VALUES (@email, 1, @display_name, @created_by)
+    `INSERT INTO users (user_id, email, is_active, display_name, created_by)
+     VALUES (@user_id, @email, 1, @display_name, @created_by)
      ON CONFLICT(email) DO UPDATE SET
        is_active = 1,
        display_name = COALESCE(excluded.display_name, users.display_name)`
@@ -653,16 +673,16 @@ const stmts = {
   listUsers: db.prepare(`SELECT u.user_id, u.email,
       CASE WHEN EXISTS (
         SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-        WHERE (ur.principal_id = u.user_id OR (ur.principal_id IS NULL AND ur.user_id = u.email)) AND ur.active = 1 AND r.active = 1
+        WHERE ur.user_id = u.user_id AND ur.active = 1 AND r.active = 1
           AND r.role_code = 'SYS_ADMIN'
       ) THEN 1 ELSE 0 END AS is_admin,
       CASE
-        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='SYS_ADMIN') THEN 'Admin'
-        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='BLOCK_DIRECTOR_APPROVER') THEN 'GÄK'
-        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='DEPARTMENT_HEAD_APPROVER') THEN 'TBP'
-        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='REGIONAL_LEAD_APPROVER') THEN 'Lead miá»n'
-        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='SUPPLIER_USER') THEN 'NCC'
-        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.email AND ur.active=1 AND r.active=1 AND r.role_code='QLCL_SPECIALIST') THEN 'ChuyÃªn viÃªn'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.user_id AND ur.active=1 AND r.active=1 AND r.role_code='SYS_ADMIN') THEN 'Admin'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.user_id AND ur.active=1 AND r.active=1 AND r.role_code='BLOCK_DIRECTOR_APPROVER') THEN 'GÄK'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.user_id AND ur.active=1 AND r.active=1 AND r.role_code='DEPARTMENT_HEAD_APPROVER') THEN 'TBP'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.user_id AND ur.active=1 AND r.active=1 AND r.role_code='REGIONAL_LEAD_APPROVER') THEN 'Lead miá»n'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.user_id AND ur.active=1 AND r.active=1 AND r.role_code='SUPPLIER_USER') THEN 'NCC'
+        WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.user_id AND ur.active=1 AND r.active=1 AND r.role_code='QLCL_SPECIALIST') THEN 'ChuyÃªn viÃªn'
         ELSE NULL
       END AS role,
       u.is_active, u.display_name, u.created_at
